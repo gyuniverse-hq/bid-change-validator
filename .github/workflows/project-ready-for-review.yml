@@ -1,0 +1,119 @@
+name: Sync ready-for-review PRs to LOV WBS
+
+on:
+  pull_request:
+    types: [ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  set-in-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set LOV WBS status to In Review
+        uses: actions/github-script@v9
+        env:
+          PROJECT_ID: PVT_kwDOEzfCi84BidwG
+          STATUS_NAME: In Review
+        with:
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
+          script: |
+            const pullRequestId = context.payload.pull_request.node_id;
+            const projectId = process.env.PROJECT_ID;
+            const statusName = process.env.STATUS_NAME;
+
+            const data = await github.graphql(`
+              query($pullRequestId: ID!, $projectId: ID!) {
+                pullRequest: node(id: $pullRequestId) {
+                  ... on PullRequest {
+                    projectItems(first: 20) {
+                      nodes {
+                        id
+                        project { id }
+                        fieldValueByName(name: "Status") {
+                          ... on ProjectV2ItemFieldSingleSelectValue { name }
+                        }
+                      }
+                    }
+                  }
+                }
+                project: node(id: $projectId) {
+                  ... on ProjectV2 {
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, { pullRequestId, projectId });
+
+            const item = data.pullRequest.projectItems.nodes.find(
+              candidate => candidate.project.id === projectId
+            );
+            if (!item) {
+              core.notice('PR is not in LOV WBS; no status update was made.');
+              return;
+            }
+            if (item.fieldValueByName?.name === statusName) {
+              core.notice('PR is already In Review.');
+              return;
+            }
+
+            const statusField = data.project.fields.nodes.find(
+              field => field.name === 'Status'
+            );
+            const statusOption = statusField?.options.find(
+              option => option.name === statusName
+            );
+            if (!statusField || !statusOption) {
+              throw new Error('Compatible Status/In Review configuration was not found.');
+            }
+
+            await github.graphql(`
+              mutation(
+                $projectId: ID!
+                $itemId: ID!
+                $fieldId: ID!
+                $optionId: String!
+              ) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `, {
+              projectId,
+              itemId: item.id,
+              fieldId: statusField.id,
+              optionId: statusOption.id,
+            });
+
+            const verification = await github.graphql(`
+              query($itemId: ID!) {
+                item: node(id: $itemId) {
+                  ... on ProjectV2Item {
+                    fieldValueByName(name: "Status") {
+                      ... on ProjectV2ItemFieldSingleSelectValue { name }
+                    }
+                  }
+                }
+              }
+            `, { itemId: item.id });
+
+            if (verification.item.fieldValueByName?.name !== statusName) {
+              throw new Error('Status verification failed after update.');
+            }
+            core.info('LOV WBS Status verified as In Review.');

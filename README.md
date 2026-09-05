@@ -23,6 +23,22 @@
 
 > 역할은 2026-09-02 회의에서 정한 초기 역할 기준이며, 기능별 세부 책임은 Figma·프로토타입 검토 후 조정할 수 있습니다.
 
+## Parallel Development Workspaces
+
+주말 초기 병렬작업을 위해 Frontend / Backend / LLM·RAG workspace를 분리 운영합니다.
+
+| Workspace | Owners | Repository |
+| --- | --- | --- |
+| Frontend | 황수빈 (Main), 이홍규 (Sub) | https://github.com/gyuniverse-hq/bid-change-validator-frontend |
+| Backend / Data | 전진환 (Backend), 정예린 (DB / Data) | https://github.com/gyuniverse-hq/bid-change-validator-backend |
+| LLM / RAG | 김재현, 이홍규 | https://github.com/gyuniverse-hq/bid-change-validator-llm-rag |
+
+초기에는 빠른 구현과 실험을 우선하고, 영역 간 연결점은 아래 공통 문서에서 맞춥니다.
+
+- 병렬 작업 가이드: `docs/parallel-development.md`
+- Frontend ↔ Backend 계약 초안: `docs/contracts/frontend-backend.md`
+- Backend ↔ LLM / RAG 계약 초안: `docs/contracts/backend-llm.md`
+
 ## Current Focus
 
 - Figma 기반 핵심 User Flow 및 화면설계

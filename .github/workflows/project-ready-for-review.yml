@@ -1,4 +1,4 @@
-name: Sync ready-for-review PRs to LOV WBS
+name: Sync ready-for-review PRs to Bid Change Validator · WBS
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Set LOV WBS status to In Review
+      - name: Set Bid Change Validator · WBS status to In Review
         uses: actions/github-script@v9
         env:
           PROJECT_ID: PVT_kwDOEzfCi84BidwG
@@ -60,7 +60,7 @@ jobs:
               candidate => candidate.project.id === projectId
             );
             if (!item) {
-              core.notice('PR is not in LOV WBS; no status update was made.');
+              core.notice('PR is not in Bid Change Validator · WBS; no status update was made.');
               return;
             }
             if (item.fieldValueByName?.name === statusName) {
@@ -116,4 +116,4 @@ jobs:
             if (verification.item.fieldValueByName?.name !== statusName) {
               throw new Error('Status verification failed after update.');
             }
-            core.info('LOV WBS Status verified as In Review.');
+            core.info('Bid Change Validator · WBS Status verified as In Review.');

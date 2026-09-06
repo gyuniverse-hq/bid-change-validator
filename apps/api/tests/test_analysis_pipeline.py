@@ -26,20 +26,21 @@ def _input():
     )
 
 
-def test_pipeline_returns_canonical_requirement_and_evidence():
-    def fake_extract(system, body, schema):
-        return {
-            "requirements": [
-                {
-                    "유형": "실적요건",
-                    "raw": "최근 3년 실적 2건 이상, 합계 4억원 이상",
-                    "기간_raw": "최근 3년",
-                    "금액_raw": "4억원 이상",
-                    "근거조항": "3.1",
-                }
-            ]
-        }
+def _fake_extract(system, body, schema):
+    return {
+        "requirements": [
+            {
+                "유형": "실적요건",
+                "raw": "최근 3년 실적 2건 이상, 합계 4억원 이상",
+                "기간_raw": "최근 3년",
+                "금액_raw": "4억원 이상",
+                "근거조항": "3.1",
+            }
+        ]
+    }
 
+
+def test_pipeline_returns_canonical_requirement_and_evidence():
     def fake_normalize(raw):
         if "4억원" in raw:
             return {
@@ -61,7 +62,7 @@ def test_pipeline_returns_canonical_requirement_and_evidence():
 
     result = analyze_qualification_documents(
         _input(),
-        structured_extract=fake_extract,
+        structured_extract=_fake_extract,
         normalize_value=fake_normalize,
     )
 
@@ -77,6 +78,24 @@ def test_pipeline_returns_canonical_requirement_and_evidence():
     assert result.evidence[0].location.page == 3
     assert result.evidence[0].quote == "최근 3년 실적 2건 이상, 합계 4억원 이상"
     assert all(item.evidence_keys == [result.evidence[0].evidence_key] for item in result.requirements)
+
+
+def test_pipeline_uses_internal_normalizer_by_default():
+    result = analyze_qualification_documents(
+        _input(),
+        structured_extract=_fake_extract,
+    )
+
+    amount = next(item for item in result.requirements if item.type == "PERFORMANCE_AMOUNT")
+    count = next(item for item in result.requirements if item.type == "PERFORMANCE_COUNT")
+
+    assert result.status == "SUCCEEDED"
+    assert amount.value == 400000000
+    assert amount.unit == "KRW"
+    assert amount.operator == ">="
+    assert amount.period_months == 36
+    assert count.value == 2
+    assert count.period_months == 36
 
 
 def test_pipeline_keeps_documents_separate_and_chunk_ids_unique():

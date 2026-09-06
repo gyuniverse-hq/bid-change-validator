@@ -7,13 +7,13 @@ pieces already introduced on the integration branch:
         -> canonical source blocks
         -> semantic chunks
         -> structured extraction
-        -> optional deterministic value normalization
+        -> deterministic value normalization
         -> canonical Requirement + Evidence
         -> RequirementAnalysisResult
 
-The caller still supplies the structured LLM extractor and numeric normalizer so
-we do not modify backend dependency/configuration files before the team agrees on
-the runtime wiring.
+The structured LLM extractor remains injectable. Numeric normalization now has an
+internal deterministic default ported from the existing LLM/RAG PoC, while callers
+may still override it in tests or experiments.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from .analysis_result import RequirementAnalysisResult, build_requirement_analys
 from .backend_blocks import canonical_source_blocks
 from .canonicalize import canonicalize_validated_slots
 from .chunking import chunk_source_blocks
+from .normalization import normalize_value as default_normalize_value
 from .requirement_extraction import StructuredExtractor, extract_legacy_slots
 
 ValueNormalizer = Callable[[str], dict[str, Any]]
@@ -93,25 +94,19 @@ def _build_global_chunks(
 def _normalize_extracted_slots(
     slots: list[dict[str, Any]],
     *,
-    normalize_value: ValueNormalizer | None,
+    normalize_value: ValueNormalizer,
 ) -> list[dict[str, Any]]:
-    """Apply code-only normalization to raw amount/period fields when supplied.
-
-    The structured extractor must only return source strings. This helper mirrors
-    the old LLM/RAG PoC boundary while keeping the concrete normalizer injectable
-    until it is ported into this package.
-    """
+    """Apply code-only normalization to raw amount/period fields."""
     normalized_slots: list[dict[str, Any]] = []
 
     for source_slot in slots:
         slot = dict(source_slot)
-        if normalize_value is not None:
-            amount_raw = slot.get("금액_raw")
-            period_raw = slot.get("기간_raw")
-            if amount_raw:
-                slot["금액_norm"] = normalize_value(str(amount_raw))
-            if period_raw:
-                slot["기간_norm"] = normalize_value(str(period_raw))
+        amount_raw = slot.get("금액_raw")
+        period_raw = slot.get("기간_raw")
+        if amount_raw:
+            slot["금액_norm"] = normalize_value(str(amount_raw))
+        if period_raw:
+            slot["기간_norm"] = normalize_value(str(period_raw))
         normalized_slots.append(slot)
 
     return normalized_slots
@@ -121,7 +116,7 @@ def analyze_qualification_documents(
     analysis_input: QualificationAnalysisInput,
     *,
     structured_extract: StructuredExtractor,
-    normalize_value: ValueNormalizer | None = None,
+    normalize_value: ValueNormalizer = default_normalize_value,
     max_retry: int = 1,
     max_chunk_chars: int = 1800,
 ) -> RequirementAnalysisResult:

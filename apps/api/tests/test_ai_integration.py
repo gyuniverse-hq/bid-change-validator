@@ -90,6 +90,59 @@ def test_merged_semantic_chunk_keeps_every_source_block_in_order() -> None:
     assert [block["paragraph_index"] for block in chunks[0]["source_blocks"]] == [0, 1, 2]
 
 
+def test_pdf_page_block_splits_multiple_headings_and_keeps_page_locator() -> None:
+    blocks = canonical_source_blocks(
+        document_id="pdf-doc",
+        text_sha256="pdf-sha",
+        blocks=[
+            {
+                "block_index": 0,
+                "page": 14,
+                "location": "p.14",
+                "text": (
+                    "3. 참가자격\n"
+                    "최근 3년 실적 5억원 이상\n"
+                    "3.1 세부 실적요건\n"
+                    "유사사업 실적 2건 이상\n"
+                    "4. 제출서류\n"
+                    "실적증명서를 제출해야 한다."
+                ),
+            }
+        ],
+    )
+
+    chunks = chunk_source_blocks(blocks)
+
+    assert [chunk["clause_label"] for chunk in chunks] == ["3", "3.1", "4"]
+    assert all(chunk["source_blocks"][0]["page"] == 14 for chunk in chunks)
+    assert all(chunk["source_blocks"][0]["document_id"] == "pdf-doc" for chunk in chunks)
+    assert [chunk["source_blocks"][0]["source_line_start"] for chunk in chunks] == [1, 3, 5]
+    assert [chunk["source_blocks"][0]["source_line_end"] for chunk in chunks] == [2, 4, 6]
+
+
+def test_pdf_leading_text_before_first_heading_is_not_dropped() -> None:
+    blocks = canonical_source_blocks(
+        document_id="pdf-doc",
+        text_sha256="pdf-sha",
+        blocks=[
+            {
+                "block_index": 0,
+                "page": 2,
+                "location": "p.2",
+                "text": "계속되는 설명 문장\n2. 계약조건\n계약기간은 12개월이다.",
+            }
+        ],
+    )
+
+    chunks = chunk_source_blocks(blocks)
+
+    assert chunks[0]["clause_label"] is None
+    assert chunks[0]["text"] == "계속되는 설명 문장"
+    assert chunks[0]["source_blocks"][0]["page"] == 2
+    assert chunks[1]["clause_label"] == "2"
+    assert "계약기간은 12개월이다." in chunks[1]["text"]
+
+
 def test_backend_block_location_survives_semantic_chunking() -> None:
     blocks = canonical_source_blocks(
         document_id="doc-1",

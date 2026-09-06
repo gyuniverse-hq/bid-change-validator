@@ -30,10 +30,17 @@ EvidenceSourceType = Literal["NOTICE_DOCUMENT", "PROPOSAL_DOCUMENT"]
 
 
 class EvidenceLocation(BaseModel):
+    # Backend extracted_blocks are the source-of-truth locator. The range fields
+    # let one semantic citation cover one or more adjacent source blocks without
+    # inventing a PDF page for HWP/HWPX documents.
+    block_start: int | None = None
+    block_end: int | None = None
     page: int | None = None
     section_index: int | None = None
     paragraph_start: int | None = None
     paragraph_end: int | None = None
+    source_line_start: int | None = None
+    source_line_end: int | None = None
     clause_label: str | None = None
     display: str | None = None
 

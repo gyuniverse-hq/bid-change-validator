@@ -35,6 +35,48 @@ def test_select_eligibility_section_includes_children_until_next_top_level():
     assert [chunk["clause_label"] for chunk in selected] == ["3", "3.1", "3.2"]
 
 
+def test_select_eligibility_section_does_not_cross_backend_document_boundary():
+    doc_a = canonical_source_blocks(
+        document_id="doc-a",
+        text_sha256="sha-a",
+        blocks=[
+            {
+                "block_index": 0,
+                "page": 1,
+                "location": "p.1",
+                "text": "3. 입찰 참가자격\n3.1 최근 3년 실적 5억원 이상",
+            }
+        ],
+    )
+    doc_b = canonical_source_blocks(
+        document_id="doc-b",
+        text_sha256="sha-b",
+        blocks=[
+            {
+                "block_index": 0,
+                "page": 1,
+                "location": "p.1",
+                "text": "이 문장은 다른 문서의 서두이며 자격요건이 아니다.",
+            }
+        ],
+    )
+
+    chunks = chunk_source_blocks(doc_a)
+    offset = len(chunks)
+    for index, chunk in enumerate(chunk_source_blocks(doc_b), start=offset):
+        chunks.append({**chunk, "chunk_id": f"CHUNK-{index:04d}"})
+
+    selected = select_eligibility_chunks(chunks)
+
+    assert selected
+    selected_document_ids = {
+        block["document_id"]
+        for chunk in selected
+        for block in chunk["source_blocks"]
+    }
+    assert selected_document_ids == {"doc-a"}
+
+
 def test_validate_slot_rejects_hallucinated_raw():
     ok, reason, source = validate_extracted_slot(
         {
@@ -73,6 +115,7 @@ def test_extract_legacy_slots_keeps_source_provenance():
     def fake_extract(system, body, schema):
         assert "입찰 참가자격" in body
         assert "제출서류" not in body
+        assert "문서 doc-1" in body
         assert schema["name"] == "eligibility_slots"
         return {
             "requirements": [

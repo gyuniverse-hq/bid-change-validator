@@ -36,11 +36,12 @@ ValueNormalizer = Callable[[str], dict[str, Any]]
 class QualificationDocumentInput(BaseModel):
     """Minimal Backend -> AI document input used by the orchestration layer.
 
-    `document_id` and the extracted block payload are Backend-owned. The AI layer
-    does not infer or create document identity.
+    `document_id`, hashes, and extracted blocks are Backend-owned. The AI layer
+    does not infer or create document identity or source hashes.
     """
 
     document_id: str
+    file_sha256: str | None = None
     extracted_text_sha256: str | None = None
     extracted_blocks: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -75,6 +76,7 @@ def _build_global_chunks(
     for document in documents:
         source_blocks = canonical_source_blocks(
             document_id=document.document_id,
+            file_sha256=document.file_sha256,
             text_sha256=document.extracted_text_sha256,
             blocks=document.extracted_blocks,
         )

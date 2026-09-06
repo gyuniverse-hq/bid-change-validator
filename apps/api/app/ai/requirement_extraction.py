@@ -2,7 +2,7 @@
 
 This module ports the useful extraction/guardrail behavior from the existing
 `bid-change-validator-llm-rag/eligibility/slots.py` PoC without coupling the
-backend package to a specific LLM SDK yet.
+backend package to a specific LLM SDK.
 
 The production boundary is:
 
@@ -97,23 +97,51 @@ def _is_top_level(chunk: dict[str, Any]) -> bool:
     return bool(label) and bool(_TOP_LEVEL_LABEL_RE.match(str(label).strip()))
 
 
+def _chunk_document_id(chunk: dict[str, Any]) -> str | None:
+    """Resolve the single Backend document id represented by a semantic chunk."""
+    document_ids = {
+        str(block.get("document_id"))
+        for block in list(chunk.get("source_blocks") or [])
+        if block.get("document_id")
+    }
+    if len(document_ids) == 1:
+        return next(iter(document_ids))
+    return None
+
+
 def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Select an eligibility section and its children until the next top-level heading.
+    """Select eligibility sections and their children without crossing documents.
 
     The original PoC discovered that selecting only the heading chunk hurts
     recall because actual conditions usually live in child clauses (e.g. 3.1,
     3.2). Keep that behavior while operating on the new semantic chunk shape.
+
+    The integration pipeline can analyze several Backend documents in one run.
+    A section anchored in document A must never absorb leading chunks from
+    document B merely because document B does not start with a top-level heading.
     """
     selected: dict[int, dict[str, Any]] = {}
     for index, chunk in enumerate(chunks):
         text = chunk.get("text") or ""
         if not any(keyword in text for keyword in _ELIGIBILITY_KEYWORDS):
             continue
+
         selected[index] = chunk
         if not _is_top_level(chunk):
             continue
+
+        anchor_document_id = _chunk_document_id(chunk)
         for child_index in range(index + 1, len(chunks)):
             candidate = chunks[child_index]
+            candidate_document_id = _chunk_document_id(candidate)
+
+            if (
+                anchor_document_id is not None
+                and candidate_document_id is not None
+                and candidate_document_id != anchor_document_id
+            ):
+                break
+
             candidate_text = candidate.get("text") or ""
             if _is_top_level(candidate) and not any(
                 keyword in candidate_text for keyword in _ELIGIBILITY_KEYWORDS
@@ -183,10 +211,15 @@ def validate_extracted_slot(
 
 
 def build_extraction_body(chunks: list[dict[str, Any]], *, max_chars: int = 24_000) -> str:
-    return "\n\n".join(
-        f"[조항 {chunk.get('clause_label') or '(라벨없음)'}]\n{chunk.get('text') or ''}"
-        for chunk in chunks
-    )[:max_chars]
+    """Build LLM input while exposing Backend document identity for disambiguation."""
+    parts: list[str] = []
+    for chunk in chunks:
+        document_id = _chunk_document_id(chunk) or "(문서미상)"
+        clause_label = chunk.get("clause_label") or "(라벨없음)"
+        parts.append(
+            f"[문서 {document_id} | 조항 {clause_label}]\n{chunk.get('text') or ''}"
+        )
+    return "\n\n".join(parts)[:max_chars]
 
 
 def extract_legacy_slots(

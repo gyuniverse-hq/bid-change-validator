@@ -196,6 +196,63 @@ def test_legacy_performance_slot_maps_to_atomic_requirements() -> None:
     assert all(requirement.requirement_group_key == "REQ-001-GROUP" for requirement in requirements)
 
 
+def test_performance_slot_can_add_experience_field_to_same_group() -> None:
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "실적요건",
+            "raw": "최근 3년 공공기관 정보시스템 구축 실적 2건 이상",
+            "기간_norm": {"parse_status": "success", "value": 36},
+            "경험분야_raw": "공공기관 정보시스템 구축",
+        },
+        notice_version_id="version-1",
+        key_prefix="REQ-EXP",
+    )
+
+    assert diagnostics == []
+    assert {requirement.type for requirement in requirements} == {
+        "PERFORMANCE_COUNT",
+        "EXPERIENCE_FIELD",
+    }
+    experience = next(item for item in requirements if item.type == "EXPERIENCE_FIELD")
+    assert experience.value == "공공기관 정보시스템 구축"
+    assert experience.period_months == 36
+    assert all(item.requirement_group_key == "REQ-EXP-GROUP" for item in requirements)
+
+
+def test_industry_slot_maps_to_canonical_industry_requirement() -> None:
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "업종요건",
+            "raw": "소프트웨어사업자 업종으로 등록한 업체",
+            "업종_raw": "소프트웨어사업자",
+        },
+        notice_version_id="version-1",
+        key_prefix="REQ-IND",
+    )
+
+    assert diagnostics == []
+    assert len(requirements) == 1
+    assert requirements[0].type == "INDUSTRY"
+    assert requirements[0].value == "소프트웨어사업자"
+
+
+def test_standalone_experience_field_slot_maps_to_canonical_requirement() -> None:
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "경험분야요건",
+            "raw": "공공기관 정보시스템 구축 경험을 보유한 업체",
+            "경험분야_raw": "공공기관 정보시스템 구축",
+        },
+        notice_version_id="version-1",
+        key_prefix="REQ-FIELD",
+    )
+
+    assert diagnostics == []
+    assert len(requirements) == 1
+    assert requirements[0].type == "EXPERIENCE_FIELD"
+    assert requirements[0].value == "공공기관 정보시스템 구축"
+
+
 def test_legacy_other_requirement_stays_diagnostic() -> None:
     requirements, diagnostics = adapt_legacy_slot(
         {"유형": "기타요건", "raw": "자동 판정 범위 밖의 복합 조건"},

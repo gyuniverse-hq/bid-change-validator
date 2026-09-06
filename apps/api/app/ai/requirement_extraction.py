@@ -25,14 +25,29 @@ from typing import Any
 
 StructuredExtractor = Callable[[str, str, dict[str, Any]], dict[str, Any]]
 
-_ELIGIBILITY_KEYWORDS = (
+# Strong section anchors. These are used only against a top-level chunk heading,
+# not arbitrary body text, so phrases such as "실적증명서 제출" or
+# "자격요건이 아니다" do not accidentally become eligibility sections.
+_SECTION_HEADER_KEYWORDS = (
     "참가자격",
     "입찰참가",
     "자격요건",
-    "실적",
     "참가 자격",
-    "제한사항",
     "신청자격",
+    "제한사항",
+)
+
+# Used only when no explicit eligibility section heading exists in the document.
+# This preserves recall for loosely structured documents while keeping the normal
+# path conservative.
+_FALLBACK_REQUIREMENT_KEYWORDS = (
+    *_SECTION_HEADER_KEYWORDS,
+    "실적",
+    "면허",
+    "인증",
+    "소재",
+    "지역",
+    "인력",
 )
 
 SLOT_SCHEMA: dict[str, Any] = {
@@ -109,28 +124,43 @@ def _chunk_document_id(chunk: dict[str, Any]) -> str | None:
     return None
 
 
+def _heading_text(chunk: dict[str, Any]) -> str:
+    """Return only the first semantic line used as the section heading."""
+    text = (chunk.get("text") or "").strip()
+    return text.splitlines()[0] if text else ""
+
+
+def _is_eligibility_section_anchor(chunk: dict[str, Any]) -> bool:
+    if not _is_top_level(chunk):
+        return False
+    heading = _heading_text(chunk)
+    return any(keyword in heading for keyword in _SECTION_HEADER_KEYWORDS)
+
+
 def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Select eligibility sections and their children without crossing documents.
 
-    The original PoC discovered that selecting only the heading chunk hurts
-    recall because actual conditions usually live in child clauses (e.g. 3.1,
-    3.2). Keep that behavior while operating on the new semantic chunk shape.
+    Normal path:
+    1. find explicit top-level eligibility section headings;
+    2. include their child clauses until the next top-level heading;
+    3. stop immediately at a Backend document boundary.
 
-    The integration pipeline can analyze several Backend documents in one run.
-    A section anchored in document A must never absorb leading chunks from
-    document B merely because document B does not start with a top-level heading.
+    Only when no explicit section heading exists do we fall back to keyword-based
+    retrieval. This avoids false positives such as a later "제출서류" section that
+    merely contains "실적증명서".
     """
     selected: dict[int, dict[str, Any]] = {}
-    for index, chunk in enumerate(chunks):
-        text = chunk.get("text") or ""
-        if not any(keyword in text for keyword in _ELIGIBILITY_KEYWORDS):
-            continue
+    anchors = [
+        index
+        for index, chunk in enumerate(chunks)
+        if _is_eligibility_section_anchor(chunk)
+    ]
 
-        selected[index] = chunk
-        if not _is_top_level(chunk):
-            continue
+    for index in anchors:
+        anchor = chunks[index]
+        selected[index] = anchor
+        anchor_document_id = _chunk_document_id(anchor)
 
-        anchor_document_id = _chunk_document_id(chunk)
         for child_index in range(index + 1, len(chunks)):
             candidate = chunks[child_index]
             candidate_document_id = _chunk_document_id(candidate)
@@ -142,16 +172,23 @@ def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, An
             ):
                 break
 
-            candidate_text = candidate.get("text") or ""
-            if _is_top_level(candidate) and not any(
-                keyword in candidate_text for keyword in _ELIGIBILITY_KEYWORDS
-            ):
+            if _is_top_level(candidate):
                 break
+
             selected[child_index] = candidate
 
     if selected:
         return [selected[index] for index in sorted(selected)]
-    return chunks[:8]
+
+    fallback = [
+        chunk
+        for chunk in chunks
+        if any(
+            keyword in (chunk.get("text") or "")
+            for keyword in _FALLBACK_REQUIREMENT_KEYWORDS
+        )
+    ]
+    return fallback[:8] if fallback else chunks[:8]
 
 
 def _squash(value: str) -> str:
@@ -166,8 +203,6 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
     probe = _squash(raw)
     if not probe:
         return None
-    # The existing guardrail compares a short prefix to tolerate extraction
-    # formatting differences while still requiring source-grounded text.
     prefix = probe[:40]
     for chunk in chunks:
         if prefix in _squash(chunk.get("text") or ""):
@@ -228,16 +263,7 @@ def extract_legacy_slots(
     structured_extract: StructuredExtractor,
     max_retry: int = 1,
 ) -> dict[str, Any]:
-    """Run structured extraction and source-grounding validation.
-
-    The caller supplies the model adapter. That lets this integration package be
-    tested without OpenAI/network access and avoids changing the backend team's
-    dependency/configuration files before the interface is agreed.
-
-    Validated slots receive private integration metadata (`_source_chunk_id`,
-    `_source_blocks`) so the next Evidence adapter can build a canonical citation
-    without searching the source again.
-    """
+    """Run structured extraction and source-grounding validation."""
     target = select_eligibility_chunks(chunks)
     body = build_extraction_body(target)
     last_notes = ""

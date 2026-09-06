@@ -1,0 +1,121 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      G2B_SERVICE_KEY: ${G2B_SERVICE_KEY:-}
+      DOCUMENT_STORAGE_BACKEND: ${DOCUMENT_STORAGE_BACKEND:-LOCAL}
+      DOCUMENT_STORAGE_PATH: /data/notice-documents
+      DOCUMENT_S3_BUCKET: ${DOCUMENT_S3_BUCKET:-}
+      DOCUMENT_S3_PREFIX: ${DOCUMENT_S3_PREFIX:-notice-documents}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - notice_documents_data:/data/notice-documents
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  notice-poller:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      G2B_SERVICE_KEY: ${G2B_SERVICE_KEY:-}
+      DOCUMENT_STORAGE_BACKEND: ${DOCUMENT_STORAGE_BACKEND:-LOCAL}
+      DOCUMENT_STORAGE_PATH: /data/notice-documents
+      DOCUMENT_S3_BUCKET: ${DOCUMENT_S3_BUCKET:-}
+      DOCUMENT_S3_PREFIX: ${DOCUMENT_S3_PREFIX:-notice-documents}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      NOTICE_POLL_INTERVAL_SECONDS: ${NOTICE_POLL_INTERVAL_SECONDS:-300}
+      NOTICE_POLL_LOOKBACK_MINUTES: ${NOTICE_POLL_LOOKBACK_MINUTES:-60}
+      NOTICE_POLL_OVERLAP_MINUTES: ${NOTICE_POLL_OVERLAP_MINUTES:-5}
+      NOTICE_POLL_PAGE_SIZE: ${NOTICE_POLL_PAGE_SIZE:-100}
+      NOTICE_POLL_MAX_PAGES: ${NOTICE_POLL_MAX_PAGES:-10}
+      NOTICE_POLL_BUSINESS_TYPES: ${NOTICE_POLL_BUSINESS_TYPES:-SERVICE,GOODS,CONSTRUCTION,FOREIGN}
+    volumes:
+      - notice_documents_data:/data/notice-documents
+    command: ["python", "-m", "app.workers.notice_polling"]
+
+  migrate:
+    build:
+      context: ./apps/api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    restart: "no"
+
+  master-data-import:
+    image: postgres:16-alpine
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/master:/data/master:ro
+      - ./db/seeds/import_master_codes.sql:/scripts/import_master_codes.sql:ro
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - db
+      - -U
+      - ${POSTGRES_USER}
+      - -d
+      - ${POSTGRES_DB}
+      - -f
+      - /scripts/import_master_codes.sql
+
+volumes:
+  postgres_data:
+  notice_documents_data:

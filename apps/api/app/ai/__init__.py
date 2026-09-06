@@ -6,6 +6,13 @@ semantic chunking, requirement extraction adapters, retrieval evidence contracts
 judgment adapters, and change/revalidation logic.
 """
 
+from .analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
 from .contracts import Evidence, Judgment, QualificationRequirement
 
-__all__ = ["QualificationRequirement", "Evidence", "Judgment"]
+__all__ = [
+    "QualificationRequirement",
+    "Evidence",
+    "Judgment",
+    "AnalysisDiagnostic",
+    "RequirementAnalysisResult",
+]

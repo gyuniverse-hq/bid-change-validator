@@ -1,9 +1,9 @@
-"""Adapter from the current LLM/RAG PoC slot shape to canonical requirements.
+"""Adapter from extraction slot shape to canonical requirements.
 
-The PoC uses six broad Korean slot types. Production keeps those as an internal
-extraction detail and maps them to the closed seven-type canonical taxonomy.
-Unsupported/ambiguous slots are returned as diagnostics instead of being forced
-into a judgment category.
+The extraction layer keeps human-readable Korean slot types as an internal
+interface. Production maps those slots into the closed seven-type canonical
+taxonomy. Unsupported/ambiguous slots become diagnostics instead of being
+forced into a judgment category.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def adapt_legacy_slot(
     notice_version_id: str,
     key_prefix: str,
 ) -> tuple[list[QualificationRequirement], list[dict[str, Any]]]:
-    """Map one current PoC slot into zero or more canonical requirements."""
+    """Map one validated extraction slot into zero or more canonical requirements."""
     slot_type = slot.get("유형")
     raw = (slot.get("raw") or "").strip()
     diagnostics: list[dict[str, Any]] = []
@@ -63,6 +63,7 @@ def adapt_legacy_slot(
         amount = slot.get("금액_norm") or {}
         period = slot.get("기간_norm") or {}
         period_months = period.get("value") if period.get("parse_status") == "success" else None
+
         if amount.get("parse_status") == "success" and amount.get("value") is not None:
             add(
                 "AMOUNT",
@@ -73,6 +74,7 @@ def adapt_legacy_slot(
                 period_months=period_months,
                 scope={"aggregation": "UNSPECIFIED"},
             )
+
         count_match = _COUNT_RE.search(raw)
         if count_match:
             add(
@@ -83,8 +85,33 @@ def adapt_legacy_slot(
                 unit="COUNT",
                 period_months=period_months,
             )
+
+        experience_field = (slot.get("경험분야_raw") or "").strip()
+        if experience_field:
+            add(
+                "EXPERIENCE",
+                "EXPERIENCE_FIELD",
+                value=experience_field,
+                period_months=period_months,
+                scope={"source": "PERFORMANCE"},
+            )
+
         if not requirements:
             diagnostics.append({"code": "UNMAPPED_PERFORMANCE", "raw": raw})
+
+    elif slot_type == "경험분야요건":
+        experience_field = (slot.get("경험분야_raw") or "").strip()
+        if experience_field:
+            add("EXPERIENCE", "EXPERIENCE_FIELD", value=experience_field)
+        else:
+            diagnostics.append({"code": "UNMAPPED_EXPERIENCE_FIELD", "raw": raw})
+
+    elif slot_type == "업종요건":
+        industry = (slot.get("업종_raw") or "").strip()
+        if industry:
+            add("INDUSTRY", "INDUSTRY", value=industry)
+        else:
+            diagnostics.append({"code": "UNMAPPED_INDUSTRY", "raw": raw})
 
     elif slot_type == "인력요건":
         add("STAFF", "STAFF")

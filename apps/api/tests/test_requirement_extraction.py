@@ -1,6 +1,7 @@
 from apps.api.app.ai.backend_blocks import canonical_source_blocks
 from apps.api.app.ai.chunking import chunk_source_blocks
 from apps.api.app.ai.requirement_extraction import (
+    SLOT_SCHEMA,
     extract_legacy_slots,
     select_eligibility_chunks,
     validate_extracted_slot,
@@ -27,6 +28,17 @@ def _chunks():
         ],
     )
     return chunk_source_blocks(blocks)
+
+
+def test_slot_schema_exposes_all_canonical_extraction_paths():
+    item_schema = SLOT_SCHEMA["schema"]["properties"]["requirements"]["items"]
+    slot_types = set(item_schema["properties"]["유형"]["enum"])
+
+    assert "업종요건" in slot_types
+    assert "경험분야요건" in slot_types
+    assert "업종_raw" in item_schema["properties"]
+    assert "경험분야_raw" in item_schema["properties"]
+    assert set(item_schema["required"]) == set(item_schema["properties"])
 
 
 def test_select_eligibility_section_includes_children_until_next_top_level():
@@ -84,6 +96,8 @@ def test_validate_slot_rejects_hallucinated_raw():
             "raw": "최근 5년 실적 10억원 이상",
             "기간_raw": "최근 5년",
             "금액_raw": "10억원 이상",
+            "업종_raw": None,
+            "경험분야_raw": None,
             "근거조항": "3.1",
         },
         _chunks(),
@@ -94,6 +108,25 @@ def test_validate_slot_rejects_hallucinated_raw():
     assert source is None
 
 
+def test_validate_slot_rejects_hallucinated_detail_field():
+    ok, reason, source = validate_extracted_slot(
+        {
+            "유형": "실적요건",
+            "raw": "최근 3년 실적 5억원 이상",
+            "기간_raw": "최근 3년",
+            "금액_raw": "5억원 이상",
+            "업종_raw": None,
+            "경험분야_raw": "공공기관 정보시스템 구축",
+            "근거조항": "3.1",
+        },
+        _chunks(),
+    )
+
+    assert ok is False
+    assert "경험분야_raw가 본문에 존재하지 않음" in reason
+    assert source is not None
+
+
 def test_validate_slot_rejects_wrong_clause_reference():
     ok, reason, source = validate_extracted_slot(
         {
@@ -101,6 +134,8 @@ def test_validate_slot_rejects_wrong_clause_reference():
             "raw": "최근 3년 실적 5억원 이상",
             "기간_raw": "최근 3년",
             "금액_raw": "5억원 이상",
+            "업종_raw": None,
+            "경험분야_raw": None,
             "근거조항": "9.9",
         },
         _chunks(),
@@ -124,6 +159,8 @@ def test_extract_legacy_slots_keeps_source_provenance():
                     "raw": "최근 3년 실적 5억원 이상",
                     "기간_raw": "최근 3년",
                     "금액_raw": "5억원 이상",
+                    "업종_raw": None,
+                    "경험분야_raw": None,
                     "근거조항": "3.1",
                 }
             ]
@@ -152,6 +189,8 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
                         "raw": "존재하지 않는 문장",
                         "기간_raw": None,
                         "금액_raw": None,
+                        "업종_raw": None,
+                        "경험분야_raw": None,
                         "근거조항": "3.1",
                     }
                 ]

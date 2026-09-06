@@ -6,7 +6,8 @@ from apps.api.app.ai.legacy_slots import adapt_legacy_slot
 def test_pdf_backend_block_contract_is_preserved() -> None:
     blocks = canonical_source_blocks(
         document_id="pdf-doc",
-        text_sha256="pdf-sha",
+        file_sha256="pdf-file-sha",
+        text_sha256="pdf-text-sha",
         blocks=[
             {
                 "block_index": 0,
@@ -26,7 +27,8 @@ def test_pdf_backend_block_contract_is_preserved() -> None:
             "paragraph_index": None,
             "location": "p.14",
             "text": "입찰 참가자격 본문",
-            "source_sha256": "pdf-sha",
+            "source_sha256": "pdf-file-sha",
+            "extracted_text_sha256": "pdf-text-sha",
         }
     ]
 
@@ -34,7 +36,8 @@ def test_pdf_backend_block_contract_is_preserved() -> None:
 def test_hwpx_backend_block_contract_is_preserved() -> None:
     blocks = canonical_source_blocks(
         document_id="hwpx-doc",
-        text_sha256="hwpx-sha",
+        file_sha256="hwpx-file-sha",
+        text_sha256="hwpx-text-sha",
         blocks=[
             {
                 "block_index": 3,
@@ -50,13 +53,15 @@ def test_hwpx_backend_block_contract_is_preserved() -> None:
     assert blocks[0]["section_index"] == 1
     assert blocks[0]["paragraph_index"] == 7
     assert blocks[0]["location"] == "section 2 · paragraph 8"
-    assert blocks[0]["source_sha256"] == "hwpx-sha"
+    assert blocks[0]["source_sha256"] == "hwpx-file-sha"
+    assert blocks[0]["extracted_text_sha256"] == "hwpx-text-sha"
 
 
 def test_merged_semantic_chunk_keeps_every_source_block_in_order() -> None:
     blocks = canonical_source_blocks(
         document_id="doc-1",
-        text_sha256="sha",
+        file_sha256="file-sha",
+        text_sha256="text-sha",
         blocks=[
             {
                 "block_index": 0,
@@ -93,7 +98,8 @@ def test_merged_semantic_chunk_keeps_every_source_block_in_order() -> None:
 def test_pdf_page_block_splits_multiple_headings_and_keeps_page_locator() -> None:
     blocks = canonical_source_blocks(
         document_id="pdf-doc",
-        text_sha256="pdf-sha",
+        file_sha256="pdf-file-sha",
+        text_sha256="pdf-text-sha",
         blocks=[
             {
                 "block_index": 0,
@@ -123,7 +129,8 @@ def test_pdf_page_block_splits_multiple_headings_and_keeps_page_locator() -> Non
 def test_pdf_leading_text_before_first_heading_is_not_dropped() -> None:
     blocks = canonical_source_blocks(
         document_id="pdf-doc",
-        text_sha256="pdf-sha",
+        file_sha256="pdf-file-sha",
+        text_sha256="pdf-text-sha",
         blocks=[
             {
                 "block_index": 0,
@@ -146,7 +153,8 @@ def test_pdf_leading_text_before_first_heading_is_not_dropped() -> None:
 def test_backend_block_location_survives_semantic_chunking() -> None:
     blocks = canonical_source_blocks(
         document_id="doc-1",
-        text_sha256="abc123",
+        file_sha256="abc123",
+        text_sha256="text123",
         blocks=[
             {"block_index": 0, "page": 3, "location": "p.3", "text": "3. 참가자격"},
             {"block_index": 1, "page": 3, "location": "p.3", "text": "3.1 최근 3년 실적 5억원 이상"},
@@ -158,6 +166,7 @@ def test_backend_block_location_survives_semantic_chunking() -> None:
     assert chunks[0]["source_blocks"][0]["document_id"] == "doc-1"
     assert chunks[0]["source_blocks"][0]["page"] == 3
     assert chunks[0]["source_blocks"][0]["source_sha256"] == "abc123"
+    assert chunks[0]["source_blocks"][0]["extracted_text_sha256"] == "text123"
 
 
 def test_legacy_performance_slot_maps_to_atomic_requirements() -> None:

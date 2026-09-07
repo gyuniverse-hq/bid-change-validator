@@ -22,7 +22,9 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
-    match: (pathname) => pathname.startsWith('/cases/') && pathname.endsWith('/qualification') || pathname === '/qualification',
+    match: (pathname) =>
+      (pathname.startsWith('/cases/') && pathname.endsWith('/qualification')) ||
+      pathname === '/qualification',
     page: {
       title: '참가자격 검토',
       description: '판정한 모든 항목에 공고 원문 근거를 함께 표시합니다.',
@@ -30,7 +32,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
-    match: (pathname) => pathname.startsWith('/cases/') && pathname.endsWith('/questions') || pathname === '/ask-back',
+    match: (pathname) =>
+      (pathname.startsWith('/cases/') && pathname.endsWith('/questions')) || pathname === '/ask-back',
     page: {
       title: '확인 필요에 답하기',
       description: '판정에 필요한 값만 질문하고, 답한 항목만 다시 판정합니다.',
@@ -38,7 +41,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
-    match: (pathname) => pathname.startsWith('/cases/') && pathname.endsWith('/evidence') || pathname === '/evidence',
+    match: (pathname) =>
+      (pathname.startsWith('/cases/') && pathname.endsWith('/evidence')) || pathname === '/evidence',
     page: {
       title: '근거 원문 대조',
       description: '판정에 사용한 공고 원문과 회사 값을 같은 화면에서 대조합니다.',
@@ -46,7 +50,9 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
-    match: (pathname) => pathname.startsWith('/cases/') && pathname.endsWith('/evaluation') || pathname === '/evaluation',
+    match: (pathname) =>
+      (pathname.startsWith('/cases/') && pathname.endsWith('/evaluation')) ||
+      pathname === '/evaluation',
     page: {
       title: '평가 대응',
       description: '평가 관련 원문과 대응에 필요한 정보를 함께 확인합니다.',
@@ -54,7 +60,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
     },
   },
   {
-    match: (pathname) => pathname.startsWith('/cases/') && pathname.endsWith('/changes') || pathname === '/changes',
+    match: (pathname) =>
+      (pathname.startsWith('/cases/') && pathname.endsWith('/changes')) || pathname === '/changes',
     page: {
       title: '변경 이력',
       description: '공고 차수별 변경 내용과 판정 영향을 추적합니다.',
@@ -82,7 +89,12 @@ function pageInfoFor(pathname: string): PageInfo {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const page = pageInfoFor(pathname);
-  const legacyRouteClass = pathname === '/' ? 'app-shell-route-home' : pathname === '/qualification' ? 'app-shell-route-qualification' : '';
+  const legacyRouteClass =
+    pathname === '/'
+      ? 'app-shell-route-home'
+      : pathname === '/qualification'
+        ? 'app-shell-route-qualification'
+        : '';
 
   return (
     <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">

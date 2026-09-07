@@ -17,21 +17,65 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type CompanySize = 'MICRO' | 'SMALL' | 'MEDIUM' | 'MID_SIZED' | 'LARGE' | 'NONE';
+
 export type CompanyProfile = {
   id: string;
   name: string;
+  business_registration_number: string | null;
   region_code: string | null;
   region_name: string | null;
-  company_size: string;
+  company_size: CompanySize;
   industries: Array<{ code: string; name: string; verified: boolean }>;
   staff: {
     total_count: number;
     verified: boolean;
     roles: Array<{ role_name: string; headcount: number; verified: boolean }>;
   } | null;
-  performances: Array<{ id: string; name: string; amount: number; verified: boolean }>;
-  certifications: Array<{ id: string; name: string; verified: boolean }>;
+  performances: Array<{
+    id: string;
+    name: string;
+    client_name: string | null;
+    client_institution_code: string | null;
+    amount: number;
+    started_at: string | null;
+    completed_at: string;
+    description: string | null;
+    fields: string[];
+    verified: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  certifications: Array<{
+    id: string;
+    name: string;
+    certificate_number: string | null;
+    issuer_name: string | null;
+    issued_at: string | null;
+    expires_at: string | null;
+    verified: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  created_at: string;
+  updated_at: string;
 };
+
+export type CompanyCreatePayload = {
+  name: string;
+  business_registration_number?: string;
+  region_code: string;
+  region_name?: string;
+  company_size: CompanySize;
+  industry_codes: string[];
+  staff: {
+    total_count: number;
+    verified: boolean;
+    roles: Array<{ role_name: string; headcount: number; verified: boolean }>;
+  };
+};
+
+export type MasterCode = { code: string; name: string; active: boolean };
 
 export type CanonicalRequirement = {
   requirement_key: string;
@@ -135,6 +179,60 @@ export type QualificationRevalidation = {
 
 export function listCompanies() {
   return request<CompanyProfile[]>('/api/v1/companies');
+}
+
+export function createCompany(payload: CompanyCreatePayload) {
+  return request<CompanyProfile>('/api/v1/companies', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCompany(companyId: string, payload: Partial<CompanyCreatePayload>) {
+  return request<CompanyProfile>(`/api/v1/companies/${companyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function searchIndustryCodes(query = '') {
+  const search = new URLSearchParams({ limit: '20' });
+  if (query.trim()) search.set('q', query.trim());
+  return request<{ items: MasterCode[] }>(`/api/v1/master-codes/industries?${search}`);
+}
+
+export function createCompanyCertification(
+  companyId: string,
+  payload: {
+    name: string;
+    certificate_number?: string;
+    issuer_name?: string;
+    issued_at?: string;
+    expires_at?: string;
+    verified?: boolean;
+  },
+) {
+  return request<CompanyProfile['certifications'][number]>(`/api/v1/companies/${companyId}/certifications`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createCompanyPerformance(
+  companyId: string,
+  payload: {
+    name: string;
+    client_name?: string;
+    amount: number;
+    completed_at: string;
+    fields?: string[];
+    verified?: boolean;
+  },
+) {
+  return request<CompanyProfile['performances'][number]>(`/api/v1/companies/${companyId}/performances`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createPreflightCaseWithCompany(payload: {

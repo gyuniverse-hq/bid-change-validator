@@ -6,16 +6,16 @@ import { Bell, Menu } from 'lucide-react';
 import { PageContainer } from '@/components/product/page-container';
 
 const PRIMARY_NAV = [
-  { label: '공고 찾기', href: '/notices' },
-  { label: '내 입찰 건', href: '/cases' },
-  { label: '회사 프로필', href: '/company' },
+  { label: '공고 찾기', href: '/' },
+  { label: '내 입찰 건', href: '/qualification' },
+  { label: '회사 프로필', href: '/company', disabled: true },
   { label: '서류함', href: '/documents', disabled: true },
   { label: '이용안내', href: '/guide', disabled: true },
 ] as const;
 
 function isActive(pathname: string, href: string) {
-  if (href === '/notices') return pathname === '/' || pathname.startsWith('/notices');
-  if (href === '/cases') {
+  if (href === '/') return pathname === '/' || pathname.startsWith('/notices');
+  if (href === '/qualification') {
     return pathname.startsWith('/cases') || ['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes'].some((route) => pathname.startsWith(route));
   }
   if (href === '/company') return pathname.startsWith('/company') || pathname.startsWith('/company-profile');
@@ -40,7 +40,7 @@ export function AppHeader({ pathname }: { pathname: string }) {
 
       <div className="app-gnb">
         <PageContainer className="flex h-full items-center gap-5">
-          <Link href="/notices" className="app-brand" aria-label="비드체크 공고 찾기">
+          <Link href="/" className="app-brand" aria-label="비드체크 공고 찾기">
             <span className="app-brand-mark" aria-hidden="true">B</span>
             <span className="min-w-0">
               <strong className="block text-[22px] leading-6 tracking-[-0.03em]">비드체크</strong>

@@ -1,0 +1,11 @@
+alembic==1.19.2
+boto3>=1.35,<2
+fastapi==0.141.1
+olefile>=0.47,<1
+pydantic-settings==2.15.0
+psycopg[binary]==3.3.5
+pypdf>=5,<7
+python-multipart>=0.0.20,<1
+requests==2.32.5
+SQLAlchemy==2.0.52
+uvicorn[standard]==0.52.4

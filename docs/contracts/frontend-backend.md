@@ -99,3 +99,26 @@ Response example:
 - 기존 필드 이름 / 의미 / 타입을 바꿀 때는 Frontend와 Backend 양쪽에 공유합니다.
 - 아직 확정되지 않은 필드는 코드에서 강하게 의존하지 않습니다.
 - 구현이 먼저 진행된 경우 실제 동작을 기준으로 이 문서를 갱신할 수 있습니다.
+
+## Notice document viewer
+
+HWP/HWPX rendering uses rhwp WebAssembly in the frontend. PDF rendering uses an
+inline PDF viewer. The backend remains responsible for original-byte storage,
+download integrity, and extracted source blocks.
+
+See `docs/contracts/rhwp-viewer.md` for the document metadata, source URL, and
+text-location contract.
+
+### Proposal preflight flow
+
+1. `POST /api/v1/preflight-cases` with a notice id and optional baseline/current
+   version numbers.
+2. Upload HWP/HWPX/PDF through
+   `POST /api/v1/preflight-cases/{case_id}/documents` as multipart form data.
+3. Reload `GET /api/v1/preflight-cases/{case_id}` and render each returned
+   `render_source_url` or `preview_url`.
+4. Use `text_url` only for comparison/search and source highlighting.
+
+The backend does not generate the comparison judgment in this flow. A later
+contract can attach externally produced findings to the stable case, document,
+version, and block identifiers.

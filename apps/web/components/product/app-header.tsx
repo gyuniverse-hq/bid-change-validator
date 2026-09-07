@@ -6,7 +6,7 @@ import { Bell, Menu } from 'lucide-react';
 import { PageContainer } from '@/components/product/page-container';
 
 const PRIMARY_NAV = [
-  { label: '공고 찾기', href: '/', disabled: false },
+  { label: '공고 찾기', href: '/notices', disabled: false },
   { label: '내 입찰 건', href: '/qualification', disabled: false },
   { label: '회사 프로필', href: '/company', disabled: true },
   { label: '서류함', href: '/documents', disabled: true },
@@ -14,7 +14,7 @@ const PRIMARY_NAV = [
 ] as const;
 
 function isActive(pathname: string, href: string) {
-  if (href === '/') return pathname === '/' || pathname.startsWith('/notices');
+  if (href === '/notices') return pathname === '/' || pathname.startsWith('/notices');
   if (href === '/qualification') {
     return (
       pathname.startsWith('/cases') ||
@@ -45,7 +45,7 @@ export function AppHeader({ pathname }: { pathname: string }) {
 
       <div className="app-gnb">
         <PageContainer className="flex h-full items-center gap-5">
-          <Link href="/" className="app-brand" aria-label="비드체크 공고 찾기">
+          <Link href="/notices" className="app-brand" aria-label="비드체크 공고 찾기">
             <span className="app-brand-mark" aria-hidden="true">B</span>
             <span className="app-brand-copy">
               <strong className="app-brand-name">비드체크</strong>

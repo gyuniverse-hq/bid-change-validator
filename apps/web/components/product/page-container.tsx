@@ -1,24 +1,15 @@
-import type { ComponentPropsWithoutRef, ElementType, ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-type PageContainerProps<T extends ElementType = 'div'> = {
-  as?: T;
+type PageContainerProps = HTMLAttributes<HTMLDivElement> & {
   children: ReactNode;
-  className?: string;
-} & Omit<ComponentPropsWithoutRef<T>, 'as' | 'children' | 'className'>;
+};
 
-export function PageContainer<T extends ElementType = 'div'>({
-  as,
-  children,
-  className,
-  ...props
-}: PageContainerProps<T>) {
-  const Component = as ?? 'div';
-
+export function PageContainer({ children, className, ...props }: PageContainerProps) {
   return (
-    <Component className={cn('app-shell-container', className)} {...props}>
+    <div className={cn('app-shell-container', className)} {...props}>
       {children}
-    </Component>
+    </div>
   );
 }

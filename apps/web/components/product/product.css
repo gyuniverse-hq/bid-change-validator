@@ -165,8 +165,12 @@ body {
 }
 
 .app-title-band {
-  height: 142px;
+  height: 120px;
   background: linear-gradient(120.17deg, #dfe9ff 0%, #e9e2fb 33.82%, #dcefff 73.53%);
+}
+
+.app-title-band-tall {
+  height: 142px;
 }
 
 .app-shell-content {
@@ -215,7 +219,8 @@ body {
     display: none;
   }
 
-  .app-title-band {
+  .app-title-band,
+  .app-title-band-tall {
     height: 118px;
   }
 

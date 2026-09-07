@@ -1,84 +1,225 @@
-"""Generate deterministic ask-back questions and partially re-judge one UNKNOWN requirement."""
+"""Generate safe ask-back questions and partially re-judge one UNKNOWN requirement."""
 from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from .ai.askability import build_semantic_question, classify_askability
 from .ai.contracts import Judgment
 from .ai.judgment import derive_overall_status
-from .analysis_models import QualificationAnalysisRun
 from .ask_back_models import QualificationAnswer
 from .ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
 from .judgment_models import QualificationJudgmentRecord, QualificationJudgmentRun
 from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
 from .qualification_judgment import QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run
 
-_QUESTION_TEMPLATES={
-    "REGISTRATION_CERTIFICATION":"{value}을(를) 보유하고 있나요?",
-    "INDUSTRY":"{value} 업종에 해당하나요?",
-    "REGION":"사업장 소재지가 {value}인가요?",
-    "COMPANY_SIZE":"기업 규모가 {value}에 해당하나요?",
-    "EXPERIENCE_FIELD":"{value} 관련 수행 경험을 보유하고 있나요?",
-    "STAFF":"요구 인력 조건을 충족하나요?",
-    "PERFORMANCE_AMOUNT":"요구 실적 금액 조건을 충족하나요?",
-    "PERFORMANCE_COUNT":"요구 실적 건수 조건을 충족하나요?",
-}
 
-def list_questions(db:Session, *, case_id:UUID, source_judgment_run_id:UUID|None=None)->list[QualificationQuestionRead]:
+def list_questions(
+    db: Session,
+    *,
+    case_id: UUID,
+    source_judgment_run_id: UUID | None = None,
+) -> list[QualificationQuestionRead]:
     if source_judgment_run_id is None:
-        source_judgment_run_id=db.scalar(select(QualificationJudgmentRun.id).where(QualificationJudgmentRun.preflight_case_id==case_id).order_by(QualificationJudgmentRun.created_at.desc()).limit(1))
+        source_judgment_run_id = db.scalar(
+            select(QualificationJudgmentRun.id)
+            .where(QualificationJudgmentRun.preflight_case_id == case_id)
+            .order_by(QualificationJudgmentRun.created_at.desc())
+            .limit(1)
+        )
         if source_judgment_run_id is None:
-            raise QualificationJudgmentError("JUDGMENT_RUN_REQUIRED","먼저 자격 판정을 실행해야 합니다.")
-    run=load_qualification_judgment_run(db, source_judgment_run_id)
-    if run.preflight_case_id!=case_id:
-        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH","판정 실행과 사전검토 건이 일치하지 않습니다.",status_code=422)
-    analysis=analysis_run_response(load_qualification_analysis_run(db, run.analysis_run_id))
-    req_by_key={r.requirement_key:r for r in analysis.requirements}
-    questions=[]
+            raise QualificationJudgmentError(
+                "JUDGMENT_RUN_REQUIRED", "먼저 자격 판정을 실행해야 합니다."
+            )
+
+    run = load_qualification_judgment_run(db, source_judgment_run_id)
+    if run.preflight_case_id != case_id:
+        raise QualificationJudgmentError(
+            "JUDGMENT_CASE_MISMATCH",
+            "판정 실행과 사전검토 건이 일치하지 않습니다.",
+            status_code=422,
+        )
+
+    analysis = analysis_run_response(load_qualification_analysis_run(db, run.analysis_run_id))
+    req_by_key = {requirement.requirement_key: requirement for requirement in analysis.requirements}
+    questions: list[QualificationQuestionRead] = []
+
     for item in run.judgments:
-        if item.status!="UNKNOWN":
+        if item.status != "UNKNOWN":
             continue
-        req=req_by_key.get(item.requirement_key)
-        if req is None:
+        requirement = req_by_key.get(item.requirement_key)
+        if requirement is None:
             continue
-        template=_QUESTION_TEMPLATES.get(req.type,"이 조건을 충족하나요?")
-        questions.append(QualificationQuestionRead(requirement_key=req.requirement_key,requirement_type=req.type,question=template.format(value=req.value or req.raw),raw_requirement=req.raw))
-    return sorted(questions,key=lambda q:q.requirement_key)
+        decision = classify_askability(requirement)
+        questions.append(
+            QualificationQuestionRead(
+                requirement_key=requirement.requirement_key,
+                requirement_type=requirement.type,
+                question=(
+                    build_semantic_question(requirement)
+                    if decision.askable
+                    else "사용자 답변만으로 판정할 수 없는 조건입니다. 근거 원문을 직접 확인해 주세요."
+                ),
+                raw_requirement=requirement.raw,
+                askable=decision.askable,
+                askability_reason_code=decision.reason_code,
+                askability_reason=decision.reason,
+            )
+        )
 
-def answer_and_rejudge(db:Session, *, case_id:UUID, payload:QualificationAnswerCreate)->QualificationAnswerRead:
+    return sorted(questions, key=lambda question: question.requirement_key)
+
+
+def answer_and_rejudge(
+    db: Session,
+    *,
+    case_id: UUID,
+    payload: QualificationAnswerCreate,
+) -> QualificationAnswerRead:
     if payload.apply_to_profile:
-        raise QualificationJudgmentError("PROFILE_MUTATION_NOT_SUPPORTED","MVP Ask-back에서는 답변 저장만 지원하며 프로필 자동 수정은 아직 지원하지 않습니다.",status_code=422)
-    source=load_qualification_judgment_run(db,payload.source_judgment_run_id)
-    if source.preflight_case_id!=case_id:
-        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH","판정 실행과 사전검토 건이 일치하지 않습니다.",status_code=422)
-    source_by_key={j.requirement_key:j for j in source.judgments}
-    original=source_by_key.get(payload.requirement_key)
+        raise QualificationJudgmentError(
+            "PROFILE_MUTATION_NOT_SUPPORTED",
+            "MVP Ask-back에서는 답변 저장만 지원하며 프로필 자동 수정은 아직 지원하지 않습니다.",
+            status_code=422,
+        )
+
+    source = load_qualification_judgment_run(db, payload.source_judgment_run_id)
+    if source.preflight_case_id != case_id:
+        raise QualificationJudgmentError(
+            "JUDGMENT_CASE_MISMATCH",
+            "판정 실행과 사전검토 건이 일치하지 않습니다.",
+            status_code=422,
+        )
+
+    source_by_key = {judgment.requirement_key: judgment for judgment in source.judgments}
+    original = source_by_key.get(payload.requirement_key)
     if original is None:
-        raise QualificationJudgmentError("REQUIREMENT_JUDGMENT_NOT_FOUND","답변할 Requirement 판정을 찾을 수 없습니다.",status_code=404)
-    if original.status!="UNKNOWN":
-        raise QualificationJudgmentError("ANSWER_NOT_REQUIRED","UNKNOWN 상태인 Requirement만 Ask-back 답변으로 재판정할 수 있습니다.",status_code=422)
+        raise QualificationJudgmentError(
+            "REQUIREMENT_JUDGMENT_NOT_FOUND",
+            "답변할 Requirement 판정을 찾을 수 없습니다.",
+            status_code=404,
+        )
+    if original.status != "UNKNOWN":
+        raise QualificationJudgmentError(
+            "ANSWER_NOT_REQUIRED",
+            "UNKNOWN 상태인 Requirement만 Ask-back 답변으로 재판정할 수 있습니다.",
+            status_code=422,
+        )
 
-    analysis=analysis_run_response(load_qualification_analysis_run(db, source.analysis_run_id))
-    requirement=next((r for r in analysis.requirements if r.requirement_key==payload.requirement_key),None)
-    if requirement is None:
-        raise QualificationJudgmentError("REQUIREMENT_NOT_FOUND","분석 결과에서 Requirement를 찾을 수 없습니다.",status_code=404)
-
-    replacement=Judgment(
-        judgment_key=f"JUDG:{case_id}:{requirement.requirement_key}",preflight_case_id=str(case_id),notice_version_id=str(source.notice_version_id),
-        requirement_key=requirement.requirement_key,status="SATISFIED" if payload.satisfies_requirement else "UNSATISFIED",basis_type="USER_ANSWER",
-        evidence_held=payload.evidence_held,reason_code="RULE_MATCH" if payload.satisfies_requirement else "RULE_MISMATCH",
-        requires_evidence=original.requires_evidence,profile_refs=[],requirement_evidence_keys=list(original.requirement_evidence_keys or []),rule_version=source.rule_version,
+    analysis = analysis_run_response(load_qualification_analysis_run(db, source.analysis_run_id))
+    requirement = next(
+        (item for item in analysis.requirements if item.requirement_key == payload.requirement_key),
+        None,
     )
-    judgments=[]
+    if requirement is None:
+        raise QualificationJudgmentError(
+            "REQUIREMENT_NOT_FOUND",
+            "분석 결과에서 Requirement를 찾을 수 없습니다.",
+            status_code=404,
+        )
+
+    decision = classify_askability(requirement)
+    if not decision.askable:
+        raise QualificationJudgmentError(
+            "REQUIREMENT_NOT_ASKABLE",
+            f"이 조건은 사용자 답변만으로 재판정할 수 없습니다. ({decision.reason_code})",
+            status_code=422,
+        )
+
+    replacement = Judgment(
+        judgment_key=f"JUDG:{case_id}:{requirement.requirement_key}",
+        preflight_case_id=str(case_id),
+        notice_version_id=str(source.notice_version_id),
+        requirement_key=requirement.requirement_key,
+        status="SATISFIED" if payload.satisfies_requirement else "UNSATISFIED",
+        basis_type="USER_ANSWER",
+        evidence_held=payload.evidence_held,
+        reason_code="RULE_MATCH" if payload.satisfies_requirement else "RULE_MISMATCH",
+        requires_evidence=original.requires_evidence,
+        profile_refs=[],
+        requirement_evidence_keys=list(original.requirement_evidence_keys or []),
+        rule_version=source.rule_version,
+    )
+
+    judgments: list[Judgment] = []
     for item in source.judgments:
-        if item.requirement_key==payload.requirement_key:
+        if item.requirement_key == payload.requirement_key:
             judgments.append(replacement)
         else:
-            judgments.append(Judgment(judgment_key=item.judgment_key,preflight_case_id=str(source.preflight_case_id),notice_version_id=str(source.notice_version_id),requirement_key=item.requirement_key,status=item.status,basis_type=item.basis_type,evidence_held=item.evidence_held,reason_code=item.reason_code,requires_evidence=item.requires_evidence,profile_refs=list(item.profile_refs or []),requirement_evidence_keys=list(item.requirement_evidence_keys or []),rule_version=item.rule_version))
-    overall=derive_overall_status(analysis.requirements,judgments)
-    result_run=QualificationJudgmentRun(preflight_case_id=source.preflight_case_id,analysis_run_id=source.analysis_run_id,company_id=source.company_id,notice_version_id=source.notice_version_id,overall_status=overall,rule_version=source.rule_version,reference_date=source.reference_date,profile_snapshot=dict(source.profile_snapshot),analysis_status=source.analysis_status)
-    db.add(result_run); db.flush()
-    for j in judgments:
-        db.add(QualificationJudgmentRecord(judgment_run_id=result_run.id,judgment_key=j.judgment_key,requirement_key=j.requirement_key,status=j.status,basis_type=j.basis_type,evidence_held=j.evidence_held,reason_code=j.reason_code,requires_evidence=j.requires_evidence,profile_refs=list(j.profile_refs),requirement_evidence_keys=list(j.requirement_evidence_keys),rule_version=j.rule_version))
-    answer=QualificationAnswer(preflight_case_id=case_id,source_judgment_run_id=source.id,result_judgment_run_id=result_run.id,requirement_key=requirement.requirement_key,answer_json={"satisfies_requirement":payload.satisfies_requirement},normalized_value=payload.normalized_value,evidence_held=payload.evidence_held,apply_to_profile=False)
-    db.add(answer); db.commit(); db.refresh(answer)
-    result=judgment_run_response(load_qualification_judgment_run(db,result_run.id))
-    return QualificationAnswerRead(id=answer.id,preflight_case_id=answer.preflight_case_id,source_judgment_run_id=answer.source_judgment_run_id,result_judgment_run_id=result_run.id,requirement_key=answer.requirement_key,answer=dict(answer.answer_json),normalized_value=answer.normalized_value,evidence_held=answer.evidence_held,apply_to_profile=answer.apply_to_profile,created_at=answer.created_at,result=result)
+            judgments.append(
+                Judgment(
+                    judgment_key=item.judgment_key,
+                    preflight_case_id=str(source.preflight_case_id),
+                    notice_version_id=str(source.notice_version_id),
+                    requirement_key=item.requirement_key,
+                    status=item.status,
+                    basis_type=item.basis_type,
+                    evidence_held=item.evidence_held,
+                    reason_code=item.reason_code,
+                    requires_evidence=item.requires_evidence,
+                    profile_refs=list(item.profile_refs or []),
+                    requirement_evidence_keys=list(item.requirement_evidence_keys or []),
+                    rule_version=item.rule_version,
+                )
+            )
+
+    overall = derive_overall_status(analysis.requirements, judgments)
+    result_run = QualificationJudgmentRun(
+        preflight_case_id=source.preflight_case_id,
+        analysis_run_id=source.analysis_run_id,
+        company_id=source.company_id,
+        notice_version_id=source.notice_version_id,
+        overall_status=overall,
+        rule_version=source.rule_version,
+        reference_date=source.reference_date,
+        profile_snapshot=dict(source.profile_snapshot),
+        analysis_status=source.analysis_status,
+    )
+    db.add(result_run)
+    db.flush()
+
+    for judgment in judgments:
+        db.add(
+            QualificationJudgmentRecord(
+                judgment_run_id=result_run.id,
+                judgment_key=judgment.judgment_key,
+                requirement_key=judgment.requirement_key,
+                status=judgment.status,
+                basis_type=judgment.basis_type,
+                evidence_held=judgment.evidence_held,
+                reason_code=judgment.reason_code,
+                requires_evidence=judgment.requires_evidence,
+                profile_refs=list(judgment.profile_refs),
+                requirement_evidence_keys=list(judgment.requirement_evidence_keys),
+                rule_version=judgment.rule_version,
+            )
+        )
+
+    answer = QualificationAnswer(
+        preflight_case_id=case_id,
+        source_judgment_run_id=source.id,
+        result_judgment_run_id=result_run.id,
+        requirement_key=requirement.requirement_key,
+        answer_json={"satisfies_requirement": payload.satisfies_requirement},
+        normalized_value=payload.normalized_value,
+        evidence_held=payload.evidence_held,
+        apply_to_profile=False,
+    )
+    db.add(answer)
+    db.commit()
+    db.refresh(answer)
+
+    result = judgment_run_response(load_qualification_judgment_run(db, result_run.id))
+    return QualificationAnswerRead(
+        id=answer.id,
+        preflight_case_id=answer.preflight_case_id,
+        source_judgment_run_id=answer.source_judgment_run_id,
+        result_judgment_run_id=result_run.id,
+        requirement_key=answer.requirement_key,
+        answer=dict(answer.answer_json),
+        normalized_value=answer.normalized_value,
+        evidence_held=answer.evidence_held,
+        apply_to_profile=answer.apply_to_profile,
+        created_at=answer.created_at,
+        result=result,
+    )

@@ -6,8 +6,8 @@ import { Bell, Menu } from 'lucide-react';
 import { PageContainer } from '@/components/product/page-container';
 
 const PRIMARY_NAV = [
-  { label: '공고 찾기', href: '/' },
-  { label: '내 입찰 건', href: '/qualification' },
+  { label: '공고 찾기', href: '/', disabled: false },
+  { label: '내 입찰 건', href: '/qualification', disabled: false },
   { label: '회사 프로필', href: '/company', disabled: true },
   { label: '서류함', href: '/documents', disabled: true },
   { label: '이용안내', href: '/guide', disabled: true },
@@ -16,7 +16,12 @@ const PRIMARY_NAV = [
 function isActive(pathname: string, href: string) {
   if (href === '/') return pathname === '/' || pathname.startsWith('/notices');
   if (href === '/qualification') {
-    return pathname.startsWith('/cases') || ['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes'].some((route) => pathname.startsWith(route));
+    return (
+      pathname.startsWith('/cases') ||
+      ['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes'].some((route) =>
+        pathname.startsWith(route),
+      )
+    );
   }
   if (href === '/company') return pathname.startsWith('/company') || pathname.startsWith('/company-profile');
   return pathname.startsWith(href);

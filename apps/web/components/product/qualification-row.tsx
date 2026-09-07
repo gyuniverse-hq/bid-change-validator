@@ -31,6 +31,7 @@ export function QualificationRow({
   onAction,
 }: QualificationRowProps) {
   const statusMeta = STATUS_STYLE[status];
+  const userAnswerDerived = companyValue === '비어 있음' && (status === 'SATISFIED' || status === 'UNSATISFIED');
 
   return (
     <div className="grid min-h-[64px] grid-cols-1 border-t border-[var(--product-line-2)] lg:grid-cols-[122px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px]">
@@ -38,7 +39,15 @@ export function QualificationRow({
         <span className={`rounded-full border px-2.5 py-1 text-[12px] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span>
       </div>
       <div className="flex items-center px-3 py-3 text-[14px] font-medium leading-6 text-[var(--product-body)]">{condition}</div>
-      <div className="flex items-center px-3 py-3 text-[13px] leading-5 text-[var(--product-muted)]">{companyValue}</div>
+      <div className="flex items-center px-3 py-3 text-[13px] leading-5 text-[var(--product-muted)]">
+        {userAnswerDerived ? (
+          <div>
+            <span className="inline-flex rounded-full bg-[#eef1ff] px-2.5 py-1 text-[11px] font-bold text-[var(--product-accent-deep)]">USER_ANSWER</span>
+            <p className="mt-1.5 font-medium text-[var(--product-body)]">사용자 답변으로 판정</p>
+            <p className="text-[11.5px]">회사 프로필에는 값 없음</p>
+          </div>
+        ) : companyValue}
+      </div>
       <div className="flex items-center px-3 py-3">
         <button
           type="button"

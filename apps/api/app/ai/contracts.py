@@ -92,3 +92,13 @@ class Judgment(BaseModel):
     profile_refs: list[dict[str, str]] = Field(default_factory=list)
     requirement_evidence_keys: list[str] = Field(default_factory=list)
     rule_version: str | None = None
+    # Every judgment is shown to a bidding officer with its grounds, so the
+    # human-readable reason travels with the decision rather than being rebuilt
+    # from status codes by each client. Optional so existing readers keep working.
+    reason: str = ""
+    # Set when the profile could not settle the requirement: the exact question
+    # to put to the officer. UNKNOWN without a question is a dead end.
+    follow_up_question: str | None = None
+    # Set when the open question is a notice-specific profile extension rather
+    # than free-form confirmation. See `app.ai.extensions`.
+    required_extension_key: str | None = None

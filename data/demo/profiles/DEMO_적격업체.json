@@ -1,0 +1,147 @@
+{
+  "_demo": true,
+  "_경고": "시연용 가상 회사입니다. 실제 존재하는 업체가 아닙니다.",
+  "_시나리오": "모든 요건을 충족하는 업체 — 대부분 '충족' 판정이 나와야 정상",
+  "profile_id": "cmp_demo_ok",
+  "schema_version": "profile.v2",
+  "basic": {
+    "company_name": {
+      "value": "[데모] 가상소프트(주)",
+      "source": "signup"
+    },
+    "region": {
+      "value": "11680",
+      "label": "서울특별시 강남구",
+      "source": "signup"
+    },
+    "industry_codes": {
+      "value": [
+        "1468",
+        "1426"
+      ],
+      "label": [
+        "소프트웨어사업자(컴퓨터관련서비스사업)",
+        "소프트웨어사업자(패키지소프트웨어개발.공급사업)"
+      ],
+      "source": "signup"
+    },
+    "company_size": {
+      "value": "small",
+      "label": "중소기업",
+      "source": "signup"
+    },
+    "employee_count": {
+      "value": 42,
+      "source": "signup"
+    }
+  },
+  "performances": [
+    {
+      "id": "pf_01",
+      "title": "[데모] 가상A공공기관 정보시스템 구축",
+      "amount": 820000000,
+      "year": 2024,
+      "client_type": "public",
+      "fields": [
+        "system_integration"
+      ],
+      "source": "signup",
+      "evidence_status": "verified"
+    },
+    {
+      "id": "pf_02",
+      "title": "[데모] 가상B시 통합관제 플랫폼 개발",
+      "amount": 540000000,
+      "year": 2025,
+      "client_type": "public",
+      "fields": [
+        "system_integration"
+      ],
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "id": "pf_03",
+      "title": "[데모] 가상C도 데이터 포털 고도화",
+      "amount": 310000000,
+      "year": 2023,
+      "client_type": "public",
+      "fields": [
+        "system_integration"
+      ],
+      "source": "signup",
+      "evidence_status": "declared"
+    }
+  ],
+  "certifications": [
+    {
+      "code": "SW_BIZ",
+      "label": "소프트웨어사업자",
+      "issued_year": 2019,
+      "source": "signup",
+      "evidence_status": "verified"
+    },
+    {
+      "code": "ICT_WORK",
+      "label": "정보통신공사업",
+      "issued_year": 2020,
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "code": "ISO_27001",
+      "label": "ISO/IEC 27001",
+      "issued_year": 2022,
+      "source": "signup",
+      "evidence_status": "verified"
+    },
+    {
+      "code": "ISO_9001",
+      "label": "ISO9001",
+      "issued_year": 2018,
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "code": "DIRECT_PROD",
+      "label": "직접생산확인증명서(정보시스템개발서비스)",
+      "issued_year": 2024,
+      "source": "signup",
+      "evidence_status": "verified"
+    }
+  ],
+  "staff": [
+    {
+      "id": "st_01",
+      "role": "pm",
+      "career_years": 12,
+      "source": "signup",
+      "evidence_status": "verified"
+    },
+    {
+      "id": "st_02",
+      "role": "architect",
+      "career_years": 11,
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "id": "st_03",
+      "role": "developer",
+      "career_years": 8,
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "id": "st_04",
+      "role": "developer",
+      "career_years": 5,
+      "source": "signup",
+      "evidence_status": "declared"
+    }
+  ],
+  "fields": [
+    "system_integration",
+    "consulting"
+  ]
+}

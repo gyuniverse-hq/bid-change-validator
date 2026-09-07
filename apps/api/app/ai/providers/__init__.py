@@ -5,6 +5,14 @@ this package must not require an external SDK; concrete providers use lazy impor
 when an actual network call is made.
 """
 
-from .openai import OpenAIStructuredExtractor
+from .embeddings import Embedder, OpenAIEmbedder, ngram_vectors, similarity_matrix
+from .openai import OpenAINarrator, OpenAIStructuredExtractor
 
-__all__ = ["OpenAIStructuredExtractor"]
+__all__ = [
+    "OpenAIStructuredExtractor",
+    "OpenAINarrator",
+    "OpenAIEmbedder",
+    "Embedder",
+    "ngram_vectors",
+    "similarity_matrix",
+]

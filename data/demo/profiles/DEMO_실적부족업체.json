@@ -1,0 +1,80 @@
+{
+  "_demo": true,
+  "_경고": "시연용 가상 회사입니다. 실제 존재하는 업체가 아닙니다.",
+  "_시나리오": "실적 부족 + 지역 불일치 + 대기업이라 규모 제한에 걸림 — '미충족' 판정이 나와야 정상",
+  "profile_id": "cmp_demo_short",
+  "schema_version": "profile.v2",
+  "basic": {
+    "company_name": {
+      "value": "[데모] 대형그룹테크(주)",
+      "source": "signup"
+    },
+    "region": {
+      "value": "26350",
+      "label": "부산광역시 해운대구",
+      "source": "signup"
+    },
+    "industry_codes": {
+      "value": [
+        "1468",
+        "1426"
+      ],
+      "label": [
+        "소프트웨어사업자(컴퓨터관련서비스사업)",
+        "소프트웨어사업자(패키지소프트웨어개발.공급사업)"
+      ],
+      "source": "signup"
+    },
+    "company_size": {
+      "value": "large",
+      "label": "대기업",
+      "source": "signup"
+    },
+    "employee_count": {
+      "value": 1200,
+      "source": "signup"
+    }
+  },
+  "performances": [
+    {
+      "id": "pf_01",
+      "title": "[데모] 가상D군 홈페이지 개편",
+      "amount": 120000000,
+      "year": 2025,
+      "client_type": "public",
+      "fields": [
+        "web"
+      ],
+      "source": "signup",
+      "evidence_status": "declared"
+    }
+  ],
+  "certifications": [
+    {
+      "code": "SW_BIZ",
+      "label": "소프트웨어사업자",
+      "issued_year": 2024,
+      "source": "signup",
+      "evidence_status": "declared"
+    }
+  ],
+  "staff": [
+    {
+      "id": "st_01",
+      "role": "developer",
+      "career_years": 4,
+      "source": "signup",
+      "evidence_status": "declared"
+    },
+    {
+      "id": "st_02",
+      "role": "developer",
+      "career_years": 2,
+      "source": "signup",
+      "evidence_status": "declared"
+    }
+  ],
+  "fields": [
+    "web"
+  ]
+}

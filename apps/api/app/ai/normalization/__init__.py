@@ -2,6 +2,7 @@
 
 from .numbers import (
     COMPARATORS,
+    extract_values,
     normalize_amount,
     normalize_count,
     normalize_percent,
@@ -12,6 +13,7 @@ from .numbers import (
 
 __all__ = [
     "COMPARATORS",
+    "extract_values",
     "parse_korean_number",
     "normalize_amount",
     "normalize_period",

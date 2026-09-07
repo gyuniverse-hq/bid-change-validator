@@ -1,10 +1,12 @@
+import type { ReactNode } from 'react';
+
 type ConclusionBoxProps = {
   title: string;
   description: string;
   satisfied: number;
   unknown: number;
   unsatisfied: number;
-  action?: React.ReactNode;
+  action?: ReactNode;
 };
 
 export function ConclusionBox({

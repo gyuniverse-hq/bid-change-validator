@@ -8,7 +8,7 @@ import { PageContainer } from '@/components/product/page-container';
 const PRIMARY_NAV = [
   { label: '공고 찾기', href: '/notices', disabled: false },
   { label: '내 입찰 건', href: '/qualification', disabled: false },
-  { label: '회사 프로필', href: '/company', disabled: true },
+  { label: '회사 프로필', href: '/company', disabled: false },
   { label: '서류함', href: '/documents', disabled: true },
   { label: '이용안내', href: '/guide', disabled: true },
 ] as const;

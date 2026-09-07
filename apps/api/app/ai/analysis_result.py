@@ -28,17 +28,9 @@ class AnalysisDiagnostic(BaseModel):
 
 
 class RequirementAnalysisResult(BaseModel):
-    """Canonical AI -> Backend result for one notice version.
+    """Canonical AI -> Backend result for one notice version."""
 
-    Contract rules:
-    - `notice_id`, `notice_version_id`, and `document_ids` are Backend IDs.
-    - Requirement logical keys are AI-side correlation keys, not DB PKs.
-    - Every Requirement Evidence key must resolve inside this payload.
-    - Every Evidence item must point to one of the declared Backend documents.
-    - Qualification Evidence must belong to the same notice version.
-    """
-
-    contract_version: Literal["ai-analysis-v0.1"] = "ai-analysis-v0.1"
+    contract_version: Literal["ai-analysis-v0.2"] = "ai-analysis-v0.2"
     analysis_kind: AnalysisKind = "QUALIFICATION_REQUIREMENTS"
     status: AnalysisStatus
     notice_id: str
@@ -94,6 +86,12 @@ class RequirementAnalysisResult(BaseModel):
 _DIAGNOSTIC_MESSAGES = {
     "UNMAPPED_REQUIREMENT": "닫힌 Canonical 자격요건 유형으로 안전하게 매핑하지 못했습니다.",
     "UNMAPPED_PERFORMANCE": "실적요건을 판정 가능한 원자 조건으로 구조화하지 못했습니다.",
+    "UNMAPPED_EXPERIENCE_FIELD": "경험분야 요건의 비교값을 구조화하지 못했습니다.",
+    "UNMAPPED_INDUSTRY": "업종 요건의 비교값을 구조화하지 못했습니다.",
+    "UNMAPPED_REGION": "지역 요건의 비교값을 구조화하지 못했습니다.",
+    "UNMAPPED_STAFF": "인력 요건의 인원 또는 역할을 구조화하지 못했습니다.",
+    "UNMAPPED_REGISTRATION_CERTIFICATION": "등록·면허·인증 요건의 명칭을 구조화하지 못했습니다.",
+    "UNMAPPED_COMPANY_SIZE": "기업규모 요건의 비교값을 구조화하지 못했습니다.",
     "UNKNOWN_LEGACY_TYPE": "지원하지 않는 기존 LLM 슬롯 유형입니다.",
 }
 
@@ -155,8 +153,6 @@ def build_requirement_analysis_result(
             )
         )
 
-    # A failed result is deliberately empty: rejected/intermediate model output is
-    # diagnostic data, not a canonical result for Backend persistence.
     if status == "FAILED":
         requirements = []
         evidence = []

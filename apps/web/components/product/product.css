@@ -2,33 +2,36 @@
   --product-accent: #2b4fd8;
   --product-accent-deep: #1f3ab0;
   --product-accent-soft: #edeafb;
-
   --product-surface: #ffffff;
   --product-tint: #f6f7f9;
   --product-tint-2: #f4f3fb;
-
   --product-ink: #14161c;
   --product-body: #33373d;
   --product-muted: #5a6069;
   --product-faint: #6e747c;
-
   --product-line: #e4e7ed;
   --product-line-2: #eef0f4;
-
   --product-ok: #147a4a;
   --product-warn: #8a5a00;
-
   --product-card-radius: 20px;
   --product-panel-radius: 24px;
   --product-pill-radius: 999px;
-
   --product-shell-gutter: 44px;
   --product-shell-max: 1440px;
 }
 
+html,
 body {
-  background: var(--product-tint);
+  font-family: var(--font-product-sans), Arial, Helvetica, sans-serif;
+}
+
+body {
+  background: var(--product-surface);
   color: var(--product-body);
+}
+
+.app-shell {
+  background: var(--product-surface);
 }
 
 .app-shell-container {
@@ -37,25 +40,157 @@ body {
   padding-inline: var(--product-shell-gutter);
 }
 
-.app-header,
-.app-footer {
+.app-header {
+  width: 100%;
+  height: 119px;
   background: var(--product-surface);
-  border-color: var(--product-line);
+  border-bottom: 1px solid var(--product-line);
 }
 
 .app-utility-bar {
+  height: 36px;
   background: var(--product-tint);
-  border-color: var(--product-line);
+}
+
+.app-utility-action {
+  transition: color 160ms ease;
+}
+
+.app-utility-action:hover {
+  color: var(--product-ink);
+}
+
+.app-gnb {
+  height: 83px;
+  background: var(--product-surface);
+}
+
+.app-brand {
+  display: flex;
+  width: 130px;
+  min-width: 130px;
+  height: 47px;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--product-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.app-brand-copy {
+  display: flex;
+  min-width: 0;
+  height: 47px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.app-brand-name {
+  display: block;
+  color: var(--product-accent-deep);
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: -0.03em;
+}
+
+.app-brand-subtitle {
+  display: block;
+  color: var(--product-faint);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.app-primary-nav {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 52px;
+}
+
+.app-nav-link {
+  color: var(--product-body);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  transition: color 160ms ease;
+}
+
+.app-nav-link:hover,
+.app-nav-link[aria-current='page'] {
+  color: var(--product-accent-deep);
+}
+
+.app-nav-link[aria-current='page'] {
+  font-weight: 700;
+}
+
+.app-nav-link-disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.app-header-actions {
+  display: flex;
+  width: 102px;
+  flex: 0 0 102px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.app-header-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--product-body);
+  font-size: 12.5px;
+  line-height: 19px;
+  white-space: nowrap;
 }
 
 .app-title-band {
-  background: linear-gradient(90deg, #f4f3fb 0%, #f6f7f9 58%, #edeafb 100%);
-  border-color: var(--product-line);
+  height: 142px;
+  background: linear-gradient(120.17deg, #dfe9ff 0%, #e9e2fb 33.82%, #dcefff 73.53%);
+}
+
+.app-shell-content {
+  background: var(--product-surface);
+}
+
+.app-footer {
+  min-height: 204px;
+  background: var(--product-tint);
+  border-top: 0;
+}
+
+.app-shell-route-home > main > header:first-child,
+.app-shell-route-qualification > main > div > header:first-child {
+  display: none;
 }
 
 @media (max-width: 1023px) {
   :root {
     --product-shell-gutter: 28px;
+  }
+
+  .app-primary-nav {
+    gap: 28px;
   }
 }
 
@@ -64,7 +199,32 @@ body {
     --product-shell-gutter: 20px;
   }
 
+  .app-header {
+    height: 72px;
+  }
+
   .app-utility-bar {
     display: none;
+  }
+
+  .app-gnb {
+    height: 72px;
+  }
+
+  .app-primary-nav {
+    display: none;
+  }
+
+  .app-title-band {
+    height: 118px;
+  }
+
+  .app-header-actions span {
+    display: none;
+  }
+
+  .app-header-actions {
+    width: auto;
+    flex-basis: auto;
   }
 }

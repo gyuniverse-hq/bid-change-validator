@@ -1,14 +1,15 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist_Mono, Gothic_A1 } from 'next/font/google';
 
 import { AppShell } from '@/components/app-shell';
 
 import './globals.css';
 import '@/components/product/product.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const gothicA1 = Gothic_A1({
+  variable: '--font-product-sans',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
 });
 
 const geistMono = Geist_Mono({
@@ -28,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${gothicA1.variable} ${geistMono.variable} antialiased`}>
         <AppShell>{children}</AppShell>
       </body>
     </html>

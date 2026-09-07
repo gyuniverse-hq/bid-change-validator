@@ -31,7 +31,7 @@ export function AppHeader({ pathname }: { pathname: string }) {
   return (
     <header className="app-header">
       <div className="app-utility-bar">
-        <PageContainer className="flex h-full items-center justify-between gap-4 text-[12px]">
+        <PageContainer className="flex h-full items-center justify-between text-[12.5px] leading-[19px]">
           <div className="flex items-center gap-4 text-[var(--product-muted)]">
             <span>나라장터</span>
             <span>조달청</span>
@@ -47,17 +47,17 @@ export function AppHeader({ pathname }: { pathname: string }) {
         <PageContainer className="flex h-full items-center gap-5">
           <Link href="/" className="app-brand" aria-label="비드체크 공고 찾기">
             <span className="app-brand-mark" aria-hidden="true">B</span>
-            <span className="min-w-0">
-              <strong className="block text-[22px] leading-6 tracking-[-0.03em]">비드체크</strong>
-              <span className="mt-1 block text-[11px] leading-4 text-[var(--product-muted)]">입찰 참가자격 확인</span>
+            <span className="app-brand-copy">
+              <strong className="app-brand-name">비드체크</strong>
+              <span className="app-brand-subtitle">입찰 참가자격 확인</span>
             </span>
           </Link>
 
-          <nav className="hidden min-w-0 flex-1 items-center justify-center gap-10 lg:flex" aria-label="주요 메뉴">
+          <nav className="app-primary-nav" aria-label="주요 메뉴">
             {PRIMARY_NAV.map((item) => {
               if (item.disabled) {
                 return (
-                  <span key={item.href} className="app-nav-link opacity-45" aria-disabled="true">
+                  <span key={item.href} className="app-nav-link app-nav-link-disabled" aria-disabled="true">
                     {item.label}
                   </span>
                 );
@@ -76,14 +76,14 @@ export function AppHeader({ pathname }: { pathname: string }) {
             })}
           </nav>
 
-          <div className="ml-auto flex shrink-0 items-center gap-5 text-[12px] text-[var(--product-muted)]">
-            <button type="button" className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--product-ink)]">
-              <Bell className="size-4" />
-              <span className="hidden sm:inline">알림</span>
+          <div className="app-header-actions">
+            <button type="button" className="app-header-action">
+              <Bell className="size-[15px]" strokeWidth={1.7} />
+              <span>알림</span>
             </button>
-            <button type="button" className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--product-ink)]">
-              <Menu className="size-4" />
-              <span className="hidden sm:inline">전체메뉴</span>
+            <button type="button" className="app-header-action">
+              <Menu className="size-[15px]" strokeWidth={1.7} />
+              <span>전체메뉴</span>
             </button>
           </div>
         </PageContainer>

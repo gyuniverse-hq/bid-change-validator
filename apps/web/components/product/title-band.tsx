@@ -9,14 +9,14 @@ export type TitleBandProps = {
 export function TitleBand({ title, description, breadcrumb }: TitleBandProps) {
   return (
     <section className="app-title-band">
-      <PageContainer className="relative flex h-full items-center">
-        <div className="min-w-0 pb-1">
-          <h1 className="text-[32px] font-semibold leading-[44px] tracking-[-0.035em] text-[var(--product-ink)]">
+      <PageContainer className="flex h-full items-end justify-between gap-8 pb-[34px]">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-[9px]">
+          <h1 className="text-[29px] font-extrabold leading-[44px] tracking-[-0.04em] text-[var(--product-ink)]">
             {title}
           </h1>
-          <p className="mt-1 text-[14px] leading-[21px] text-[var(--product-muted)]">{description}</p>
+          <p className="text-[14px] leading-[21px] text-[var(--product-muted)]">{description}</p>
         </div>
-        <p className="absolute right-[var(--product-shell-gutter)] bottom-7 hidden text-[12px] text-[var(--product-faint)] md:block">
+        <p className="hidden shrink-0 pb-[2px] text-[12.5px] leading-[19px] text-[var(--product-muted)] md:block">
           {breadcrumb}
         </p>
       </PageContainer>

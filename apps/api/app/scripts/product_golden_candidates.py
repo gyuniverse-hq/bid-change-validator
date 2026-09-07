@@ -40,7 +40,7 @@ def candidate_score(
     """
 
     return round(
-        max(version_count - 1, 0) * 100
+        max(version_count - 1, 0) * 300
         + change_reason_count * 25
         + extracted_document_count * 20
         + document_count * 5

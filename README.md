@@ -121,6 +121,8 @@ pnpm install
 pnpm dev
 ```
 
+`apps/web/.env.example`에는 로컬 API 주소가 기본값으로 들어 있습니다. `pnpm-workspace.yaml`은 `esbuild`, `sharp`, `workerd`의 필수 build script를 허용하므로 별도의 `pnpm approve-builds` 단계 없이 설치할 수 있습니다.
+
 확인 주소:
 
 - API health: `http://localhost:8000/health`
@@ -187,6 +189,7 @@ GET  /api/v1/preflight-cases/{case_id}/documents/{document_id}/preview
 ```powershell
 cd apps/web
 Copy-Item .env.example .env.local
+pnpm install
 pnpm dev
 ```
 

@@ -12,6 +12,7 @@ from .errors import ApiError
 from .qualification_analysis_router import router as qualification_analysis_router
 from .qualification_ask_back_router import router as qualification_ask_back_router
 from .qualification_judgment_router import router as qualification_judgment_router
+from .qualification_revalidation_router import router as qualification_revalidation_router
 from .routers.companies import router as companies_router
 from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router
@@ -72,3 +73,4 @@ app.include_router(preflight_cases_router)
 app.include_router(qualification_analysis_router)
 app.include_router(qualification_judgment_router)
 app.include_router(qualification_ask_back_router)
+app.include_router(qualification_revalidation_router)

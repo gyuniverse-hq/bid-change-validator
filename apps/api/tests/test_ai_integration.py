@@ -203,6 +203,7 @@ def test_performance_slot_can_add_experience_field_to_same_group() -> None:
             "raw": "최근 3년 공공기관 정보시스템 구축 실적 2건 이상",
             "기간_norm": {"parse_status": "success", "value": 36},
             "경험분야_raw": "공공기관 정보시스템 구축",
+            "실적기관_raw": "공공기관",
         },
         notice_version_id="version-1",
         key_prefix="REQ-EXP",
@@ -215,7 +216,9 @@ def test_performance_slot_can_add_experience_field_to_same_group() -> None:
     }
     experience = next(item for item in requirements if item.type == "EXPERIENCE_FIELD")
     assert experience.value == "공공기관 정보시스템 구축"
+    assert experience.operator == "MATCH"
     assert experience.period_months == 36
+    assert experience.scope["client_requirement"] == "공공기관"
     assert all(item.requirement_group_key == "REQ-EXP-GROUP" for item in requirements)
 
 
@@ -233,6 +236,7 @@ def test_industry_slot_maps_to_canonical_industry_requirement() -> None:
     assert diagnostics == []
     assert len(requirements) == 1
     assert requirements[0].type == "INDUSTRY"
+    assert requirements[0].operator == "MATCH"
     assert requirements[0].value == "소프트웨어사업자"
 
 
@@ -250,7 +254,103 @@ def test_standalone_experience_field_slot_maps_to_canonical_requirement() -> Non
     assert diagnostics == []
     assert len(requirements) == 1
     assert requirements[0].type == "EXPERIENCE_FIELD"
+    assert requirements[0].operator == "MATCH"
     assert requirements[0].value == "공공기관 정보시스템 구축"
+
+
+def test_region_staff_certification_and_company_size_have_judgment_operands() -> None:
+    cases = [
+        (
+            {
+                "유형": "지역요건",
+                "raw": "서울특별시 소재 업체",
+                "지역_raw": "서울특별시",
+            },
+            "REGION",
+            "서울특별시",
+            "MATCH",
+        ),
+        (
+            {
+                "유형": "인력요건",
+                "raw": "정보처리기사 2명 이상 보유",
+                "인력역할_raw": "정보처리기사",
+                "인원_norm": {
+                    "parse_status": "success",
+                    "value": 2,
+                    "unit": "PERSON",
+                    "op": ">=",
+                },
+            },
+            "STAFF",
+            2,
+            ">=",
+        ),
+        (
+            {
+                "유형": "등록요건",
+                "raw": "정보통신공사업 등록업체",
+                "등록인증_raw": "정보통신공사업",
+            },
+            "REGISTRATION_CERTIFICATION",
+            "정보통신공사업",
+            "MATCH",
+        ),
+        (
+            {
+                "유형": "기업규모요건",
+                "raw": "중소기업자만 참가 가능",
+                "기업규모_raw": "중소기업",
+            },
+            "COMPANY_SIZE",
+            "중소기업",
+            "MATCH",
+        ),
+    ]
+
+    for index, (slot, expected_type, expected_value, expected_operator) in enumerate(cases):
+        requirements, diagnostics = adapt_legacy_slot(
+            slot,
+            notice_version_id="version-1",
+            key_prefix=f"REQ-{index}",
+        )
+        assert diagnostics == []
+        assert len(requirements) == 1
+        requirement = requirements[0]
+        assert requirement.type == expected_type
+        assert requirement.value == expected_value
+        assert requirement.operator == expected_operator
+
+
+def test_amount_range_is_preserved_in_canonical_scope() -> None:
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "실적요건",
+            "raw": "실적금액 2억원 이상 5억원 이하",
+            "금액_norm": {
+                "parse_status": "success",
+                "value": None,
+                "unit": "KRW",
+                "op": None,
+                "range": {
+                    "min": 200000000,
+                    "min_op": ">=",
+                    "max": 500000000,
+                    "max_op": "<=",
+                },
+            },
+        },
+        notice_version_id="version-1",
+        key_prefix="REQ-RANGE",
+    )
+
+    assert diagnostics == []
+    requirement = requirements[0]
+    assert requirement.type == "PERFORMANCE_AMOUNT"
+    assert requirement.operator == "RANGE"
+    assert requirement.value is None
+    assert requirement.scope["min"] == 200000000
+    assert requirement.scope["max"] == 500000000
 
 
 def test_legacy_other_requirement_stays_diagnostic() -> None:

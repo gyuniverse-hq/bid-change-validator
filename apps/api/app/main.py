@@ -17,6 +17,7 @@ from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router
 from .routers.preflight_cases import router as preflight_cases_router
 
+
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
@@ -29,18 +30,40 @@ app.add_middleware(
     expose_headers=["Content-Length", "Content-Type", "ETag"],
 )
 
+
 @app.exception_handler(ApiError)
 async def handle_api_error(_request, error: ApiError) -> JSONResponse:
-    return JSONResponse(status_code=error.status_code,content={"error":{"code":error.code,"message":error.message,"details":jsonable_encoder(error.details)}})
+    return JSONResponse(
+        status_code=error.status_code,
+        content={
+            "error": {
+                "code": error.code,
+                "message": error.message,
+                "details": jsonable_encoder(error.details),
+            }
+        },
+    )
+
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(_request, error: RequestValidationError) -> JSONResponse:
-    return JSONResponse(status_code=422,content={"error":{"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다.","details":jsonable_encoder(error.errors())}})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "INVALID_REQUEST",
+                "message": "요청 형식이 올바르지 않습니다.",
+                "details": jsonable_encoder(error.errors()),
+            }
+        },
+    )
+
 
 @app.get("/health", tags=["system"])
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
     db.execute(text("SELECT 1"))
     return {"status": "ok"}
+
 
 app.include_router(companies_router)
 app.include_router(master_codes_router)

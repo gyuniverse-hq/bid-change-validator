@@ -1,7 +1,6 @@
 """Orchestration for qualification requirement analysis.
 
-This module keeps the integration boundary inside `app.ai` and composes the
-pieces already introduced on the integration branch:
+This module keeps the integration boundary inside `app.ai` and composes:
 
     backend document blocks
         -> canonical source blocks
@@ -11,9 +10,8 @@ pieces already introduced on the integration branch:
         -> canonical Requirement + Evidence
         -> RequirementAnalysisResult
 
-The structured LLM extractor remains injectable. Numeric normalization now has an
-internal deterministic default ported from the existing LLM/RAG PoC, while callers
-may still override it in tests or experiments.
+The structured LLM extractor remains injectable. Normalization is deterministic;
+callers may still override the normalizer in tests or experiments.
 """
 
 from __future__ import annotations
@@ -34,11 +32,7 @@ ValueNormalizer = Callable[[str], dict[str, Any]]
 
 
 class QualificationDocumentInput(BaseModel):
-    """Minimal Backend -> AI document input used by the orchestration layer.
-
-    `document_id`, hashes, and extracted blocks are Backend-owned. The AI layer
-    does not infer or create document identity or source hashes.
-    """
+    """Minimal Backend -> AI document input used by the orchestration layer."""
 
     document_id: str
     file_sha256: str | None = None
@@ -66,11 +60,7 @@ def _build_global_chunks(
     *,
     max_chunk_chars: int,
 ) -> list[dict[str, Any]]:
-    """Chunk each document independently, then assign run-global chunk IDs.
-
-    Documents must never be merged into one semantic chunk. Besides being
-    semantically unsafe, Evidence requires exactly one Backend document_id.
-    """
+    """Chunk each document independently, then assign run-global chunk IDs."""
     chunks: list[dict[str, Any]] = []
 
     for document in documents:
@@ -83,12 +73,7 @@ def _build_global_chunks(
         document_chunks = chunk_source_blocks(source_blocks, max_chars=max_chunk_chars)
 
         for chunk in document_chunks:
-            chunks.append(
-                {
-                    **chunk,
-                    "chunk_id": f"CHUNK-{len(chunks):04d}",
-                }
-            )
+            chunks.append({**chunk, "chunk_id": f"CHUNK-{len(chunks):04d}"})
 
     return chunks
 
@@ -98,17 +83,19 @@ def _normalize_extracted_slots(
     *,
     normalize_value: ValueNormalizer,
 ) -> list[dict[str, Any]]:
-    """Apply code-only normalization to raw amount/period fields."""
+    """Apply code-only normalization to numeric operands exposed by extraction."""
     normalized_slots: list[dict[str, Any]] = []
 
     for source_slot in slots:
         slot = dict(source_slot)
-        amount_raw = slot.get("금액_raw")
-        period_raw = slot.get("기간_raw")
-        if amount_raw:
-            slot["금액_norm"] = normalize_value(str(amount_raw))
-        if period_raw:
-            slot["기간_norm"] = normalize_value(str(period_raw))
+        for raw_field, normalized_field in (
+            ("금액_raw", "금액_norm"),
+            ("기간_raw", "기간_norm"),
+            ("인원_raw", "인원_norm"),
+        ):
+            raw_value = slot.get(raw_field)
+            if raw_value:
+                slot[normalized_field] = normalize_value(str(raw_value))
         normalized_slots.append(slot)
 
     return normalized_slots
@@ -122,17 +109,9 @@ def analyze_qualification_documents(
     max_retry: int = 1,
     max_chunk_chars: int = 1800,
 ) -> RequirementAnalysisResult:
-    """Run one qualification Requirement analysis without touching Backend state.
-
-    This function is intentionally pure from the Backend perspective: it receives
-    already-extracted document blocks and returns a validated contract object. It
-    performs no DB writes, no file parsing, and no router/service mutation.
-    """
+    """Run one qualification Requirement analysis without touching Backend state."""
     document_ids = [document.document_id for document in analysis_input.documents]
-    chunks = _build_global_chunks(
-        analysis_input.documents,
-        max_chunk_chars=max_chunk_chars,
-    )
+    chunks = _build_global_chunks(analysis_input.documents, max_chunk_chars=max_chunk_chars)
 
     if not chunks:
         return build_requirement_analysis_result(

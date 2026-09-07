@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 import { AppFooter } from '@/components/product/app-footer';
@@ -10,6 +11,9 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
 };
+
+const WORKSPACE_ROUTES = new Set(['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes']);
+const ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
   {
@@ -29,6 +33,7 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       title: '참가자격 검토',
       description: '판정한 모든 항목에 공고 원문 근거를 함께 표시합니다.',
       breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토',
+      variant: 'tall',
     },
   },
   {
@@ -36,8 +41,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       (pathname.startsWith('/cases/') && pathname.endsWith('/questions')) || pathname === '/ask-back',
     page: {
       title: '확인 필요에 답하기',
-      description: '판정에 필요한 값만 질문하고, 답한 항목만 다시 판정합니다.',
-      breadcrumb: '홈 › 내 입찰 건 › 확인 필요',
+      description: '이유가 셋이고, 이유마다 하실 일이 다릅니다.',
+      breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 확인 필요',
     },
   },
   {
@@ -45,8 +50,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       (pathname.startsWith('/cases/') && pathname.endsWith('/evidence')) || pathname === '/evidence',
     page: {
       title: '근거 원문 대조',
-      description: '판정에 사용한 공고 원문과 회사 값을 같은 화면에서 대조합니다.',
-      breadcrumb: '홈 › 내 입찰 건 › 근거 원문',
+      description: '왼쪽은 공고 원문, 오른쪽은 그 원문으로 내린 판정입니다.',
+      breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 근거 대조',
     },
   },
   {
@@ -55,8 +60,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       pathname === '/evaluation',
     page: {
       title: '평가 대응',
-      description: '평가 관련 원문과 대응에 필요한 정보를 함께 확인합니다.',
-      breadcrumb: '홈 › 내 입찰 건 › 평가 대응',
+      description: '배점 원문과 회사 프로필의 대응값을 나란히 확인합니다.',
+      breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 평가 대응',
     },
   },
   {
@@ -64,8 +69,8 @@ const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }>
       (pathname.startsWith('/cases/') && pathname.endsWith('/changes')) || pathname === '/changes',
     page: {
       title: '변경 이력',
-      description: '공고 차수별 변경 내용과 판정 영향을 추적합니다.',
-      breadcrumb: '홈 › 내 입찰 건 › 변경 이력',
+      description: '공고가 바뀐 곳과, 그 때문에 다시 판정한 항목을 보여줍니다.',
+      breadcrumb: '홈 › 내 입찰 건 › 참가자격 검토 › 변경 이력',
     },
   },
   {
@@ -88,7 +93,21 @@ function pageInfoFor(pathname: string): PageInfo {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const page = pageInfoFor(pathname);
+  const caseId = searchParams.get('caseId');
+
+  useEffect(() => {
+    if (!WORKSPACE_ROUTES.has(pathname)) return;
+    if (caseId) {
+      window.sessionStorage.setItem(ACTIVE_CASE_KEY, caseId);
+      return;
+    }
+    const remembered = window.sessionStorage.getItem(ACTIVE_CASE_KEY);
+    if (remembered) router.replace(`${pathname}?caseId=${encodeURIComponent(remembered)}`);
+  }, [caseId, pathname, router]);
+
   const legacyRouteClass =
     pathname === '/'
       ? 'app-shell-route-home'
@@ -100,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
       <AppHeader pathname={pathname} />
       {page.showTitleBand !== false && (
-        <TitleBand title={page.title} description={page.description} breadcrumb={page.breadcrumb} />
+        <TitleBand title={page.title} description={page.description} breadcrumb={page.breadcrumb} variant={page.variant} />
       )}
       <div className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
       <AppFooter />

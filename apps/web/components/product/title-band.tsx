@@ -4,11 +4,12 @@ export type TitleBandProps = {
   title: string;
   description: string;
   breadcrumb: string;
+  variant?: 'default' | 'tall';
 };
 
-export function TitleBand({ title, description, breadcrumb }: TitleBandProps) {
+export function TitleBand({ title, description, breadcrumb, variant = 'default' }: TitleBandProps) {
   return (
-    <section className="app-title-band">
+    <section className={`app-title-band ${variant === 'tall' ? 'app-title-band-tall' : ''}`}>
       <PageContainer className="flex h-full items-end justify-between gap-8 pb-[34px]">
         <div className="flex min-w-0 flex-1 flex-col items-start gap-[9px]">
           <h1 className="text-[29px] font-extrabold leading-[44px] tracking-[-0.04em] text-[var(--product-ink)]">

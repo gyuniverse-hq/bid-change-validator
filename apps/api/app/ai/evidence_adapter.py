@@ -1,8 +1,8 @@
 """Build Canonical Evidence from validated extraction provenance.
 
-The extraction guardrail already attaches `_source_chunk_id` and `_source_blocks`
-to accepted legacy slots. This module turns that provenance into the shared
-Evidence contract without re-searching the document or inventing location data.
+The extraction guardrail attaches `_source_chunk_id` and `_source_blocks` to
+accepted slots. This module turns that provenance into the shared Evidence
+contract without re-searching the document or inventing location data.
 """
 
 from __future__ import annotations
@@ -39,6 +39,13 @@ def _display_location(source_blocks: list[dict[str, Any]]) -> str | None:
     return f"{locations[0]} ~ {locations[-1]}"
 
 
+def _single_hash(source_blocks: list[dict[str, Any]], field: str) -> str | None:
+    values = {str(block.get(field)) for block in source_blocks if block.get(field)}
+    if len(values) > 1:
+        raise ValueError(f"evidence source_blocks contain conflicting {field} values")
+    return next(iter(values)) if values else None
+
+
 def build_evidence_from_slot(
     slot: dict[str, Any],
     *,
@@ -47,31 +54,22 @@ def build_evidence_from_slot(
     notice_version_id: str | None = None,
     case_id: str | None = None,
 ) -> Evidence:
-    """Convert validated slot provenance to Canonical Evidence.
-
-    Preconditions:
-    - slot passed source-grounding validation
-    - `_source_blocks` came from the matching semantic chunk
-
-    No fallback document search is performed here. Missing provenance is treated
-    as a contract error so callers cannot accidentally persist untraceable evidence.
-    """
+    """Convert validated slot provenance to Canonical Evidence."""
     source_blocks = list(slot.get("_source_blocks") or [])
     if not source_blocks:
         raise ValueError("validated slot is missing _source_blocks provenance")
 
-    document_ids = {str(block.get("document_id")) for block in source_blocks if block.get("document_id")}
+    document_ids = {
+        str(block.get("document_id"))
+        for block in source_blocks
+        if block.get("document_id")
+    }
     if len(document_ids) != 1:
         raise ValueError("evidence source_blocks must resolve to exactly one document_id")
     document_id = next(iter(document_ids))
 
-    source_hashes = {
-        str(block.get("source_sha256"))
-        for block in source_blocks
-        if block.get("source_sha256")
-    }
-    if len(source_hashes) > 1:
-        raise ValueError("evidence source_blocks contain conflicting source hashes")
+    source_sha256 = _single_hash(source_blocks, "source_sha256")
+    extracted_text_sha256 = _single_hash(source_blocks, "extracted_text_sha256")
 
     pages = [block.get("page") for block in source_blocks]
     sections = [block.get("section_index") for block in source_blocks]
@@ -106,5 +104,6 @@ def build_evidence_from_slot(
             display=_display_location(source_blocks),
         ),
         quote=(slot.get("raw") or "").strip(),
-        source_sha256=next(iter(source_hashes)) if source_hashes else None,
+        source_sha256=source_sha256,
+        extracted_text_sha256=extracted_text_sha256,
     )

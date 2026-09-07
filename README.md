@@ -86,6 +86,50 @@ GET /api/v1/master-codes/institutions/1011052
 
 검색 결과는 정확한 코드, 코드 앞부분, 정확한 이름, 이름 앞부분 순서로 우선 정렬됩니다. `active_only=true`가 기본값이며 `limit`은 1부터 100까지 지정할 수 있습니다.
 
+## 로컬 Qualification Integration 확인
+
+`integration/mvp-baseline`의 `/qualification` 화면에서 실제 Backend API와 OpenAI 기반 자격요건 분석 경로를 확인할 수 있습니다.
+
+먼저 저장소 루트에서 `.env.example`을 `.env`로 복사하고 OpenAI API Key를 입력합니다.
+
+```powershell
+Copy-Item .env.example .env
+```
+
+`.env`의 다음 값을 설정합니다.
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL_DEFAULT=gpt-5.6-luna
+```
+
+`.env`와 `.env.*`는 Git ignore 대상이며 `.env.example`만 추적합니다. 실제 API Key를 commit하지 마세요.
+
+Backend API 컨테이너를 시작합니다.
+
+```powershell
+docker compose up -d --build api notice-poller
+docker compose ps
+```
+
+프론트엔드는 별도 터미널에서 실행합니다.
+
+```powershell
+cd apps/web
+Copy-Item .env.example .env.local
+pnpm install
+pnpm dev
+```
+
+확인 주소:
+
+- API health: `http://localhost:8000/health`
+- Swagger: `http://localhost:8000/docs`
+- 기본 화면: `http://localhost:3000`
+- Qualification Integration: `http://localhost:3000/qualification`
+
+`OPENAI_API_KEY`가 비어 있으면 qualification analysis 실행 시 `AI_PROVIDER_NOT_CONFIGURED` 오류가 반환되는 것이 정상입니다.
+
 ## 나라장터 공고 수집
 
 등록공고, 변경공고 또는 공고번호 한 건을 API로 수집할 수 있습니다.

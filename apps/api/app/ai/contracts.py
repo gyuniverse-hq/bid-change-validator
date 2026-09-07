@@ -15,7 +15,9 @@ RequirementType = Literal[
     "STAFF",
     "REGISTRATION_CERTIFICATION",
     "EXPERIENCE_FIELD",
+    "COMPANY_SIZE",
 ]
+RequirementOperator = Literal[">=", ">", "<=", "<", "=", "MATCH", "RANGE"]
 
 JudgmentStatus = Literal["SATISFIED", "UNSATISFIED", "UNKNOWN"]
 BasisType = Literal["PROFILE", "USER_ANSWER", "NONE"]
@@ -54,7 +56,10 @@ class Evidence(BaseModel):
     chunk_id: str | None = None
     location: EvidenceLocation
     quote: str
+    # Original file identity and the exact extracted-text identity are kept
+    # separately so an evaluation run stays reproducible even if parsers evolve.
     source_sha256: str | None = None
+    extracted_text_sha256: str | None = None
 
 
 class QualificationRequirement(BaseModel):
@@ -63,7 +68,7 @@ class QualificationRequirement(BaseModel):
     group_operator: Literal["ALL_OF", "ANY_OF"] | None = None
     notice_version_id: str
     type: RequirementType
-    operator: str | None = None
+    operator: RequirementOperator | None = None
     value: int | float | str | None = None
     unit: str | None = None
     period_months: float | None = None

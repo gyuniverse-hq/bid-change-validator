@@ -1,0 +1,70 @@
+:root {
+  --product-accent: #2b4fd8;
+  --product-accent-deep: #1f3ab0;
+  --product-accent-soft: #edeafb;
+
+  --product-surface: #ffffff;
+  --product-tint: #f6f7f9;
+  --product-tint-2: #f4f3fb;
+
+  --product-ink: #14161c;
+  --product-body: #33373d;
+  --product-muted: #5a6069;
+  --product-faint: #6e747c;
+
+  --product-line: #e4e7ed;
+  --product-line-2: #eef0f4;
+
+  --product-ok: #147a4a;
+  --product-warn: #8a5a00;
+
+  --product-card-radius: 20px;
+  --product-panel-radius: 24px;
+  --product-pill-radius: 999px;
+
+  --product-shell-gutter: 44px;
+  --product-shell-max: 1440px;
+}
+
+body {
+  background: var(--product-tint);
+  color: var(--product-body);
+}
+
+.app-shell-container {
+  width: min(100%, var(--product-shell-max));
+  margin-inline: auto;
+  padding-inline: var(--product-shell-gutter);
+}
+
+.app-header,
+.app-footer {
+  background: var(--product-surface);
+  border-color: var(--product-line);
+}
+
+.app-utility-bar {
+  background: var(--product-tint);
+  border-color: var(--product-line);
+}
+
+.app-title-band {
+  background: linear-gradient(90deg, #f4f3fb 0%, #f6f7f9 58%, #edeafb 100%);
+  border-color: var(--product-line);
+}
+
+@media (max-width: 1023px) {
+  :root {
+    --product-shell-gutter: 28px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --product-shell-gutter: 20px;
+  }
+
+  .app-utility-bar {
+    display: none;
+  }
+}

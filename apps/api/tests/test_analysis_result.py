@@ -33,6 +33,7 @@ def _evidence(document_id="doc-1", notice_version_id="version-1"):
         location=EvidenceLocation(page=14, clause_label="3.1", display="p.14"),
         quote="최근 3년 실적 합계 4억원 이상",
         source_sha256="sha",
+        extracted_text_sha256="text-sha",
     )
 
 
@@ -49,12 +50,13 @@ def test_build_successful_analysis_result():
         },
     )
 
-    assert result.contract_version == "ai-analysis-v0.1"
+    assert result.contract_version == "ai-analysis-v0.2"
     assert result.analysis_kind == "QUALIFICATION_REQUIREMENTS"
     assert result.status == "SUCCEEDED"
     assert result.notice_id == "notice-1"
     assert result.requirements[0].evidence_keys == ["REQ-001-EVD"]
     assert result.evidence[0].document_id == "doc-1"
+    assert result.evidence[0].extracted_text_sha256 == "text-sha"
 
 
 def test_canonicalization_diagnostic_makes_result_partial():

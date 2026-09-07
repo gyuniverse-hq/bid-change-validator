@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .errors import ApiError
 from .judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationJudgmentTrigger, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
-from .qualification_judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, run_qualification_judgment, update_profile_completeness
+from .qualification_judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, update_profile_completeness
+from .qualification_judgment_target import run_targeted_qualification_judgment
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification judgment"])
@@ -38,7 +39,12 @@ def patch_profile_completeness(company_id: UUID, payload: QualificationProfileCo
 def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgmentTrigger | None = None, db: Session = Depends(get_db)) -> QualificationJudgmentRunRead:
     payload = payload or QualificationJudgmentTrigger()
     try:
-        run = run_qualification_judgment(db, case_id=case_id, analysis_run_id=payload.analysis_run_id, reference_date=payload.reference_date)
+        run = run_targeted_qualification_judgment(
+            db,
+            case_id=case_id,
+            analysis_run_id=payload.analysis_run_id,
+            reference_date=payload.reference_date,
+        )
         return judgment_run_response(run)
     except QualificationJudgmentError as error:
         raise _as_api_error(error) from error

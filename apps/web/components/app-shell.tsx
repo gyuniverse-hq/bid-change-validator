@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 import { AppFooter } from '@/components/product/app-footer';
@@ -10,6 +11,9 @@ import { TitleBand, type TitleBandProps } from '@/components/product/title-band'
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
 };
+
+const WORKSPACE_ROUTES = new Set(['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes']);
+const ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
   {
@@ -89,7 +93,21 @@ function pageInfoFor(pathname: string): PageInfo {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const page = pageInfoFor(pathname);
+  const caseId = searchParams.get('caseId');
+
+  useEffect(() => {
+    if (!WORKSPACE_ROUTES.has(pathname)) return;
+    if (caseId) {
+      window.sessionStorage.setItem(ACTIVE_CASE_KEY, caseId);
+      return;
+    }
+    const remembered = window.sessionStorage.getItem(ACTIVE_CASE_KEY);
+    if (remembered) router.replace(`${pathname}?caseId=${encodeURIComponent(remembered)}`);
+  }, [caseId, pathname, router]);
+
   const legacyRouteClass =
     pathname === '/'
       ? 'app-shell-route-home'

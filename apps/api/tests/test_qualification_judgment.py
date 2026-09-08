@@ -6,8 +6,8 @@ from apps.api.app.ai.judgment import CompanyProfileSnapshot, ProfileCertificatio
 REFERENCE_DATE = date(2026, 9, 7)
 
 
-def _requirement(key: str, req_type: str, *, operator: str = "MATCH", value=None, scope=None, period_months=None, group_key=None, group_operator="ALL_OF"):
-    return QualificationRequirement(requirement_key=key, requirement_group_key=group_key or f"{key}-GROUP", group_operator=group_operator, notice_version_id="version-1", type=req_type, operator=operator, value=value, scope=scope or {}, period_months=period_months, raw=f"raw:{key}")
+def _requirement(key: str, req_type: str, *, operator: str = "MATCH", value=None, scope=None, period_months=None, group_key=None, group_operator="ALL_OF", requirement_role="mandatory", condition_complexity="simple"):
+    return QualificationRequirement(requirement_key=key, requirement_group_key=group_key or f"{key}-GROUP", group_operator=group_operator, notice_version_id="version-1", type=req_type, operator=operator, value=value, scope=scope or {}, period_months=period_months, requirement_role=requirement_role, condition_complexity=condition_complexity, raw=f"raw:{key}")
 
 
 def _profile(*, completeness: ProfileCompleteness | None = None, certifications=None):
@@ -51,6 +51,9 @@ def test_changed_performance_threshold_stays_unknown_when_profile_is_incomplete(
     requirement = _requirement("REQ-PERFORMANCE", "PERFORMANCE_AMOUNT", operator=">=", value=600_000_000, period_months=36)
     result = judge_requirements([requirement], _profile(completeness=ProfileCompleteness(performances=False)), preflight_case_id="case-1", reference_date=REFERENCE_DATE)
     assert result.judgments[0].status == "UNKNOWN"
+    assert result.judgments[0].unknown_reason == "profile_missing"
+    assert result.judgments[0].value_source == "none"
+    assert result.judgments[0].evidence_status == "none"
     assert result.overall_status == "insufficient_data"
 
 
@@ -103,3 +106,42 @@ def test_performance_amount_cannot_use_unrelated_field_or_future_work():
     future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
     profile = profile.model_copy(update={"performances": [future]})
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+
+
+def test_preferred_requirement_does_not_change_overall_eligibility():
+    requirements = [
+        _requirement("REQ-MANDATORY", "REGION", value="서울특별시"),
+        _requirement(
+            "REQ-PREFERRED",
+            "REGISTRATION_CERTIFICATION",
+            value="없는 가점 인증",
+            requirement_role="preferred",
+        ),
+    ]
+    profile = _profile(completeness=ProfileCompleteness(certifications=True))
+    result = judge_requirements(
+        requirements,
+        profile,
+        preflight_case_id="case-1",
+        reference_date=REFERENCE_DATE,
+    )
+    assert result.judgments[1].status == "UNSATISFIED"
+    assert result.overall_status == "eligible"
+
+
+def test_composite_requirement_is_not_automatically_judged():
+    requirement = _requirement(
+        "REQ-COMPOSITE",
+        "REGION",
+        value="서울특별시",
+        condition_complexity="composite",
+    )
+    result = judge_requirements(
+        [requirement],
+        _profile(),
+        preflight_case_id="case-1",
+        reference_date=REFERENCE_DATE,
+    )
+    assert result.judgments[0].status == "UNKNOWN"
+    assert result.judgments[0].unknown_reason == "requirement_uncertain"
+    assert result.overall_status == "insufficient_data"

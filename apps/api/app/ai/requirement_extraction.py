@@ -96,7 +96,20 @@ SLOT_SCHEMA: dict[str, Any] = {
                                 "기타요건",
                             ],
                         },
-                        "raw": {"type": "string", "description": "요건 원문 그대로. 요약·변형 금지"},
+                        "raw": {
+                            "type": "string",
+                            "description": "요건 원문 그대로. 요약·변형 금지",
+                        },
+                        "requirement_role": {
+                            "type": "string",
+                            "enum": ["mandatory", "preferred", "informational"],
+                            "description": "참가 필수, 우대·가점, 단순 안내 여부",
+                        },
+                        "condition_complexity": {
+                            "type": "string",
+                            "enum": ["simple", "composite"],
+                            "description": "단일 조건인지 AND/OR 복합 조건인지",
+                        },
                         "기간_raw": _nullable_source_string("기간 표현 원문. 없으면 null"),
                         "금액_raw": _nullable_source_string("금액 표현 원문. 없으면 null"),
                         "건수_raw": _nullable_source_string("실적 건수 표현 원문. 없으면 null"),
@@ -111,7 +124,16 @@ SLOT_SCHEMA: dict[str, Any] = {
                         "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
                         "근거조항": _nullable_source_string("제공된 텍스트에서 확인되는 조항 번호/라벨"),
                     },
-                    "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"],
+                    # OpenAI strict JSON schema requires every property to be
+                    # required; optional semantic fields are represented as null.
+                    "required": [
+                        "유형",
+                        "raw",
+                        "requirement_role",
+                        "condition_complexity",
+                        *_DETAIL_RAW_FIELDS,
+                        "근거조항",
+                    ],
                 },
             }
         },
@@ -130,10 +152,12 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 8. 인증·면허·등록 요건은 '특정 등록/면허/인증을 보유 또는 완료해야 한다'는 단일 사실일 때만 각각 인증요건/면허요건/등록요건으로 분류한다. 등록인증_raw에는 실제 명칭을 담는다.
 9. 소재지 제한은 유형=지역요건, 지역_raw에 원문 지역명을 담는다.
 10. 소상공인·소기업·중소기업·중견기업·대기업 등 규모 제한은 유형=기업규모요건, 기업규모_raw에 원문 표현을 담는다. Backend enum으로 변환하지 마라.
-11. 근거조항에는 raw가 나온 문서의 실제 조항 번호/라벨을 그대로 복사한다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
-12. 공동수급/공동계약 구성원·대표사 관계, 대표자 중복, 변경등록, 입찰무효, 법령상 예외, '아니어야 한다/하지 않아야 한다' 같은 부정 조건, 여러 조건이 '또는/다만/각 호'로 결합된 복합 절차 조건은 단순 등록·면허·인증 보유 요건으로 축약하지 마라. 닫힌 canonical 유형 하나로 안전하게 표현할 수 없으면 유형=기타요건으로 둔다.
-13. 원문에 여러 독립적인 원자 조건이 명시되어 있으면 한 문장을 임의 요약하지 말고 각각 별도 requirement로 추출한다. 단, 논리 관계를 잃게 되는 복합조건은 억지로 분해하지 말고 기타요건으로 둔다.
-14. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
+11. 입찰 참가에 반드시 필요한 조건은 requirement_role=mandatory, 우대·가점은 preferred, 단순 안내는 informational로 둔다.
+12. 하나의 조건으로 판정 가능하면 condition_complexity=simple, AND/OR 조합을 해석해야 하면 composite로 둔다.
+13. 근거조항에는 raw가 나온 문서의 실제 조항 번호/라벨을 그대로 복사한다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
+14. 공동수급/공동계약 구성원·대표사 관계, 대표자 중복, 변경등록, 입찰무효, 법령상 예외, '아니어야 한다/하지 않아야 한다' 같은 부정 조건, 여러 조건이 '또는/다만/각 호'로 결합된 복합 절차 조건은 단순 등록·면허·인증 보유 요건으로 축약하지 마라. 닫힌 canonical 유형 하나로 안전하게 표현할 수 없으면 유형=기타요건으로 둔다.
+15. 원문에 여러 독립적인 원자 조건이 명시되어 있으면 한 문장을 임의 요약하지 말고 각각 별도 requirement로 추출한다. 단, 논리 관계를 잃게 되는 복합조건은 억지로 분해하지 말고 기타요건으로 둔다.
+16. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
 
 _TOP_LEVEL_LABEL_RE = re.compile(r"^(?:\d+|[가-힣]|[IVXivx]+|제\d+조(?:의\d+)?|제\d+장)$")
 

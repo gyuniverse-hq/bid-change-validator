@@ -49,6 +49,8 @@ def adapt_legacy_slot(
     diagnostics: list[dict[str, Any]] = []
     requirements: list[QualificationRequirement] = []
     group_key = f"{key_prefix}-GROUP"
+    requirement_role = slot.get("requirement_role") or "mandatory"
+    condition_complexity = slot.get("condition_complexity") or "simple"
 
     def add(
         suffix: str,
@@ -72,6 +74,8 @@ def adapt_legacy_slot(
                 unit=unit,
                 period_months=period_months,
                 scope=scope or {},
+                requirement_role=requirement_role,
+                condition_complexity=condition_complexity,
                 raw=raw,
             )
         )

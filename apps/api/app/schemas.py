@@ -502,8 +502,49 @@ class BidNoticeSummary(ApiModel):
     current_version: int
 
 
+class NoticeRelationRead(ApiModel):
+    notice_id: UUID
+    previous_notice_id: UUID | None
+    previous_bid_notice_no: str
+    previous_notice_title: str | None
+    match_method: str
+    match_confidence: str
+    resolved: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoticeFactRead(ApiModel):
+    id: UUID
+    notice_version_id: UUID
+    fact_key: str
+    value_json: object
+    source_type: str
+    source_field: str | None
+    raw_value: str | None
+    document_id: UUID | None
+    evidence_location: dict | None
+    quote: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoticeFactChangeRead(ApiModel):
+    fact_key: str
+    change_type: str
+    baseline: NoticeFactRead | None
+    current: NoticeFactRead | None
+
+
+class NoticeFactDiffRead(ApiModel):
+    baseline_version_id: UUID
+    current_version_id: UUID
+    changes: list[NoticeFactChangeRead]
+
+
 class BidNoticeDetail(BidNoticeSummary):
     latest: BidNoticeVersionRead
+    relation: NoticeRelationRead | None = None
 
 
 class BidNoticeSearchResponse(ApiModel):

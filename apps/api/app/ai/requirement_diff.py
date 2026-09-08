@@ -41,7 +41,7 @@ def semantic_identity(req: QualificationRequirement)->str:
     return "|".join([req.type,*stable_scope_parts,_raw_skeleton(req)])
 
 def decision_payload(req: QualificationRequirement)->dict:
-    return {"type":req.type,"operator":req.operator,"value":req.value,"unit":req.unit,"period_months":req.period_months,"scope":req.scope,"required":req.required,"group_operator":req.group_operator,"raw":_norm_text(req.raw)}
+    return {"type":req.type,"operator":req.operator,"value":req.value,"unit":req.unit,"period_months":req.period_months,"scope":req.scope,"required":req.required,"requirement_role":req.requirement_role,"condition_complexity":req.condition_complexity,"group_operator":req.group_operator,"raw":_norm_text(req.raw)}
 
 def diff_requirements(baseline:list[QualificationRequirement], current:list[QualificationRequirement])->list[RequirementChange]:
     baseline_by_key={r.requirement_key:r for r in baseline}; current_by_key={r.requirement_key:r for r in current}

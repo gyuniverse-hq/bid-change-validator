@@ -54,3 +54,18 @@ def test_reordered_positional_keys_match_conditions_before_keys():
     changes = diff_requirements([a, b], [b.model_copy(update={"requirement_key": "REQ-1"}), a.model_copy(update={"requirement_key": "REQ-2"})])
     assert all(item.change_type == "UNCHANGED" for item in changes)
     assert {(item.baseline_key, item.current_key) for item in changes} == {("REQ-1", "REQ-2"), ("REQ-2", "REQ-1")}
+
+
+def test_role_or_complexity_change_is_decision_relevant():
+    baseline = [_req("REQ-001")]
+    current = [
+        _req("REQ-001").model_copy(
+            update={"requirement_role": "preferred", "required": False}
+        )
+    ]
+    assert diff_requirements(baseline, current)[0].change_type == "MODIFIED"
+
+    composite = [
+        _req("REQ-001").model_copy(update={"condition_complexity": "composite"})
+    ]
+    assert diff_requirements(baseline, composite)[0].change_type == "MODIFIED"

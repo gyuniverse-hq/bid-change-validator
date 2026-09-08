@@ -76,3 +76,30 @@ def test_any_of_group_does_not_make_one_failed_alternative_ineligible():
     ]
     result = judge_requirements(requirements, _profile(), preflight_case_id="case-1", reference_date=REFERENCE_DATE)
     assert result.overall_status == "eligible"
+
+
+def test_industry_identifiers_require_exact_match():
+    from apps.api.app.ai.judgment import ProfileIndustryFact
+    profile = _profile().model_copy(update={"industries": [ProfileIndustryFact(code="11426", name="다른 업종")]})
+    req = _requirement("industry", "INDUSTRY", value="1426")
+    assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+
+
+def test_composite_clause_abstains_even_with_matching_company_certification():
+    req = _requirement("cert", "REGISTRATION_CERTIFICATION", value="정보통신공사업").model_copy(update={"raw": "공동수급체 구성원 모두 정보통신공사업 등록업체이어야 한다."})
+    profile = _profile(certifications=[ProfileCertificationFact(ref="c", name="정보통신공사업")])
+    assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).judgments[0].status == "UNKNOWN"
+
+
+def test_partial_policy_keeps_any_of_logic_and_never_promotes_to_eligible():
+    reqs = [_requirement("a", "REGION", value="서울특별시", group_key="either", group_operator="ANY_OF"), _requirement("b", "REGION", value="부산광역시", group_key="either", group_operator="ANY_OF")]
+    assert judge_requirements(reqs, _profile(), preflight_case_id="c", reference_date=REFERENCE_DATE, analysis_status="PARTIAL").overall_status == "insufficient_data"
+
+
+def test_performance_amount_cannot_use_unrelated_field_or_future_work():
+    req = _requirement("amount", "PERFORMANCE_AMOUNT", operator=">=", value=100, scope={"experience_field": "해외진출"})
+    profile = _profile(completeness=ProfileCompleteness(performances=True))
+    assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+    future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
+    profile = profile.model_copy(update={"performances": [future]})
+    assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"

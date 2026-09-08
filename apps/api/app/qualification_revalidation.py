@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.contracts import Judgment
-from .ai.judgment import derive_overall_status, judge_requirement
+from .ai.judgment import RULE_VERSION, derive_overall_status, judge_requirement
 from .ai.requirement_diff import RequirementChange, diff_requirements
 from .analysis_models import QualificationAnalysisRun
 from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
@@ -28,7 +28,7 @@ from .revalidation_schemas import QualificationRevalidationCreate, Qualification
 
 
 def _load_case(db: Session, case_id: UUID) -> PreflightCase:
-    case = db.get(PreflightCase, case_id)
+    case = db.scalar(select(PreflightCase).where(PreflightCase.id == case_id).with_for_update())
     if case is None:
         raise QualificationJudgmentError("PREFLIGHT_CASE_NOT_FOUND", "사전검토 건을 찾을 수 없습니다.", status_code=404)
     if case.baseline_version_id is None:
@@ -70,6 +70,15 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
         raise QualificationJudgmentError("JUDGMENT_COMPANY_MISMATCH", "기준 판정의 회사와 현재 사전검토 회사가 일치하지 않습니다.", status_code=422)
     if source.notice_version_id != case.baseline_version_id:
         raise QualificationJudgmentError("SOURCE_JUDGMENT_NOT_BASELINE", "기준 판정은 사전검토 건의 baseline 공고 버전에 대한 결과여야 합니다.", status_code=422)
+    if payload.baseline_analysis_run_id is not None and payload.baseline_analysis_run_id != source.analysis_run_id:
+        raise QualificationJudgmentError("SOURCE_ANALYSIS_MISMATCH", "기준 분석은 기준 판정을 생성한 분석과 같아야 합니다.", status_code=422)
+    if payload.reference_date is not None and payload.reference_date != source.reference_date:
+        raise QualificationJudgmentError("REFERENCE_DATE_CHANGED_FULL_REJUDGMENT_REQUIRED", "판정 기준일이 달라 전체 재판정이 필요합니다.", status_code=409)
+    if source.rule_version != RULE_VERSION:
+        raise QualificationJudgmentError("RULE_CHANGED_FULL_REJUDGMENT_REQUIRED", "판정 규칙이 바뀌어 기준 차수부터 다시 판정해야 합니다.", status_code=409)
+    latest_source = db.scalar(select(QualificationJudgmentRun.id).where(QualificationJudgmentRun.preflight_case_id == case_id, QualificationJudgmentRun.notice_version_id == case.baseline_version_id).order_by(QualificationJudgmentRun.created_at.desc()).limit(1))
+    if latest_source != source.id:
+        raise QualificationJudgmentError("STALE_JUDGMENT", "최신 기준 판정으로 재검증해 주세요.", status_code=409)
 
     baseline_analysis = _select_analysis_run(db, notice_version_id=case.baseline_version_id, explicit_run_id=payload.baseline_analysis_run_id or source.analysis_run_id, label="기준")
     current_analysis = _select_analysis_run(db, notice_version_id=case.current_version_id, explicit_run_id=payload.current_analysis_run_id, label="현재")
@@ -108,9 +117,7 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
         judgments.append(judge_requirement(requirement, current_profile, preflight_case_id=str(case.id), reference_date=reference_date))
         revalidated_keys.append(requirement.requirement_key)
 
-    overall_status = derive_overall_status(current.requirements, judgments)
-    if current_analysis.status == "PARTIAL" and overall_status == "eligible":
-        overall_status = "insufficient_data"
+    overall_status = derive_overall_status(current.requirements, judgments, analysis_status=current_analysis.status)
 
     result_run = QualificationJudgmentRun(
         preflight_case_id=case.id, analysis_run_id=current_analysis.id, company_id=case.company_id, notice_version_id=case.current_version_id,

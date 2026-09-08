@@ -77,10 +77,9 @@ def run_targeted_qualification_judgment(
         profile,
         preflight_case_id=str(case.id),
         reference_date=actual_reference_date,
+        analysis_status=analysis_run.status,
     )
     overall_status = evaluation.overall_status
-    if analysis_run.status == "PARTIAL" and overall_status == "eligible":
-        overall_status = "insufficient_data"
 
     run = QualificationJudgmentRun(
         preflight_case_id=case.id,

@@ -60,3 +60,14 @@ def test_numeric_requirement_without_value_is_not_askable():
     decision = classify_askability(item)
     assert decision.askable is False
     assert decision.reason_code == "STRUCTURED_VALUE_REQUIRED"
+
+
+def test_missing_or_incompatible_operator_is_not_askable():
+    for operator in (None, ">="):
+        assert not classify_askability(requirement(operator=operator)).askable
+    assert not classify_askability(requirement(type="PERFORMANCE_COUNT", operator=">=", value="not numeric")).askable
+
+
+def test_real_staff_table_ditto_is_not_a_single_user_fact():
+    from apps.api.app.ai.askability import unsafe_clause_reason
+    assert unsafe_clause_reason("4. 인허가중급1〃") == "UNRESOLVED_TABLE_REFERENCE"

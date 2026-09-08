@@ -7,7 +7,7 @@
 복합 원문의 단순 인증 매핑, 업종 부분문자열 비교, 원문 변경을 놓치는 Diff,
 화면의 최신 분석/오래된 판정 혼합을 수정했다. LLM 추출과 deterministic Rule 판정의 분리는 유지했다.
 
-Backend 100개, 프런트엔드 데이터 연결 회귀 3개, 타입 검사, 수정 파일 lint, build가 통과했다.
+Backend 102개, 프런트엔드 데이터 연결 회귀 3개, 타입 검사, 수정 파일 lint, build가 통과했다.
 실제 공고의 PARTIAL 분석 → Evidence 확인 → UNKNOWN 판정 → unsafe answer 거절까지 확인했다.
 그러나 실제 자격요건이 의미 있게 바뀐 G2를 확보하지 못했고, 실제 공고에서의 추출 완전성도 부족하다.
 
@@ -52,13 +52,13 @@ Backend 100개, 프런트엔드 데이터 연결 회귀 3개, 타입 검사, 수
 | 숫자 연산자/유효값 없이 Askable | `askability.py`: 지원 연산자·유한 비음수 수치 검증 | operator/value 회귀 |
 | 실적 분야 무시·미래 실적 포함·합산 기준 불명확 | `legacy_slots.py`, `judgment.py`: 분야/기간 전달, 미래일 제외, 합계/최대에 따라 결론이 달라지면 UNKNOWN | 분야/미래 실적 회귀 |
 | 다른 문서 라벨로 출처 검증; 원문 뒤쪽의 실제 조항번호는 탈락 | `requirement_extraction.py`: 실제 raw가 있는 chunk의 라벨/줄 시작만 검증, LLM 라벨 합성 금지 지시 | 실제 2-1-1 라벨 및 다른 chunk의 9번 라벨 거절 회귀 |
+| 존재하지 않는 분석 ID가 판정/재검증에서 서버 오류로 새어 나감 | `qualification_judgment.py::load_judgment_analysis`에서 오류를 기존 서비스 오류로 변환하고 초기/대상/Ask-back/재검증에서 재사용 | 두 POST 경로 모두 `ANALYSIS_RUN_NOT_FOUND` / HTTP 404 회귀 |
 | 문서별 참가자격 영역이 누락되거나 입력이 잘려도 완전 분석처럼 보임 | 문서별 anchor와 다른 문서의 보조 키워드, 선택 원문 32,000자 잘림 diagnostic | 문서 경계/부분 추출 회귀 |
 
 ### 남은 P0/P1
 
 - **P0, 제품 동결 조건:** 실제 meaningful G2 미확보. 코드로 만든 변경이나 시간·가격 변경으로 대체하지 않는다. 아래 후보 표를 바탕으로 DB/Data가 수집 범위를 확장해야 한다.
 - **P1, LLM/RAG:** 실제 문서의 표 역할·인원 필드, 중복 chunk, 주변 예외 문맥, 긴 문서 선택의 recall 문제. 이번 보수적 차단은 잘못된 성공을 줄이지만 구조화 개수를 늘리는 해결은 아니다. `requirement_extraction.py`, `legacy_slots.py`를 실제 라벨링 세트의 precision/recall과 함께 고도화해야 한다.
-- **P1, HTTP boundary:** 분석 ID 조회 오류가 일부 Judgment/Revalidation router에서 공통 API 오류로 변환되지 않을 수 있다. `qualification_judgment_router.py`, `qualification_revalidation_router.py`의 error translation과 존재하지 않는 UUID API 검증은 별도 수정 승인이 필요하다. 이번 서비스 정상 경로 검증으로 모든 오류 계약을 보장하지 않는다.
 - **P1, Frontend:** 전체 lint는 기존 접근성/React Compiler 오류 27개로 실패한다. `components/ui/*`, `components/product/profile-records-manager.tsx`, `hooks/use-mobile.ts`, `app/company/{layout,page}.tsx` 등은 승인 범위 밖이므로 고치지 않았다. 실제 프로필 변경 후 화면의 과거 판정/현재 회사값 표시 방식도 추가 검증해야 한다.
 
 ### P2 — 담당자 고도화
@@ -82,14 +82,14 @@ Backend 100개, 프런트엔드 데이터 연결 회귀 3개, 타입 검사, 수
 DB schema/migration, API endpoint 명세, main/develop, 핵심 7개 IA를 변경하지 않았다.
 회사 프로필 자동 승격, 예상 심사점수, 외부 배포/자동 merge도 수행하지 않았다.
 루트의 기존 untracked `package.json`, `pnpm-lock.yaml`은 이 PR에 포함하지 않는다.
-추가 UI 컴포넌트·router 수정은 사용자에게 승인받은 파일 범위 밖이다.
+추가 UI 컴포넌트 수정은 사용자에게 승인받은 파일 범위 밖이다. HTTP 분석 조회 오류는 승인된 공통 서비스에서 처리하여 router 파일을 수정할 필요가 없었다.
 Figma `7:45` 직접 대조는 Figma 도구의 사용량 제한 때문에 완료하지 못했다. 7개 route/5개 탭은 저장소와 실제 화면으로 확인했다.
 
 ## 6. 테스트 결과
 
 | 검사 | 결과 | 보장 범위 |
 |---|---|---|
-| 전체 Backend | **100 passed**, Starlette/AnyIO deprecation warning 1 | Rule, 분석, API/DB, G0, 새 회귀 |
+| 전체 Backend | **102 passed**, Starlette/AnyIO deprecation warning 1 | Rule, 분석, API/DB, G0, 새 회귀 |
 | Frontend Node regression | **3 passed** | current/source identity, stale result 배제, 잘못된 Case/차수 |
 | `pnpm exec tsc --noEmit --incremental false` | 통과 | 정적 타입 |
 | 수정 파일 대상 `pnpm exec oxlint ...` | 통과 | 이번 프런트엔드 변경 |
@@ -180,7 +180,7 @@ raw 변경은 보수적으로 MODIFIED가 되어 문구만 달라진 항목까�
 | 담당 | 다음 작업 | 유지할 계약 |
 |---|---|---|
 | Frontend | 기존 접근성 lint, profile 갱신/역사판정 표현, 모바일/키보드 E2E | 7개 IA, 02~06 같은 Case·current analysis/judgment |
-| Backend | 잘못된 run ID 오류 변환, 실제 동시성 검증, Matching query 측정 | PARTIAL 전파, source lineage, USER_ANSWER Policy A |
+| Backend | 추가 오류 경로 점검, 실제 동시성 검증, Matching query 측정 | PARTIAL 전파, source lineage, USER_ANSWER Policy A |
 | DB/Data | 실제 지역/업종/실적 조건 변경 원문 쌍 확보; 보험 XLSX 확인 | NoticeVersion 보존, 문서 해시·출처 |
 | LLM/RAG | 표/라벨/인접 예외의 실제 라벨링 회귀 및 recall 개선 | LLM은 추출·매핑, 불확실하면 UNMAPPED/PARTIAL |
 | Integration | G1 safe-answer + 실제 G2를 포함한 전체 클릭 E2E 후 동결 재평가 | build/tests 외 제품 완료 조건 별도 확인 |
@@ -194,7 +194,8 @@ raw 변경은 보수적으로 MODIFIED가 되어 문구만 달라진 항목까�
 - Backend: `c0bec5f` — conservative decisions / revalidation lineage.
 - Frontend: `4df4424` — current analysis/judgment workspace binding.
 - 보고서: 이 문서를 별도 문서 커밋으로 추가한다.
-- PR 대상은 `integration/mvp-baseline`; 자동 merge하지 않는다. PR 링크는 작업 최종 응답과 PR 설명에 남긴다.
+- PR: [#74](https://github.com/gyuniverse-hq/bid-change-validator/pull/74), 대상 `integration/mvp-baseline`, Draft, 자동 merge하지 않는다.
+- 후속 오류 처리 커밋: 승인된 서비스 파일만 사용해 missing analysis 오류를 HTTP 404로 통일하고 회귀 2개를 추가했다.
 
 ## 11. Merge 가능 여부와 원래 목적 평가
 

@@ -64,3 +64,15 @@ def test_revalidation_refuses_incompatible_source(scenario, override, code):
     response = client.post(f"/api/v1/preflight-cases/{scenario['case_id']}/qualification-revalidation", json=payload)
     assert response.status_code in (409, 422), response.text
     assert response.json()['error']['code'] == code
+
+
+@pytest.mark.parametrize("operation", ["qualification-judgments", "qualification-revalidation"])
+def test_missing_analysis_returns_api_error(scenario, operation):
+    from uuid import uuid4
+    if operation == "qualification-judgments":
+        payload = {"analysis_run_id": str(uuid4())}
+    else:
+        payload = {"source_judgment_run_id": judge(scenario)["id"], "current_analysis_run_id": str(uuid4())}
+    response = client.post(f"/api/v1/preflight-cases/{scenario['case_id']}/{operation}", json=payload)
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "ANALYSIS_RUN_NOT_FOUND"

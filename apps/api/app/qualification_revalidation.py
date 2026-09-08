@@ -14,8 +14,9 @@ from .ai.requirement_diff import RequirementChange, diff_requirements
 from .analysis_models import QualificationAnalysisRun
 from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
 from .models import PreflightCase
-from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
+from .qualification_analysis import analysis_run_response
 from .qualification_judgment import (
+    load_judgment_analysis,
     QualificationJudgmentError,
     _load_company,
     _record_to_completeness,
@@ -40,12 +41,12 @@ def _load_case(db: Session, case_id: UUID) -> PreflightCase:
 
 def _select_analysis_run(db: Session, *, notice_version_id: UUID, explicit_run_id: UUID | None, label: str) -> QualificationAnalysisRun:
     if explicit_run_id is not None:
-        run = load_qualification_analysis_run(db, explicit_run_id)
+        run = load_judgment_analysis(db, explicit_run_id)
     else:
         run_id = db.scalar(select(QualificationAnalysisRun.id).where(QualificationAnalysisRun.notice_version_id == notice_version_id).order_by(QualificationAnalysisRun.created_at.desc()).limit(1))
         if run_id is None:
             raise QualificationJudgmentError("QUALIFICATION_ANALYSIS_REQUIRED", f"{label} 공고 버전의 자격요건 분석 결과가 필요합니다.")
-        run = load_qualification_analysis_run(db, run_id)
+        run = load_judgment_analysis(db, run_id)
     if run.notice_version_id != notice_version_id:
         raise QualificationJudgmentError("ANALYSIS_VERSION_MISMATCH", f"선택한 {label} 분석 결과의 공고 버전이 일치하지 않습니다.", status_code=422)
     if run.status == "FAILED":

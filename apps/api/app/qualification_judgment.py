@@ -24,7 +24,7 @@ from .analysis_models import QualificationAnalysisRun
 from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
 from .judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
 from .models import Company, CompanyIndustry, CompanyPerformance, PreflightCase
-from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
+from .qualification_analysis import QualificationAnalysisError, analysis_run_response, load_qualification_analysis_run
 
 
 class QualificationJudgmentError(ValueError):
@@ -33,6 +33,14 @@ class QualificationJudgmentError(ValueError):
         self.message = message
         self.status_code = status_code
         super().__init__(message)
+
+
+def load_judgment_analysis(db: Session, run_id: UUID) -> QualificationAnalysisRun:
+    """Translate analysis lookup failures at the shared judgment service boundary."""
+    try:
+        return load_qualification_analysis_run(db, run_id)
+    except QualificationAnalysisError as error:
+        raise QualificationJudgmentError(error.code, error.message, status_code=404) from error
 
 
 _COMPANY_LOAD_OPTIONS = (
@@ -155,12 +163,12 @@ def build_company_profile_snapshot(company: Company, completeness: ProfileComple
 
 def _select_analysis_run(db: Session, case: PreflightCase, analysis_run_id: UUID | None) -> QualificationAnalysisRun:
     if analysis_run_id is not None:
-        run = load_qualification_analysis_run(db, analysis_run_id)
+        run = load_judgment_analysis(db, analysis_run_id)
     else:
         latest_id = db.scalar(select(QualificationAnalysisRun.id).where(QualificationAnalysisRun.notice_version_id == case.current_version_id).order_by(QualificationAnalysisRun.created_at.desc()).limit(1))
         if latest_id is None:
             raise QualificationJudgmentError("QUALIFICATION_ANALYSIS_REQUIRED", "현재 공고 버전의 자격요건 분석 결과가 필요합니다.")
-        run = load_qualification_analysis_run(db, latest_id)
+        run = load_judgment_analysis(db, latest_id)
     if run.notice_version_id != case.current_version_id:
         raise QualificationJudgmentError("ANALYSIS_VERSION_MISMATCH", "선택한 분석 결과가 사전검토 건의 현재 공고 버전과 일치하지 않습니다.", status_code=422)
     if run.status == "FAILED":

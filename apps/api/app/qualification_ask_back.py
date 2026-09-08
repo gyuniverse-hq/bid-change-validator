@@ -12,8 +12,8 @@ from .models import PreflightCase
 from .ask_back_models import QualificationAnswer
 from .ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
 from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
-from .qualification_judgment import QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run, _load_company, _record_to_completeness, build_company_profile_snapshot
+from .qualification_analysis import analysis_run_response
+from .qualification_judgment import load_judgment_analysis, QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run, _load_company, _record_to_completeness, build_company_profile_snapshot
 
 
 def list_questions(
@@ -42,7 +42,7 @@ def list_questions(
             status_code=422,
         )
 
-    analysis = analysis_run_response(load_qualification_analysis_run(db, run.analysis_run_id))
+    analysis = analysis_run_response(load_judgment_analysis(db, run.analysis_run_id))
     req_by_key = {requirement.requirement_key: requirement for requirement in analysis.requirements}
     questions: list[QualificationQuestionRead] = []
 
@@ -123,7 +123,7 @@ def answer_and_rejudge(
             status_code=422,
         )
 
-    analysis = analysis_run_response(load_qualification_analysis_run(db, source.analysis_run_id))
+    analysis = analysis_run_response(load_judgment_analysis(db, source.analysis_run_id))
     requirement = next(
         (item for item in analysis.requirements if item.requirement_key == payload.requirement_key),
         None,

@@ -1,0 +1,64 @@
+import Link from 'next/link';
+
+import { Button } from '@/components/ui/button';
+import type { BidNoticeSummary, BidNoticeVersion, PreflightCase } from '@/lib/api';
+import type { QualificationAnalysisRun } from '@/lib/qualification-api';
+
+function money(value: number | null | undefined) {
+  return value == null ? '-' : `${value.toLocaleString()}원`;
+}
+
+function dateTime(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+type Props = {
+  caseItem: PreflightCase;
+  notice: BidNoticeSummary | null;
+  version: BidNoticeVersion | null;
+  analysis: QualificationAnalysisRun | null;
+};
+
+export function QualificationSourceOverview({ caseItem, notice, version, analysis }: Props) {
+  const unmapped = analysis?.diagnostics.filter((item) => item.code === 'UNMAPPED_REQUIREMENT') ?? [];
+
+  const summary = [
+    ['입찰공고번호', caseItem.bid_notice_no],
+    ['공고차수', `${caseItem.current_version_number}차`],
+    ['공고기관', notice?.announcing_institution_name ?? '-'],
+    ['사업유형', notice?.business_type ?? '-'],
+    ['계약방법', version?.contract_method ?? '-'],
+    ['추정가격', money(version?.estimated_price)],
+    ['배정예산', money(version?.allocated_budget)],
+    ['입찰서 제출마감', dateTime(version?.bid_closed_at)],
+    ['개찰일시', dateTime(version?.opened_at)],
+  ];
+
+  return (
+    <>
+      <section className="mt-7">
+        <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">나라장터 공고 요약</h2><span className="text-[13.5px] text-[var(--product-muted)]">수집된 원본 필드만 표시합니다</span></div>
+        <div className="mt-3 overflow-hidden rounded-[20px] border-t border-[var(--product-line)]">
+          <div className="grid md:grid-cols-3">
+            {summary.map(([label, value]) => <div key={label} className="grid min-h-[48px] grid-cols-[130px_minmax(0,1fr)] border-b border-[var(--product-line-2)] md:[&:not(:nth-child(3n))]:border-r"><span className="bg-[var(--product-tint)] px-4 py-3 text-[13px] text-[var(--product-muted)]">{label}</span><strong className="px-4 py-3 text-[13.5px] font-medium text-[var(--product-ink)]">{value}</strong></div>)}
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(360px,0.6fr)]">
+        <div className="rounded-[20px] border border-[var(--product-line-2)] bg-white p-6">
+          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">제출·첨부 서류</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">현재 차수에서 실제 수집된 문서입니다.</p></div><span className="text-[12px] text-[var(--product-muted)]">{version?.documents.length ?? 0}종</span></div>
+          <div className="mt-4 divide-y divide-[var(--product-line-2)]">
+            {version?.documents.length ? version.documents.map((document) => <div key={document.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><strong className="block truncate text-[13.5px]">{document.name}</strong><span className="mt-1 block text-[11.5px] text-[var(--product-muted)]">{document.viewer_type} · {document.extraction_status}{document.extracted_char_count != null ? ` · ${document.extracted_char_count.toLocaleString()}자` : ''}</span></div><Link href={`/evidence?caseId=${caseItem.id}`}><Button variant="outline" size="sm" className="rounded-full">원문 대조</Button></Link></div>) : <p className="py-6 text-center text-[13px] text-[var(--product-muted)]">현재 차수에 수집된 문서가 없습니다.</p>}
+          </div>
+        </div>
+
+        <div className={`rounded-[20px] border p-6 ${unmapped.length ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
+          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">위험·예외 / 미구조화</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{unmapped.length}건</span></div>
+          {unmapped.length ? <div className="mt-4 space-y-2">{unmapped.slice(0, 8).map((item, index) => <div key={`${item.message}-${index}`} className="rounded-xl bg-white/75 px-3 py-2 text-[12px] leading-5 text-amber-900">{item.message}</div>)}<Link href={`/evidence?caseId=${caseItem.id}`} className="inline-block pt-2 text-[12.5px] font-bold text-[var(--product-accent-deep)]">근거 원문에서 확인 →</Link></div> : <p className="mt-5 text-[13px] text-[var(--product-muted)]">현재 분석에서 미구조화 진단이 없습니다.</p>}
+        </div>
+      </section>
+    </>
+  );
+}

@@ -1,6 +1,6 @@
 """Profile → notice matching over cached qualification analyses.
 
-This is intentionally staged.  It never labels an unanalyzed notice as matched.
+This is intentionally staged. It never labels an unanalyzed notice as matched.
 The service reuses the same deterministic qualification rules used by a
 PreflightCase, but does not persist a JudgmentRun until the user starts a review.
 """
@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from .ai.judgment import judge_requirements
 from .analysis_models import QualificationAnalysisRun
+from .judgment_models import CompanyQualificationProfileCompleteness
 from .matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse
-from .models import BidNotice, BidNoticeVersion, CompanyQualificationProfileCompleteness
+from .models import BidNotice, BidNoticeVersion
 from .qualification_analysis import analysis_run_response
 from .qualification_judgment import _load_company, _record_to_completeness, build_company_profile_snapshot
 

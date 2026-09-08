@@ -161,6 +161,9 @@ export type QualificationQuestion = {
   requirement_type: string;
   question: string;
   raw_requirement: string;
+  askable: boolean;
+  askability_reason_code: string;
+  askability_reason: string;
 };
 
 export type RequirementChange = {

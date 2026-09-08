@@ -31,6 +31,7 @@ import {
   type CompanyProfile,
   type QualificationJudgmentSummary,
 } from '@/lib/qualification-api';
+import { productProfileCoverage } from '@/lib/product-profile';
 
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
 type StatusFilter = 'all' | OverallStatus;
@@ -43,30 +44,6 @@ const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> =
   ineligible: { label: '자격 미달', className: 'border-rose-200 bg-rose-50 text-rose-700' },
   unreviewed: { label: '미검토', className: 'border-slate-200 bg-slate-50 text-slate-600' },
 };
-
-function profileCoverage(company: CompanyProfile | null) {
-  if (!company) return { filled: 0, total: 6 };
-  const groups = [
-    Boolean(company.region_name || company.region_code),
-    Boolean(company.company_size),
-    company.industries.length > 0,
-    Boolean(company.staff),
-    company.performances.length > 0,
-    company.certifications.length > 0,
-  ];
-  return { filled: groups.filter(Boolean).length, total: groups.length };
-}
-
-function profileMissing(company: CompanyProfile | null) {
-  if (!company) return ['회사 프로필'];
-  const missing: string[] = [];
-  if (!(company.region_name || company.region_code)) missing.push('소재지');
-  if (!company.industries.length) missing.push('업종');
-  if (!company.staff) missing.push('인력');
-  if (!company.performances.length) missing.push('수행 실적');
-  if (!company.certifications.length) missing.push('인증·등록');
-  return missing;
-}
 
 export default function NoticesPage() {
   const router = useRouter();
@@ -139,8 +116,8 @@ export default function NoticesPage() {
 
   const activeNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) !== 'ineligible');
   const rejectedNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) === 'ineligible');
-  const profile = profileCoverage(company);
-  const missingProfile = profileMissing(company);
+  const profile = productProfileCoverage(company);
+  const missingProfile = profile.missing.map((area) => area.label);
 
   const counts = useMemo(() => {
     const result = { eligible: 0, insufficient_data: 0, ineligible: 0, unreviewed: 0 };
@@ -215,8 +192,8 @@ export default function NoticesPage() {
 
           <div className="mt-[22px] grid gap-[22px] lg:grid-cols-[372px_minmax(0,1fr)]">
             <form onSubmit={(event) => { event.preventDefault(); void initialize(query); }} className="rounded-[24px] bg-white p-7 shadow-[0_16px_48px_rgba(55,70,120,0.12)]">
-              <h1 className="text-[31px] font-extrabold leading-[1.35] tracking-[-0.04em] text-[var(--product-ink)]">우리 회사 조건으로<br />바로 찾기</h1>
-              <p className="mt-3 text-[14px] leading-6 text-[var(--product-muted)]">저장된 회사 프로필과 실제 수집 공고를 기준으로 검토할 공고를 찾습니다.</p>
+              <h1 className="text-[31px] font-extrabold leading-[1.35] tracking-[-0.04em] text-[var(--product-ink)]">검토할 공고를<br />바로 찾기</h1>
+              <p className="mt-3 text-[14px] leading-6 text-[var(--product-muted)]">실제 수집 공고를 조회하고, 검토를 시작한 공고에는 회사 프로필 기준 판정 상태를 함께 표시합니다.</p>
               <div className="mt-7 flex h-[52px] items-center rounded-2xl border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)]">
                 <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-auto flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" placeholder="공고번호 또는 공고명" aria-label="공고 검색" />
                 <button type="submit" className="grid size-10 place-items-center rounded-full bg-[var(--product-accent)] text-white" aria-label="검색">{loading ? <LoaderCircle className="size-5 animate-spin" /> : <Search className="size-5" />}</button>
@@ -253,9 +230,9 @@ export default function NoticesPage() {
         <section>
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
-              <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">NOTICE MATCH</p>
-              <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조건에 맞는 공고</h2>
-              <p className="mt-2 text-[14px] text-[var(--product-muted)]">실제 API에서 조회된 공고입니다. 저장된 판정이 있으면 최신 결과를 함께 표시합니다.</p>
+              <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">NOTICE DISCOVERY</p>
+              <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
+              <p className="mt-2 text-[14px] text-[var(--product-muted)]">실제 API에서 조회된 공고입니다. 아직 자동 매칭 전이며, 저장된 판정이 있으면 최신 결과를 함께 표시합니다.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
@@ -276,7 +253,7 @@ export default function NoticesPage() {
                 </article>;
               })}
             </div>
-          ) : <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center"><Search className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 font-semibold">조건에 맞는 공고가 없습니다.</p><p className="mt-1 text-sm text-[var(--product-muted)]">검색어나 판정 상태 필터를 바꿔보세요.</p></div>}
+          ) : <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center"><Search className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 font-semibold">조회된 공고가 없습니다.</p><p className="mt-1 text-sm text-[var(--product-muted)]">검색어나 판정 상태 필터를 바꿔보세요.</p></div>}
         </section>
 
         <section className="mt-12 overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-[var(--product-tint)]">
@@ -289,10 +266,10 @@ export default function NoticesPage() {
 
         <section className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1fr)_452px]">
           <div className="rounded-[22px] border border-[var(--product-line)] bg-white p-7"><div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">공지사항</h2><Sparkles className="size-5 text-[var(--product-accent)]" /></div><div className="mt-5 divide-y divide-[var(--product-line-2)]">{[['Product Baseline', '공고·회사·판정 데이터를 실제 API 기준으로 연결하고 있습니다.'], ['Evidence', '판정 결과는 원문 근거와 연결되는 경우에만 제품 화면에 노출합니다.'], ['Changed Notice', '변경공고는 이전 차수를 덮어쓰지 않고 판정 영향과 함께 추적합니다.']].map(([title, text]) => <div key={title} className="grid gap-2 py-5 sm:grid-cols-[130px_minmax(0,1fr)]"><strong className="text-[13px] text-[var(--product-accent-deep)]">{title}</strong><span className="text-[14px]">{text}</span></div>)}</div></div>
-          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">ASK-BACK</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3"><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><CircleHelp className="size-4" /> 회사 정보가 비어 있음</span><p className="mt-2 text-[12px] leading-5 text-white/65">프로필 값 또는 사용자 답변으로 해소 가능한 항목입니다.</p></div><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><ShieldCheck className="size-4" /> 근거 없는 판정 금지</span><p className="mt-2 text-[12px] leading-5 text-white/65">분석 근거나 비교 정보가 부족하면 UNKNOWN을 유지합니다.</p></div></div><Link href="/qualification" className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 검토하기 <ArrowRight className="size-4" /></Link></aside>
+          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">ASK-BACK</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3"><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><CircleHelp className="size-4" /> 회사 정보가 비어 있음</span><p className="mt-2 text-[12px] leading-5 text-white/65">단일 사용자 사실로 안전하게 해결 가능한 경우에만 질문합니다.</p></div><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><ShieldCheck className="size-4" /> 근거 없는 판정 금지</span><p className="mt-2 text-[12px] leading-5 text-white/65">복합·법적·절차 조건은 사용자 답변으로 강제 판정하지 않습니다.</p></div></div><Link href="/qualification" className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 검토하기 <ArrowRight className="size-4" /></Link></aside>
         </section>
 
-        <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[14px] text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.join(' · ')} 영역이 아직 비어 있습니다.` : '현재 기본 프로필 영역이 모두 연결되어 있습니다.'}</p></div><div className="flex items-center gap-4"><span className="text-[13px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]" disabled>프로필 화면 준비 중</Button></div></section>
+        <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[14px] text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.join(' · ')} 영역이 아직 비어 있습니다.` : '현재 기본 프로필 영역이 모두 연결되어 있습니다.'}</p></div><div className="flex items-center gap-4"><span className="text-[13px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company"><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]">프로필 보완</Button></Link></div></section>
       </div>
     </main>
   );

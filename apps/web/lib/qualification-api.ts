@@ -258,7 +258,7 @@ export function listQualificationAnalyses(noticeId: string, versionNumber: numbe
 }
 
 export function runQualificationAnalysis(noticeId: string, versionNumber: number) {
-  return request<{ run: QualificationAnalysisRun }>(
+  return request<QualificationAnalysisRun>(
     `/api/v1/notices/${noticeId}/versions/${versionNumber}/qualification-analysis`,
     { method: 'POST' },
   );

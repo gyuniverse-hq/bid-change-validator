@@ -50,7 +50,6 @@ def match_cached_notices(
             select(QualificationAnalysisRun)
             .where(
                 QualificationAnalysisRun.notice_version_id == version.id,
-                QualificationAnalysisRun.status != "FAILED",
             )
             .options(
                 selectinload(QualificationAnalysisRun.requirements),
@@ -59,7 +58,7 @@ def match_cached_notices(
             .order_by(QualificationAnalysisRun.created_at.desc())
             .limit(1)
         )
-        if run is None:
+        if run is None or run.status == "FAILED":
             continue
 
         analysis = analysis_run_response(run)
@@ -68,10 +67,9 @@ def match_cached_notices(
             profile,
             preflight_case_id=f"MATCH:{company_id}:{notice.id}",
             reference_date=ref_date,
+            analysis_status=run.status,
         )
         overall = evaluation.overall_status
-        if run.status == "PARTIAL" and overall == "eligible":
-            overall = "insufficient_data"
 
         satisfied = sum(item.status == "SATISFIED" for item in evaluation.judgments)
         unknown = sum(item.status == "UNKNOWN" for item in evaluation.judgments)

@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 
+import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
@@ -15,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
   getNoticeVersions,
-  getPreflightCase,
   listNotices,
   listPreflightCases,
   type BidNoticeSummary,
@@ -25,10 +25,7 @@ import {
 import {
   createPreflightCaseWithCompany,
   getQualificationAnalysis,
-  getQualificationJudgment,
   listCompanies,
-  listQualificationAnalyses,
-  listQualificationJudgments,
   listQualificationQuestions,
   runQualificationAnalysis,
   runQualificationJudgment,
@@ -102,6 +99,11 @@ function canReuseAnalysis(summary: QualificationAnalysisSummary | null) {
 
 export default function QualificationPage() {
   const requestedCaseId = useSearchParams().get('caseId');
+  return <QualificationWorkspace key={requestedCaseId} requestedCaseId={requestedCaseId} />;
+}
+
+function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string | null }) {
+  const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
   const [cases, setCases] = useState<PreflightCase[]>([]);
@@ -127,70 +129,65 @@ export default function QualificationPage() {
   const currentVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.current_version_number) ?? null, [activeCase, versions]);
   const baselineVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.baseline_version_number) ?? null, [activeCase, versions]);
 
-  async function loadAnalysisDetail(summary: QualificationAnalysisSummary | QualificationAnalysisRun | null) {
+  async function loadAnalysisDetail(summary: QualificationAnalysisSummary | QualificationAnalysisRun | null, request: number) {
     if (!summary) return setAnalysisDetail(null);
     if ('requirements' in summary) return setAnalysisDetail(summary);
-    setAnalysisDetail(await getQualificationAnalysis(summary.id));
+    const detail = await getQualificationAnalysis(summary.id);
+    if (request === generation.current) setAnalysisDetail(detail);
   }
 
-  async function hydrateCase(caseId: string) {
-    const selected = await getPreflightCase(caseId);
-    const fetchedVersions = await getNoticeVersions(selected.notice_id);
-    setActiveCase(selected);
-    setNoticeId(selected.notice_id);
-    setCompanyId(selected.company_id ?? '');
-    setVersions(fetchedVersions);
-    setRevalidation(null);
+  const generation = useRef(0);
 
-    const [currentAnalyses, baselineAnalyses, judgmentSummaries] = await Promise.all([
-      listQualificationAnalyses(selected.notice_id, selected.current_version_number),
-      selected.baseline_version_number ? listQualificationAnalyses(selected.notice_id, selected.baseline_version_number) : Promise.resolve([]),
-      listQualificationJudgments(selected.id),
-    ]);
-    const current = currentAnalyses[0] ?? null;
-    const baseline = baselineAnalyses[0] ?? null;
-    setCurrentAnalysis(current);
-    setBaselineAnalysis(baseline);
-    await loadAnalysisDetail(current);
+  const initialize = useCallback(async () => {
+    async function hydrateCase(caseId: string, request: number) {
+      const workspace = await loadCaseWorkspace(caseId);
+      if (request !== generation.current) return;
+      setActiveCase(workspace.caseItem);
+      setNoticeId(workspace.caseItem.notice_id);
+      setCompanyId(workspace.caseItem.company_id ?? '');
+      setVersions(workspace.versions);
+      setBaselineAnalysis(workspace.baselineAnalysis);
+      setCurrentAnalysis(workspace.currentAnalysis);
+      setAnalysisDetail(workspace.currentAnalysisDetail);
+      setSourceJudgment(workspace.sourceJudgment);
+      setDisplayJudgment(workspace.displayJudgment);
+      setQuestions(workspace.questions);
+      setReviewStep(workspace.displayJudgment ? 'done' : 'idle');
+      setRevalidation(null);
+      setSelectedEvidenceKey(null);
+    }
 
-    const baselineVersionId = fetchedVersions.find((item) => item.version_number === selected.baseline_version_number)?.id;
-    const currentVersionId = fetchedVersions.find((item) => item.version_number === selected.current_version_number)?.id;
-    const baselineSummary = baselineVersionId ? judgmentSummaries.find((item) => item.notice_version_id === baselineVersionId) : null;
-    const currentSummary = currentVersionId ? judgmentSummaries.find((item) => item.notice_version_id === currentVersionId) : null;
-    const latestSummary = judgmentSummaries[0] ?? null;
-    const [source, display] = await Promise.all([
-      (baselineSummary ?? currentSummary ?? latestSummary) ? getQualificationJudgment((baselineSummary ?? currentSummary ?? latestSummary)!.id) : Promise.resolve(null),
-      (currentSummary ?? latestSummary) ? getQualificationJudgment((currentSummary ?? latestSummary)!.id) : Promise.resolve(null),
-    ]);
-    setSourceJudgment(source);
-    setDisplayJudgment(display);
-    setQuestions(display ? await listQualificationQuestions(selected.id, display.id) : []);
-    setReviewStep(display ? 'done' : 'idle');
-  }
-
-  async function initialize() {
+    generation.current += 1;
+    const request = generation.current;
+    setActiveCase(null);
+    setAnalysisDetail(null);
+    setDisplayJudgment(null);
+    setSourceJudgment(null);
+    setQuestions([]);
+    setMessage('');
     setBusy('load');
     setError('');
     try {
       const [noticeResult, companyResult, caseResult] = await Promise.all([listNotices(), listCompanies(), listPreflightCases()]);
+      if (request !== generation.current) return;
       setNotices(noticeResult.items);
       setCompanies(companyResult);
       setCases(caseResult.items);
       setNoticeId(noticeResult.items[0]?.id ?? '');
       setCompanyId(companyResult[0]?.id ?? '');
-      const targetCase = requestedCaseId && caseResult.items.some((item) => item.id === requestedCaseId) ? requestedCaseId : caseResult.items[0]?.id;
-      if (targetCase) await hydrateCase(targetCase);
+      const targetCase = requestedCaseId;
+      if (targetCase) await hydrateCase(targetCase, request);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '초기 데이터를 불러오지 못했습니다.');
+      if (request === generation.current) setError(cause instanceof Error ? cause.message : '초기 데이터를 불러오지 못했습니다.');
     } finally {
-      setBusy(null);
+      if (request === generation.current) setBusy(null);
     }
-  }
+  }, [requestedCaseId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void initialize(), 0);
-    return () => window.clearTimeout(timer);
-  }, [requestedCaseId]);
+    return () => { window.clearTimeout(timer); generation.current += 1; };
+  }, [initialize]);
 
   async function createCase() {
     if (!selectedNotice || !companyId) return;
@@ -204,7 +201,7 @@ export default function QualificationPage() {
       const created = await createPreflightCaseWithCompany({ notice_id: selectedNotice.id, company_id: companyId, baseline_version_number: baseline?.version_number, current_version_number: current.version_number, title: `${selectedNotice.bid_notice_no} 자격 검토` });
       const refreshed = await listPreflightCases();
       setCases(refreshed.items);
-      await hydrateCase(created.id);
+      router.push(`/qualification?caseId=${created.id}`);
       setMessage('검토 건을 만들었습니다. 이제 참가자격 검토를 시작할 수 있습니다.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '검토 건 생성에 실패했습니다.');
@@ -223,6 +220,11 @@ export default function QualificationPage() {
     setBusy('review');
     setError('');
     setMessage('');
+    const request = generation.current;
+    setDisplayJudgment(null);
+    setSourceJudgment(null);
+    setQuestions([]);
+    setRevalidation(null);
     setReviewStep('analysis');
     try {
       const [baseline, current] = await Promise.all([
@@ -231,25 +233,32 @@ export default function QualificationPage() {
           : Promise.resolve(null),
         getOrRunAnalysis(activeCase.current_version_number, currentAnalysis, force),
       ]);
+      if (request !== generation.current) return;
       setBaselineAnalysis(baseline);
       setCurrentAnalysis(current);
-      await loadAnalysisDetail(current);
+      await loadAnalysisDetail(current, request);
+      if (request !== generation.current) return;
 
       setReviewStep('judgment');
       let baselineJudgment: QualificationJudgmentRun | null = null;
       if (baseline) baselineJudgment = await runQualificationJudgment(activeCase.id, baseline.id);
+      if (request !== generation.current) return;
       const currentJudgment = await runQualificationJudgment(activeCase.id, current.id);
 
+      if (request !== generation.current) return;
       setSourceJudgment(baselineJudgment ?? currentJudgment);
       setDisplayJudgment(currentJudgment);
-      setQuestions(await listQualificationQuestions(activeCase.id, currentJudgment.id));
+      const nextQuestions = await listQualificationQuestions(activeCase.id, currentJudgment.id);
+      if (request !== generation.current) return;
+      setQuestions(nextQuestions);
       setReviewStep('done');
-      setMessage(`참가자격 검토를 완료했습니다. 자격조건 ${current.requirement_count}건을 분석하고 회사 프로필 기준 판정을 반영했습니다.`);
+      setMessage(`참가자격 검토를 완료했습니다. 자격조건 ${'requirements' in current && Array.isArray(current.requirements) ? current.requirements.length : current.requirement_count}건을 분석하고 회사 프로필 기준 판정을 반영했습니다.`);
     } catch (cause) {
+      if (request !== generation.current) return;
       setReviewStep('idle');
       setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');
     } finally {
-      setBusy(null);
+      if (request === generation.current) setBusy(null);
     }
   }
 
@@ -258,9 +267,10 @@ export default function QualificationPage() {
     setBusy('revalidation');
     setError('');
     try {
-      const result = await runQualificationRevalidation(activeCase.id, { source_judgment_run_id: sourceJudgment.id, baseline_analysis_run_id: baselineAnalysis.id, current_analysis_run_id: currentAnalysis.id });
+      const result = await runQualificationRevalidation(activeCase.id, { source_judgment_run_id: sourceJudgment.id, baseline_analysis_run_id: sourceJudgment.analysis_run_id, current_analysis_run_id: currentAnalysis.id });
       setRevalidation(result);
       setDisplayJudgment(result.result);
+      setQuestions(await listQualificationQuestions(activeCase.id, result.result.id));
       setMessage(`변경 조건 ${result.revalidated_keys.length}개를 다시 판정했습니다.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '변경공고 재검증에 실패했습니다.');
@@ -295,6 +305,9 @@ export default function QualificationPage() {
         ? '분석과 판정이 완료되었습니다.'
         : null;
 
+  if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12"><output>검토 데이터를 불러오고 있습니다.</output></main>;
+  if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12" role="alert">{error || '검토 건을 찾을 수 없습니다.'}<Link href="/notices" className="ml-4 underline">공고 찾기</Link></main>;
+
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
@@ -311,7 +324,7 @@ export default function QualificationPage() {
           <>
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
               <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">분석 {analysisDetail.status}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p></div>
-              <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
+              <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
             </section>
 
             <CaseTabs caseId={activeCase.id} active="qualification" />
@@ -325,7 +338,7 @@ export default function QualificationPage() {
               <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{unknown}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p></div>
             </section>
 
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 PARTIAL · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
 
             <section className="mt-9">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
@@ -346,7 +359,7 @@ export default function QualificationPage() {
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void revalidate()} disabled={!canRevalidate || busy !== null}>{busy === 'revalidation' ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
 
-            <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => void hydrateCase(event.target.value)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>
+            <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>
           </>
         )}
       </div>

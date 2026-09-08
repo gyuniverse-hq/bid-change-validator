@@ -11,6 +11,7 @@ flags so an absent item can remain UNKNOWN until the user confirms the profile.
 from __future__ import annotations
 
 import calendar
+import math
 import re
 from datetime import date
 from typing import Literal
@@ -18,9 +19,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .contracts import Judgment, QualificationRequirement
+from .askability import unsafe_clause_reason
 
 
-RULE_VERSION = "qualification-rules-v0.1"
+RULE_VERSION = "qualification-rules-v0.2"
 OverallQualificationStatus = Literal["eligible", "ineligible", "insufficient_data"]
 
 
@@ -175,6 +177,8 @@ def _compare_number(observed: float, operator: str | None, expected: object | No
         target = float(expected)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(target) or not math.isfinite(observed):
+        return None
     if operator == ">=":
         return observed >= target
     if operator == ">":
@@ -240,7 +244,12 @@ def _performance_candidates(
 
     candidates: list[ProfilePerformanceFact] = []
     for item in profile.performances:
+        if item.completed_at > reference_date:
+            continue
         if cutoff is not None and item.completed_at < cutoff:
+            continue
+        field = requirement.scope.get("experience_field")
+        if field and not any(_string_match(value, field) for value in [item.name, *item.fields]):
             continue
         if client_requirement:
             client_ok = _string_match(item.client_name or "", client_requirement)
@@ -313,8 +322,8 @@ def _judge_industry(
         (
             item
             for item in profile.industries
-            if _string_match(item.name, requirement.value)
-            or _string_match(item.code, requirement.value)
+            if _norm(item.name) == _norm(requirement.value)
+            or _norm(item.code) == _norm(requirement.value)
         ),
         None,
     )
@@ -443,6 +452,11 @@ def _judge_performance_amount(
     )
     if compared is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if aggregation == "UNSPECIFIED" and len(candidates) > 1:
+        summed = sum(item.amount for item in candidates)
+        sum_compared = _compare_range(summed, requirement.scope) if requirement.operator == "RANGE" else _compare_number(summed, requirement.operator, requirement.value)
+        if sum_compared != compared:
+            return _unknown(requirement, preflight_case_id, unsupported=True)
     if not compared and not profile.completeness.performances:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -545,6 +559,7 @@ def _judge_certification(
         for item in name_matches
         if (not issuer_requirement or _string_match(item.issuer_name or "", issuer_requirement))
         and (item.expires_at is None or item.expires_at >= reference_date)
+        and (item.issued_at is None or item.issued_at <= reference_date)
     ]
     if valid_matches:
         item = valid_matches[0]
@@ -585,6 +600,8 @@ def judge_requirement(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
+    if unsafe_clause_reason(requirement.raw):
+        return _unknown(requirement, preflight_case_id, unsupported=True)
     if requirement.type == "REGION":
         return _judge_region(requirement, profile, preflight_case_id)
     if requirement.type == "COMPANY_SIZE":
@@ -615,6 +632,8 @@ def judge_requirement(
 def derive_overall_status(
     requirements: list[QualificationRequirement],
     judgments: list[Judgment],
+    *,
+    analysis_status: str = "SUCCEEDED",
 ) -> OverallQualificationStatus:
     status_by_key = {item.requirement_key: item.status for item in judgments}
     grouped: dict[str, tuple[str, list[str]]] = {}
@@ -648,7 +667,7 @@ def derive_overall_status(
 
     if "UNSATISFIED" in group_statuses:
         return "ineligible"
-    if "UNKNOWN" in group_statuses or not group_statuses:
+    if "UNKNOWN" in group_statuses or not group_statuses or analysis_status != "SUCCEEDED":
         return "insufficient_data"
     return "eligible"
 
@@ -659,6 +678,7 @@ def judge_requirements(
     *,
     preflight_case_id: str,
     reference_date: date,
+    analysis_status: str = "SUCCEEDED",
 ) -> JudgmentEvaluation:
     judgments = [
         judge_requirement(
@@ -671,5 +691,5 @@ def judge_requirements(
     ]
     return JudgmentEvaluation(
         judgments=judgments,
-        overall_status=derive_overall_status(requirements, judgments),
+        overall_status=derive_overall_status(requirements, judgments, analysis_status=analysis_status),
     )

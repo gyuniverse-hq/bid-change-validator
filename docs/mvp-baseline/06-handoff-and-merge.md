@@ -1,5 +1,7 @@
 # 06. Handoff and Merge
 
+현재 작업은 `fix/product-baseline-audit` → [Draft PR #74](https://github.com/gyuniverse-hq/bid-change-validator/pull/74) → `integration/mvp-baseline`이다. 2026-09-08 코드 기준 `87b9a5f`, 아직 merge 전이다. 아래 develop/main 흐름은 향후 팀 승인 절차이며 현재 실행 지시가 아니다. 안전성 PR merge와 Product Baseline Ready는 별도 판단이다.
+
 ## 1. Branch model
 
 MVP Integration Baseline 작업 중 `main`과 `develop`은 직접 수정하지 않습니다.
@@ -214,3 +216,22 @@ Baseline이 Golden Path를 통과하면 팀 공유 시 다음 세 가지를 중�
 3. develop에 올려도 기존 기능을 깨뜨리지 않는가
 
 이 리뷰가 끝난 뒤에만 `integration/mvp-baseline → develop` PR을 진행합니다.
+
+## 10. PR #74 merge 이후 Demo / Golden 갱신 절차
+
+기존 AnalysisRun은 새 validation 정책을 자동 충족하지 않는다. `ai-analysis-v0.2`가 같거나 기존 SUCCEEDED여도 새 grounding/상동 guard 적용 증거가 아니다. 자동 cache 무효화/재분석 migration은 미구현이며 Rule 재판정만으로는 부족하다.
+
+1. merge된 코드/commit을 확인하고 Backend 코드 변경 후 API 이미지를 rebuild한다. 단순 restart로는 코드가 반영되지 않는다.
+
+   ```bash
+   docker compose up -d --build api
+   ```
+
+2. API 기동을 확인하고 기존 Demo/Golden Case의 company, baseline/current NoticeVersion, 문서 ID와 file/text SHA를 기록한다. 과거 run/원본은 보존한다.
+3. baseline/current 각각 qualification-analysis POST로 **full re-analysis**를 실행한다. 목록의 과거 캐시를 다시 선택하는 것으로 대체하지 않는다. 새 run ID, status, diagnostic, Requirement/Evidence와 원문 전체 인용을 확인한다.
+4. 새 분석으로 `qualification-rules-v0.2` 판정을 생성한다. 재검증에 사용할 source baseline judgment는 동일 profile snapshot/reference_date/rule이어야 한다. profile이 바뀌면 full re-judgment가 먼저다.
+5. 최신 질문 중 ASKABLE만 Policy A로 답변하고 새 source/result ID를 기록한다. 과거 답변을 무조건 재사용하거나 Company Profile에 승격하지 않는다.
+6. meaningful 실제 자격변경 원문 쌍에서 Diff/revalidation을 실행하고 변경 전후 Evidence와 영향을 받은 key를 대조한다. FAILED/빈 결과 두 개를 성공으로 계산하지 않는다.
+7. 01~07 클릭 E2E와 [G0/G1/G2 기준](05-e2e-golden-path.md)을 재검증한 뒤 팀 reviewer가 Ready 여부를 결정한다. G2 미확보 상태에서는 보류를 유지한다.
+
+구체적인 담당별 P1/P2는 [현재 Handoff](08-team-handoff-current-state.md)를 따른다. 이 문서 업데이트 자체는 DB 재분석이나 Docker rebuild를 실행한 기록이 아니다.

@@ -8,6 +8,7 @@ requirement without collapsing legal/procedural logic or exceptions.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass
 
 from .contracts import QualificationRequirement
@@ -21,6 +22,7 @@ class AskabilityDecision:
 
 
 _COMPLEX_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"〃|상동", "UNRESOLVED_TABLE_REFERENCE"),
     (r"공동수급|공동계약|구성원|대표사|분담이행|공동이행", "COMPOSITE_PARTY_RULE"),
     (r"대표자.*(동일|중복)|중복.*대표자|대표자.*변경등록", "REPRESENTATIVE_CONFLICT_RULE"),
     (r"\b또는\b|\b다만\b|각\s*호|중\s*하나|어느\s*하나", "ALTERNATIVE_OR_EXCEPTION_RULE"),
@@ -45,6 +47,11 @@ _SIMPLE_REGISTRATION_HINT = re.compile(
 )
 
 
+def unsafe_clause_reason(raw: str) -> str | None:
+    """Share conservative source-clause screening with mapping and rules."""
+    return next((code for pattern, code in _COMPLEX_PATTERNS if re.search(pattern, " ".join(raw.split()))), None)
+
+
 def classify_askability(requirement: QualificationRequirement) -> AskabilityDecision:
     """Return whether a USER_ANSWER may safely resolve an UNKNOWN requirement.
 
@@ -60,15 +67,30 @@ def classify_askability(requirement: QualificationRequirement) -> AskabilityDeci
     if requirement.type not in _SIMPLE_TYPES:
         return AskabilityDecision(False, "UNSUPPORTED_TYPE", "사용자 답변으로 해결하도록 허용하지 않은 조건 유형입니다.")
 
-    for pattern, code in _COMPLEX_PATTERNS:
-        if re.search(pattern, raw):
-            return AskabilityDecision(False, code, "복합·예외·법적 절차 조건은 단순 사용자 답변으로 판정하지 않습니다.")
+    code = unsafe_clause_reason(raw)
+    if code:
+        return AskabilityDecision(False, code, "복합·예외·법적 절차 조건은 단순 사용자 답변으로 판정하지 않습니다.")
 
     if requirement.group_operator == "ANY_OF":
         return AskabilityDecision(False, "ALTERNATIVE_GROUP", "대안 조건 그룹은 개별 yes/no 질문으로 축약하지 않습니다.")
 
     if requirement.operator == "RANGE":
         return AskabilityDecision(False, "RANGE_REQUIRES_STRUCTURED_VALUE", "범위 조건은 구조화된 값을 확보한 뒤 규칙으로 판정해야 합니다.")
+
+    numeric = requirement.type in {"STAFF", "PERFORMANCE_COUNT", "PERFORMANCE_AMOUNT"}
+    if numeric and requirement.value is None:
+        return AskabilityDecision(False, "STRUCTURED_VALUE_REQUIRED", "비교할 수치가 없습니다.")
+    role_match = requirement.type == "STAFF" and requirement.operator == "MATCH" and requirement.scope.get("role") == requirement.value
+    allowed = {">=", ">", "<=", "<", "="} if numeric and not role_match else {"MATCH", "="}
+    if requirement.operator not in allowed:
+        return AskabilityDecision(False, "UNSUPPORTED_OPERATOR", "규칙으로 비교할 연산자가 없거나 지원하지 않습니다.")
+    if numeric and not role_match:
+        try:
+            valid_number = math.isfinite(float(requirement.value)) and float(requirement.value) >= 0
+        except (TypeError, ValueError):
+            valid_number = False
+        if not valid_number:
+            return AskabilityDecision(False, "STRUCTURED_VALUE_REQUIRED", "비교할 유효한 수치가 필요합니다.")
 
     if requirement.type == "REGISTRATION_CERTIFICATION":
         kind = str(requirement.scope.get("kind") or "")

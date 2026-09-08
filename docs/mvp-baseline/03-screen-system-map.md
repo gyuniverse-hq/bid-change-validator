@@ -2,24 +2,22 @@
 
 이 문서는 화면 요구사항을 실제 Backend / DB / AI 연결점에 매핑합니다.
 
-`Actual`은 현재 저장소에서 확인된 경로이며, `TBD`는 Stage 2 Contract Gap 검산 후 확정할 경로입니다.
+기준: PR #74 코드 `87b9a5f`, 2026-09-08. Figma 7개 화면이 Product IA Source of Truth다. 화면 연결 완료와 전체 실공고 E2E 완료는 구분한다.
 
-## 1. MVP screen map
+## 1. 구현된 01~07 screen map
 
-| Screen / UX | User action | Backend/API | Data / AI | Baseline status |
-| --- | --- | --- | --- | --- |
-| 공고 찾기 | 공고 검색/선택 | `GET /api/v1/notices`, `GET /api/v1/notices/{notice_id}` | Notice | Actual |
-| 공고 버전 | 현재/이전 버전 확인 | `GET /api/v1/notices/{notice_id}/versions` | Notice Version | Actual |
-| 회사 프로필 | 회사 생성/조회/수정 | `/api/v1/companies` CRUD | Company + industries/staff/performance/certification | Actual |
-| 제안서 사전검토 | Case 생성/파일 업로드 | `/api/v1/preflight-cases` | Preflight Case + Proposal Document | Actual |
-| 참가자격 분석 | 공고 자격조건 분석 실행/조회 | Stage 2에서 API entry point 확정 | `RequirementAnalysisResult` | Connect / verify |
-| 참가자격 판정 | Requirement별 결과 확인 | Stage 2에서 API 계약 확정 | Requirement + Company Profile + Judgment | Connect / missing check |
-| 근거 원문 | 판정 근거 클릭/원문 대조 | notice document `/text`, `/preview`, `/source` | Evidence locator + Document | Actual source API / result link TBD |
-| 확인 필요 | UNKNOWN 질문 확인 | Stage 2에서 Ask-back API 확정 | UNKNOWN + reason/basis | TBD |
-| 답변 입력 | 부족 회사정보/사실 입력 | Stage 2에서 Answer API 확정 | User Answer | TBD |
-| 부분 재판정 | 답변 후 영향 항목 갱신 | Stage 2에서 re-judgment contract 확정 | Judgment | TBD |
-| 변경 이력 | 변경공고/버전 비교 | Notice versions + Stage 2 diff API/logic | Version + Requirement Diff | Partial |
-| 재검증 결과 | 변경 영향 판정 확인 | Stage 2 revalidation contract 확정 | Affected Requirements + Judgments | TBD |
+| 화면 | Route | 실제 연결 / 완료 범위 | 검증 한계 |
+| --- | --- | --- | --- |
+| 01 공고 찾기 | `/notices` | 공고 검색·버전 조회, 분석된 현재 공고의 회사별 Matching, 회사/현재 차수가 같은 Case 재사용 | 미분석 공고는 매칭 완료가 아님 |
+| 02 참가자격 검토 | `/qualification` | Case 분석→판정 API, 공고 요약·첨부·위험/미매핑 조건·회사값·근거 | 추출 완전성은 PARTIAL/FAILED로 별도 표시 |
+| 03 확인 필요에 답하기 | `/ask-back` | ASKABLE UNKNOWN 답변, Policy A 부분 재판정 | 실공고 safe-answer 성공은 미검증; G0/API 회귀로 확인 |
+| 04 근거 원문 대조 | `/evidence` | 문서별 extracted text/blocks, Evidence deep link, HWPX/PDF 전환 | 표/주변 예외 의미 완전성은 별도 검증 |
+| 05 평가 대응 | `/evaluation` | 자격요건 기반 회사 참고자료, 전용 추출 미지원 안내 | Evaluation 전용 extraction 미완료, 점수 예측 없음 |
+| 06 변경 이력 | `/changes` | 버전 비교·Canonical Diff·재검증 API, 최초 차수 빈 상태 | meaningful 실제 G2 미확보 |
+| 07 회사 프로필 | `/company` | 회사정보 조회, 실적/인증 CRUD UI | 전체 프로필 편집/변경 후 역사판정 UX의 완전한 E2E는 미검증 |
+
+02~06은 같은 `caseId`의 5개 탭이다. current version/company/analysis/rule이 일치하는 판정과 질문만 연결하며, 없는 Case는 오류로 표시한다. 브라우저 7개 화면 navigation smoke를 확인했으나 Figma 직접 대조는 도구 quota로 미완료다.
+API별 정확한 경로와 persistence는 [팀 Handoff](08-team-handoff-current-state.md), 상태는 [Contract Map](04-contract-and-status-map.md)을 따른다.
 
 ## 2. Product UX principle
 
@@ -100,7 +98,7 @@ REGISTRATION_CERTIFICATION  ↔ certifications
 COMPANY_SIZE                ↔ company_size
 ```
 
-Stage 2에서 실제 필드명/검증여부(`verified`)와 Canonical 비교 규칙을 확정합니다.
+현재 필드와 비교 규칙은 deterministic Rule `qualification-rules-v0.2`에 연결되어 있습니다. 정보 부재/불완전성은 UNKNOWN으로 보류합니다.
 
 ## 5. Change history screen target
 
@@ -119,14 +117,6 @@ Stage 2에서 실제 필드명/검증여부(`verified`)와 Canonical 비교 규�
 
 전체 문서 변경 내역은 보조 정보로 두고, 실제 제출 가능성에 영향을 주는 변경을 우선 표시합니다.
 
-## 6. API contract rule
+## 6. API / 검증 기준
 
-이 문서에 `TBD`로 표시한 endpoint 이름은 아직 최종 계약이 아닙니다.
-
-Stage 2에서 다음 순서로 확정합니다.
-
-1. 이미 존재하는 실제 router/service를 먼저 조회
-2. DB Model과 stable ID 확인
-3. 현재 AI contract와 연결
-4. 기존 Frontend ↔ Backend 초안과 비교
-5. 중복 API를 만들지 않고 최소 integration endpoint 결정
+Analysis, Judgment, Ask-back, Revalidation API와 저장 모델은 구현되어 있다. 새 endpoint를 가정하지 않고 [실제 API surface](08-team-handoff-current-state.md)를 사용한다. [G0/G1/G2](05-e2e-golden-path.md)의 검증 범위를 넘겨 완료로 표시하지 않는다.

@@ -1,5 +1,13 @@
 # 01. Scope and Acceptance
 
+> 구현 기준: PR #74 코드 `87b9a5f` / `fix/product-baseline-audit` (2026-09-08). 아래 체크리스트는 제품 인수 조건이며 체크되지 않은 모든 항목이 미구현이라는 뜻은 아닙니다.
+
+## 현재 인수 상태
+
+Analysis/판정/Ask-back/변경 API와 Figma 01~07 화면은 연결되었습니다. G0와 102개 Backend 회귀, Frontend 3개 회귀·타입·build·수정 lint가 통과했습니다. G1은 실제 PARTIAL/Evidence/UNKNOWN/unsafe answer 차단을 확인했습니다.
+
+**Ready 보류:** meaningful 실제 G2 미확보, 실제 safe-answer부터 변경 재검증까지 전체 클릭 E2E 미완료, 실제 추출 품질 부족. 기존 AnalysisRun을 새 validation 통과로 간주하지 않으며 PR #74 merge 후 Demo/Golden full re-analysis가 필요합니다. [Golden 결과](05-e2e-golden-path.md)와 [인계 절차](06-handoff-and-merge.md)를 참조합니다.
+
 ## 1. Baseline scope
 
 MVP Integration Baseline의 목적은 모든 기능을 완성하는 것이 아니라 **한 개의 실제 제품 흐름이 Frontend → Backend → DB → AI/RAG → Backend → Frontend로 끝까지 이어지는 기준선**을 만드는 것입니다.
@@ -13,12 +21,12 @@ MVP Integration Baseline의 목적은 모든 기능을 완성하는 것이 아�
 - Canonical Requirement 8종과 Evidence 연결
 - Company Profile과 Requirement를 이용한 판정
 - Requirement 단위 `SATISFIED / UNSATISFIED / UNKNOWN`
-- UNKNOWN에 대한 Ask-back
+- UNKNOWN 중 안전한 단일 사실만 Ask-back; NOT_ASKABLE은 원문 검토
 - Answer 저장 후 영향 Requirement만 재판정
 - 변경공고 발생 시 이전/현재 Version 비교
 - 변경된 Requirement의 영향 범위 재판정
 - Frontend에서 판정 → 근거 → 해결 → 변경이력을 확인
-- 최소 Golden Scenario 기반 E2E 및 회귀 테스트
+- G0 합성 회귀 + G1 실제 공고 + G2 실제 자격조건 변경 기반 검증
 
 ### Not required for this baseline
 
@@ -27,7 +35,8 @@ MVP Integration Baseline의 목적은 모든 기능을 완성하는 것이 아�
 - 최종 UI polish 및 전체 디자인 완성
 - 모든 나라장터 업무 유형/예외 케이스 지원
 - Canonical Requirement 8종 외 임의 확장
-- 제안서 배점 자동 점수화
+- 제안서 배점 자동 점수화/예상점수 생성
+- Evaluation 전용 extraction 완성(현재 미완료를 명시하고 자격요건과 구분)
 - 복잡한 추천/랭킹 모델
 - 운영환경 수준의 Observability/Autoscaling
 - 최종 AWS Production Architecture 완성
@@ -128,3 +137,12 @@ notice_id
 - `PARTIAL` 분석을 `SUCCEEDED`로 표시하지 않습니다.
 - UNKNOWN을 UI 편의를 위해 임의로 SATISFIED 또는 UNSATISFIED로 변환하지 않습니다.
 - 변경공고 재판정 시 이전 Version Evidence를 현재 근거처럼 노출하지 않습니다.
+
+## 5. Product 동결에 남은 필수 검증
+
+- [ ] 실제 자격조건이 MODIFIED / ADDED / REMOVED되는 G2 원문 쌍 확보 및 affected-only 검증
+- [ ] PR #74 merge 후 기존 Demo/Golden baseline/current full re-analysis → 새 Judgment
+- [ ] 안전한 USER_ANSWER를 포함한 전체 실제 Product Click E2E
+- [ ] 추출·매핑·표/예외 문맥의 품질 및 잔여 P1 검토
+
+7개 화면과 5개 Case 탭은 Figma IA를 유지합니다. 기존 Proposal/문서 검증 기능은 별도 연결 범위를 확인하며 dead code로 단정하지 않습니다. USER_ANSWER는 Policy A이며 Profile을 변경하지 않습니다.

@@ -1,12 +1,12 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { loadCaseWorkspace, type CaseWorkspace } from '@/lib/case-workspace';
+import { useCaseWorkspace, type CaseWorkspace } from '@/lib/case-workspace';
 import type { CanonicalRequirement } from '@/lib/qualification-api';
 
 function companyValue(requirement: CanonicalRequirement, workspace: CaseWorkspace) {
@@ -33,13 +33,7 @@ function companyValue(requirement: CanonicalRequirement, workspace: CaseWorkspac
 
 export default function EvaluationPage() {
   const caseId = useSearchParams().get('caseId');
-  const [workspace, setWorkspace] = useState<CaseWorkspace | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!caseId) return;
-    loadCaseWorkspace(caseId).then(setWorkspace).catch((cause) => setError(cause instanceof Error ? cause.message : '평가 대응 데이터를 불러오지 못했습니다.'));
-  }, [caseId]);
+  const { workspace, error } = useCaseWorkspace(caseId);
 
   const rows = useMemo(() => {
     if (!workspace?.currentAnalysisDetail) return [];
@@ -65,15 +59,15 @@ export default function EvaluationPage() {
         <CaseTabs caseId={workspace.caseItem.id} active="evaluation" />
 
         <section className="mt-6 flex items-start gap-4 rounded-[24px] bg-[#edeafb] px-[26px] py-6">
-          <div className="min-w-0 flex-1"><h2 className="text-[17px] font-bold tracking-[-0.03em] text-[var(--product-ink)]">점수를 예측하지 않습니다</h2><p className="mt-2 text-[13.5px] leading-6">공고 원문에서 확인되는 평가 관련 조건과 회사 프로필 대응정보를 나란히 보여드립니다. 예상 심사점수는 계산하지 않으며, 준비된 정보와 추가 확인이 필요한 정보만 구분합니다.</p></div><div className="flex shrink-0 gap-2"><span className="rounded-full border border-[var(--product-line)] bg-white px-3 py-1 text-[12px]">값 있음 {readyCount}</span><span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px]">확인 필요 {rows.length - readyCount}</span></div>
+          <div className="min-w-0 flex-1"><h2 className="text-[17px] font-bold tracking-[-0.03em] text-[var(--product-ink)]">점수를 예측하지 않습니다</h2><p className="mt-2 text-[13.5px] leading-6">평가 기준 전용 추출은 아직 제공하지 않습니다. 아래 정보는 참가자격 검토의 참고자료이며 평가항목이나 배점으로 해석할 수 없습니다. 실제 평가 기준은 근거 원문에서 확인해 주세요.</p></div><div className="flex shrink-0 gap-2"><span className="rounded-full border border-[var(--product-line)] bg-white px-3 py-1 text-[12px]">값 있음 {readyCount}</span><span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px]">확인 필요 {rows.length - readyCount}</span></div>
         </section>
 
         <section className="mt-8">
-          <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">평가 기준 대응</h2><span className="text-[13.5px] text-[var(--product-muted)]">현재는 원문 근거와 회사 대응정보를 확인합니다</span></div>
+          <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">참가자격 기반 회사 정보 참고</h2><span className="text-[13.5px] text-[var(--product-muted)]">현재는 원문 근거와 회사 대응정보를 확인합니다</span></div>
           <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
-            <div className="grid grid-cols-[minmax(0,1.5fr)_120px_minmax(0,1fr)_190px_150px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">평가/대응 항목</div><div className="px-4">배점</div><div className="px-4">귀사 값</div><div className="px-4">근거</div><div className="px-4">상태</div></div>
-            {rows.map(({ requirement, evidence, value, ready }) => <div key={requirement.requirement_key} className="grid min-h-[64px] grid-cols-[minmax(0,1.5fr)_120px_minmax(0,1fr)_190px_150px] items-center border-t border-[#eef0f4] text-[13.5px]"><div className="px-4"><strong className="block text-[14.5px]">{requirement.raw}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{requirement.type}</span></div><div className="px-4 text-[var(--product-muted)]">원문 확인</div><div className="px-4">{value}</div><div className="px-4 text-[var(--product-accent)]">{evidence?.evidence_key ?? '근거 없음'}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[12px] font-bold ${ready ? 'bg-[#e7f6ed] text-[#147a4a]' : 'bg-[#fbf0dc] text-[#8a5a00]'}`}>{ready ? '값 있음' : '확인 필요'}</span></div></div>)}
-            {!rows.length && <div className="px-6 py-14 text-center text-[14px] text-[var(--product-muted)]">현재 분석에서 평가 대응에 연결된 원문 조건이 없습니다. 평가표 전용 구조화가 추가되면 이 영역에 별도로 표시됩니다.</div>}
+            <div className="grid grid-cols-[minmax(0,1.5fr)_120px_minmax(0,1fr)_190px_150px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">참가자격 조건</div><div className="px-4">구분</div><div className="px-4">귀사 값</div><div className="px-4">근거</div><div className="px-4">상태</div></div>
+            {rows.map(({ requirement, evidence, value, ready }) => <div key={requirement.requirement_key} className="grid min-h-[64px] grid-cols-[minmax(0,1.5fr)_120px_minmax(0,1fr)_190px_150px] items-center border-t border-[#eef0f4] text-[13.5px]"><div className="px-4"><strong className="block text-[14.5px]">{requirement.raw}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{requirement.type}</span></div><div className="px-4 text-[var(--product-muted)]">자격요건</div><div className="px-4">{value}</div><div className="px-4 text-[var(--product-accent)]">{evidence?.evidence_key ?? '근거 없음'}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[12px] font-bold ${ready ? 'bg-[#e7f6ed] text-[#147a4a]' : 'bg-[#fbf0dc] text-[#8a5a00]'}`}>{ready ? '값 있음' : '확인 필요'}</span></div></div>)}
+            {!rows.length && <div className="px-6 py-14 text-center text-[14px] text-[var(--product-muted)]">현재 참고할 참가자격 조건이 없습니다. 평가 기준은 아직 추출되지 않았습니다.</div>}
           </div>
         </section>
 

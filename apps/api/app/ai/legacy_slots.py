@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from .contracts import QualificationRequirement, RequirementOperator, RequirementType
+from .askability import unsafe_clause_reason
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 
@@ -27,6 +28,9 @@ def _performance_scope(slot: dict[str, Any], *, aggregation: str | None = None) 
     client_requirement = (slot.get("실적기관_raw") or "").strip()
     if client_requirement:
         scope["client_requirement"] = client_requirement
+    experience_field = (slot.get("경험분야_raw") or "").strip()
+    if experience_field:
+        scope["experience_field"] = experience_field
     return scope
 
 
@@ -39,6 +43,9 @@ def adapt_legacy_slot(
     """Map one validated extraction slot into zero or more canonical requirements."""
     slot_type = slot.get("유형")
     raw = (slot.get("raw") or "").strip()
+    unsafe_reason = unsafe_clause_reason(raw)
+    if unsafe_reason:
+        return [], [{"code": "UNMAPPED_REQUIREMENT", "raw": raw, "reason": unsafe_reason}]
     diagnostics: list[dict[str, Any]] = []
     requirements: list[QualificationRequirement] = []
     group_key = f"{key_prefix}-GROUP"
@@ -73,6 +80,9 @@ def adapt_legacy_slot(
         amount = slot.get("금액_norm") or {}
         period = slot.get("기간_norm") or {}
         period_months = period.get("value") if period.get("parse_status") == "success" else None
+        if slot.get("기간_raw") and period_months is None:
+            return [], [{"code": "UNMAPPED_PERFORMANCE", "raw": raw, "reason": "기간을 안전하게 정규화하지 못했습니다."}]
+        aggregation = "SUM" if re.search(r"합계|합산|누적|총액", raw) else "UNSPECIFIED"
 
         if amount.get("parse_status") == "success":
             if amount.get("value") is not None:
@@ -83,7 +93,7 @@ def adapt_legacy_slot(
                     value=amount.get("value"),
                     unit=amount.get("unit") or "KRW",
                     period_months=period_months,
-                    scope=_performance_scope(slot, aggregation="UNSPECIFIED"),
+                    scope=_performance_scope(slot, aggregation=aggregation),
                 )
             elif amount.get("range"):
                 amount_range = dict(amount["range"])
@@ -94,7 +104,7 @@ def adapt_legacy_slot(
                     unit=amount.get("unit") or "KRW",
                     period_months=period_months,
                     scope={
-                        **_performance_scope(slot, aggregation="UNSPECIFIED"),
+                        **_performance_scope(slot, aggregation=aggregation),
                         "min": amount_range.get("min"),
                         "min_operator": amount_range.get("min_op"),
                         "max": amount_range.get("max"),

@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from .ai.askability import build_semantic_question, classify_askability
 from .ai.contracts import Judgment
-from .ai.judgment import derive_overall_status
+from .ai.judgment import RULE_VERSION, derive_overall_status
+from .analysis_models import QualificationAnalysisRun
+from .models import PreflightCase
 from .ask_back_models import QualificationAnswer
 from .ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
-from .judgment_models import QualificationJudgmentRecord, QualificationJudgmentRun
-from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
-from .qualification_judgment import QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run
+from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
+from .qualification_analysis import analysis_run_response
+from .qualification_judgment import load_judgment_analysis, QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run, _load_company, _record_to_completeness, build_company_profile_snapshot
 
 
 def list_questions(
@@ -40,7 +42,7 @@ def list_questions(
             status_code=422,
         )
 
-    analysis = analysis_run_response(load_qualification_analysis_run(db, run.analysis_run_id))
+    analysis = analysis_run_response(load_judgment_analysis(db, run.analysis_run_id))
     req_by_key = {requirement.requirement_key: requirement for requirement in analysis.requirements}
     questions: list[QualificationQuestionRead] = []
 
@@ -83,6 +85,10 @@ def answer_and_rejudge(
             status_code=422,
         )
 
+    # Serialize answers for a case so concurrent tabs cannot overwrite each other.
+    case = db.scalar(select(PreflightCase).where(PreflightCase.id == case_id).with_for_update())
+    if case is None:
+        raise QualificationJudgmentError("PREFLIGHT_CASE_NOT_FOUND", "사전검토 건을 찾을 수 없습니다.", status_code=404)
     source = load_qualification_judgment_run(db, payload.source_judgment_run_id)
     if source.preflight_case_id != case_id:
         raise QualificationJudgmentError(
@@ -90,6 +96,17 @@ def answer_and_rejudge(
             "판정 실행과 사전검토 건이 일치하지 않습니다.",
             status_code=422,
         )
+
+    latest_id = db.scalar(select(QualificationJudgmentRun.id).where(QualificationJudgmentRun.preflight_case_id == case_id, QualificationJudgmentRun.notice_version_id == source.notice_version_id).order_by(QualificationJudgmentRun.created_at.desc()).limit(1))
+    latest_analysis_id = db.scalar(select(QualificationAnalysisRun.id).where(QualificationAnalysisRun.notice_version_id == source.notice_version_id).order_by(QualificationAnalysisRun.created_at.desc()).limit(1))
+    if source.id != latest_id or source.analysis_run_id != latest_analysis_id or source.rule_version != RULE_VERSION:
+        raise QualificationJudgmentError("STALE_JUDGMENT", "분석 또는 판정이 갱신되었습니다. 새로 검토한 뒤 답변해 주세요.", status_code=409)
+    if source.company_id != case.company_id or source.notice_version_id not in {case.baseline_version_id, case.current_version_id}:
+        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정의 회사 또는 공고 차수가 검토 건과 다릅니다.", status_code=422)
+    company = _load_company(db, case.company_id)
+    completeness = _record_to_completeness(db.get(CompanyQualificationProfileCompleteness, company.id))
+    if build_company_profile_snapshot(company, completeness).model_dump(mode="json") != dict(source.profile_snapshot):
+        raise QualificationJudgmentError("PROFILE_CHANGED_FULL_REJUDGMENT_REQUIRED", "회사 프로필이 변경되었습니다. 전체 판정 후 답변해 주세요.", status_code=409)
 
     source_by_key = {judgment.requirement_key: judgment for judgment in source.judgments}
     original = source_by_key.get(payload.requirement_key)
@@ -106,7 +123,7 @@ def answer_and_rejudge(
             status_code=422,
         )
 
-    analysis = analysis_run_response(load_qualification_analysis_run(db, source.analysis_run_id))
+    analysis = analysis_run_response(load_judgment_analysis(db, source.analysis_run_id))
     requirement = next(
         (item for item in analysis.requirements if item.requirement_key == payload.requirement_key),
         None,
@@ -163,7 +180,7 @@ def answer_and_rejudge(
                 )
             )
 
-    overall = derive_overall_status(analysis.requirements, judgments)
+    overall = derive_overall_status(analysis.requirements, judgments, analysis_status=analysis.status)
     result_run = QualificationJudgmentRun(
         preflight_case_id=source.preflight_case_id,
         analysis_run_id=source.analysis_run_id,

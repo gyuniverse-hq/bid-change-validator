@@ -9,7 +9,7 @@
 원공고를 기준으로 준비한 자격판정·필수서류·제출 준비 상태가 변경공고 이후에도 유효한지 다시 확인하고, 변경된 조건과 원문 근거를 바탕으로 영향을 받은 항목을 재검증하는 프로젝트입니다.
 
 **Current Stage**  
-`Topic Selected → MVP / User Flow / Architecture Design`
+**Product Baseline 구현·안전성 보강 / Ready 보류** — 2026-09-08, `fix/product-baseline-audit` / [PR #74](https://github.com/gyuniverse-hq/bid-change-validator/pull/74). 이 문서의 구현 기준은 PR #74 코드 `87b9a5f`이며, 문서 갱신 시 PR은 Draft·미병합입니다.
 
 ## Team
 
@@ -25,7 +25,7 @@
 
 ## Parallel Development Workspaces
 
-주말 초기 병렬작업을 위해 Frontend / Backend / LLM·RAG workspace를 분리 운영합니다.
+초기 병렬 개발에서 사용한 Frontend / Backend / LLM·RAG workspace는 다음과 같습니다. 현재 제품 통합 기준은 이 저장소의 Product Baseline이며, 아래 저장소의 최신 동기화 상태를 뜻하지 않습니다.
 
 | Workspace | Owners | Repository |
 | --- | --- | --- |
@@ -33,7 +33,7 @@
 | Backend / Data | 전진환 (Backend), 정예린 (DB / Data) | https://github.com/gyuniverse-hq/bid-change-validator-backend |
 | LLM / RAG | 김재현, 이홍규 | https://github.com/gyuniverse-hq/bid-change-validator-llm-rag |
 
-초기에는 빠른 구현과 실험을 우선하고, 영역 간 연결점은 아래 공통 문서에서 맞춥니다.
+현재 구현·계약·검증 상태는 [Product Baseline 문서](docs/mvp-baseline/README.md)를 우선 확인하고, 초기 협업 맥락은 아래 문서를 참고합니다.
 
 - 병렬 작업 가이드: `docs/parallel-development.md`
 - Frontend ↔ Backend 계약 초안: `docs/contracts/frontend-backend.md`
@@ -41,11 +41,13 @@
 
 ## Current Focus
 
-- Figma 기반 핵심 User Flow 및 화면설계
-- 초기 Backend / API / 데이터 흐름 프로토타입
-- 나라장터 도메인 및 데이터 구조 검토
-- LLM / RAG · Guardrail · Evaluation Harness 사전 검토
-- Jira · GitHub · Notion 기반 협업 구조 적용
+- 01~07 제품 화면과 Analysis → deterministic Judgment → Evidence → Ask-back 연결 유지
+- `qualification-rules-v0.2`의 보수적 판정, `UNKNOWN != ASKABLE`, USER_ANSWER Policy A 유지
+- 실제 추출 품질·표/예외 문맥, 과거 분석 캐시 재검증, meaningful 변경공고 G2 확보
+- G0 통과, G1 실제 경로/안전한 보류 확인, G2 미확보: **Product Baseline Ready는 보류**
+- 코드 기준 Backend 102개·Frontend 회귀 3개·타입·수정 파일 lint·build 통과, [CI #58 성공](https://github.com/gyuniverse-hq/bid-change-validator/actions/runs/34178537233). 전체 lint의 기존 오류 27개는 남아 있습니다.
+
+상세 상태·남은 blocker는 [audit](docs/mvp-baseline/11-product-baseline-audit.md), 담당별 후속 작업은 [handoff](docs/mvp-baseline/08-team-handoff-current-state.md)를 확인하세요.
 
 ## 로컬 PostgreSQL 실행
 
@@ -88,7 +90,7 @@ GET /api/v1/master-codes/institutions/1011052
 
 ## 로컬 Qualification Integration 확인
 
-`integration/mvp-baseline`의 `/qualification` 화면에서 실제 Backend API와 OpenAI 기반 자격요건 분석 경로를 확인할 수 있습니다.
+`fix/product-baseline-audit`의 `/qualification` 화면에서 실제 Backend API와 OpenAI 기반 자격요건 분석 경로를 확인할 수 있습니다. PR #74의 대상은 `integration/mvp-baseline`이며 `main`/`develop`을 직접 수정하지 않습니다.
 
 먼저 저장소 루트에서 `.env.example`을 `.env`로 복사하고 OpenAI API Key를 입력합니다.
 
@@ -105,7 +107,13 @@ OPENAI_MODEL_DEFAULT=gpt-5.6-luna
 
 `.env`와 `.env.*`는 Git ignore 대상이며 `.env.example`만 추적합니다. 실제 API Key를 commit하지 마세요.
 
-Backend API 컨테이너를 시작합니다.
+Backend API 컨테이너는 source bind mount가 아닌 build image 방식입니다. **Backend 코드를 변경한 뒤에는 다시 빌드해야 합니다.**
+
+```powershell
+docker compose up -d --build api
+```
+
+최초 실행 시 수집기도 함께 시작할 수 있습니다.
 
 ```powershell
 docker compose up -d --build api notice-poller
@@ -180,20 +188,45 @@ GET  /api/v1/preflight-cases/{case_id}/documents/{document_id}/preview
 
 이 단계에서는 LLM을 호출하거나 자격판정 결과를 생성하지 않습니다.
 
-## 프론트엔드 검토 화면
+## 현재 제품 화면과 실제 흐름
 
-`apps/web`의 프론트엔드는 FastAPI와 직접 연결됩니다. 공고 검색, 검토 건 생성, 제안서 업로드, 공고 버전 선택, PDF 원문 표시, rhwp 기반 HWP/HWPX 페이지 렌더링을 지원합니다.
+[Figma 7개 화면](https://www.figma.com/design/eWoeKC5CCjuWwVzXLvb4ES/?node-id=7-45)은 Product IA Source of Truth입니다. 아래 7개 route는 구현되어 브라우저 이동을 확인했으며, 모든 기능의 최종 품질 완료를 뜻하지 않습니다.
 
-화면은 공고문, 제안서, 누락·합격조건의 3개 영역으로 구성됩니다. 현재 누락·합격조건 영역에는 문서 저장 및 텍스트 추출 준비 상태만 표시하며 LLM 분석은 수행하지 않습니다.
+| 화면 | Route | 현재 범위 |
+| --- | --- | --- |
+| 01 공고 찾기 | `/notices` | 실공고 조회와 분석된 현재 공고의 Rule Matching 구분 |
+| 02 참가자격 검토 | `/qualification` | 한 번의 검토 시작으로 Analysis → Judgment; 요약·첨부·위험/미구조화·회사값·근거 |
+| 03 확인 필요 | `/ask-back` | Askable만 답변, 해당 Requirement 부분 재판정 |
+| 04 근거 원문 | `/evidence` | 현재 문서·Evidence·판정 연결, HWPX/PDF 추출 원문 대조 |
+| 05 평가 대응 | `/evaluation` | 참가자격 기반 회사정보 참고; **평가 전용 extraction 미완료**, 점수 예측 없음 |
+| 06 변경 이력 | `/changes` | 버전 비교·Requirement Diff·affected-only API 연결; 실제 G2 미검증 |
+| 07 회사 프로필 | `/company` | 회사값 표시, 수행실적·인증/등록 관리 |
 
-```powershell
-cd apps/web
-Copy-Item .env.example .env.local
-pnpm install
-pnpm dev
+02~06은 같은 `caseId`와 참가자격 / 확인 필요 / 근거 원문 / 평가 대응 / 변경 이력 5개 탭을 유지합니다.
+
+```text
+회사 Profile → 실제 공고 조회 → 분석된 공고 Matching → Case/Version 선택
+→ 원문 Parsing → LLM/RAG Requirement Extraction·Mapping·Evidence
+→ deterministic Rule → SATISFIED / UNSATISFIED / UNKNOWN
+→ Askable UNKNOWN만 USER_ANSWER → 해당 Requirement 부분 재판정
+→ 원문 확인 → 평가 대응 참고 → 변경공고 Requirement Diff → affected-only revalidation
 ```
 
-프론트엔드는 `http://localhost:3000`에서 확인할 수 있습니다. FastAPI를 AWS에 배포한 뒤 `NEXT_PUBLIC_API_BASE_URL`을 실제 API 주소로 변경해야 합니다.
+LLM은 최종 참가 가능/불가를 결정하지 않습니다. 복합·법적·예외·불명확 조건은 UNMAPPED/UNKNOWN으로 보류합니다. PARTIAL은 답변으로 모든 현재 항목을 충족해도 eligible로 승격하지 않습니다. 필수 그룹이 확정 미달이면 ineligible, 그렇지 않으면 insufficient_data입니다.
+
+USER_ANSWER는 `apply_to_profile=false`인 **Policy A**로 현재 Case 판정 근거에만 저장합니다. 회사 프로필로 자동 승격하지 않습니다. Evidence는 전체 raw와 source-local 조항을 검증하고 원본 파일/추출 텍스트 해시를 구분합니다.
+
+### PR #74 이후 기존 Demo/Golden 재검증
+
+Rule은 `qualification-rules-v0.2`, Analysis Contract는 `ai-analysis-v0.2`입니다. **과거 AnalysisRun의 SUCCEEDED나 같은 Contract 버전이 새 grounding/validation 정책 통과를 뜻하지 않습니다.** 자동 소급 검증·일괄 캐시 무효화는 구현되지 않았습니다.
+
+PR #74 merge 이후 API를 rebuild하고, 기존 Demo/Golden의 baseline/current를 **full re-analysis → 새 analysis ID로 Judgment → 필요한 안전한 답변 → 변경 재검증** 순서로 실행하세요. 기존 결과를 삭제하거나 성공 상태로 고치지 않습니다. [상세 절차](docs/mvp-baseline/06-handoff-and-merge.md)를 따릅니다.
+
+G0는 합성 회귀 통과, G1은 실제 PARTIAL 분석·원문·판정·unsafe 답변 거절 확인입니다. G2는 후보 10건 검산 후에도 미확보입니다. `R26BK01715087`은 RFP가 같고 시간/설명회 안내만 바뀌어 탈락했습니다. [후보 검산·남은 조건](docs/mvp-baseline/05-e2e-golden-path.md)을 참고하세요.
+
+기존 Proposal 업로드·저장·추출·원문 API와 관련 검토 구성요소는 유지됩니다. 현재 7개 제품 화면과 제안서 대응/누락검사 전체 연결은 별도로 검증해야 하며, 해당 기능을 dead code로 분류하지 않습니다.
+
+로컬 프런트엔드는 `http://localhost:3000`, API는 `NEXT_PUBLIC_API_BASE_URL`로 연결합니다. 실제 외부 배포 완료를 의미하지 않습니다.
 
 ## AWS 배포 설정
 
@@ -221,10 +254,12 @@ Figma / Requirement
 ```
 
 - `main`: 안정 버전 / 배포 기준
-- `develop`: 통합 개발 브랜치
+- `develop`: 이후 통합 검토 대상 브랜치; 현재 Baseline 작업에서 직접 수정 금지
+- 현재 문서/코드 작업: `fix/product-baseline-audit` → PR #74 → `integration/mvp-baseline`
+- PR 보강 변경의 merge 판단과 Product Baseline Ready/동결 승인은 별도입니다.
 - 기능 브랜치: `feat/SKN34-XX-summary`, `fix/SKN34-XX-summary` 등
 - 주요 변경은 Pull Request와 최소 1명 Review를 거칩니다.
 
 ## Documentation
 
-세부 아키텍처, 기술 스택, 실행 방법, API·데이터 흐름, 평가 결과는 설계가 확정되는 순서대로 이 README와 `docs/`에 반영합니다.
+현재 구현·정책·검증·handoff의 시작점은 [docs/mvp-baseline/README.md](docs/mvp-baseline/README.md)입니다. 과거 설계/Proposal 문서는 맥락을 유지하며 현재 구현 상태와 구분합니다.

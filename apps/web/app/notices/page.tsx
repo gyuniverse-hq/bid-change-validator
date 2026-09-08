@@ -27,10 +27,10 @@ import { getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSumma
 import {
   createPreflightCaseWithCompany,
   listCompanies,
-  listQualificationJudgments,
   type CompanyProfile,
   type QualificationJudgmentSummary,
 } from '@/lib/qualification-api';
+import { loadCurrentJudgment } from '@/lib/case-workspace';
 import { productProfileCoverage } from '@/lib/product-profile';
 
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
@@ -58,12 +58,16 @@ export default function NoticesPage() {
   const [error, setError] = useState('');
   const [showRejected, setShowRejected] = useState(true);
 
-  async function hydrateCaseMeta(caseItems: PreflightCase[]) {
+  async function hydrateCaseMeta(caseItems: PreflightCase[], noticeItems: BidNoticeSummary[], selectedCompanyId: string) {
     const pairs = await Promise.all(
-      caseItems.map(async (caseItem) => {
+      caseItems.filter((item, index) => item.company_id === selectedCompanyId
+        && noticeItems.some((notice) => notice.id === item.notice_id && notice.current_version === item.current_version_number)
+        && caseItems.findIndex((other) => other.notice_id === item.notice_id && other.company_id === selectedCompanyId && other.current_version_number === item.current_version_number) === index
+      ).map(async (caseItem) => {
         try {
-          const judgments = await listQualificationJudgments(caseItem.id);
-          return [caseItem.notice_id, { caseItem, judgment: judgments[0] ?? null }] as const;
+          const run = await loadCurrentJudgment(caseItem);
+          const judgment = run ? { ...run, judgment_count: run.judgments.length, unknown_count: run.judgments.filter((item) => item.status === 'UNKNOWN').length, unsatisfied_count: run.judgments.filter((item) => item.status === 'UNSATISFIED').length } : null;
+          return [caseItem.notice_id, { caseItem, judgment }] as const;
         } catch {
           return [caseItem.notice_id, { caseItem, judgment: null }] as const;
         }
@@ -84,7 +88,7 @@ export default function NoticesPage() {
       setNotices(noticeResult.items);
       setCases(caseResult.items);
       setCompany(companies[0] ?? null);
-      await hydrateCaseMeta(caseResult.items);
+      await hydrateCaseMeta(caseResult.items, noticeResult.items, companies[0]?.id ?? '');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '공고 데이터를 불러오지 못했습니다.');
     } finally {
@@ -169,7 +173,7 @@ export default function NoticesPage() {
       });
       const refreshed = await listPreflightCases();
       setCases(refreshed.items);
-      await hydrateCaseMeta(refreshed.items);
+      await hydrateCaseMeta(refreshed.items, notices, company.id);
       router.push(`/qualification?caseId=${created.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '검토 건 생성에 실패했습니다.');

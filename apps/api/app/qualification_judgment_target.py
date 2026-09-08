@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 from .ai.judgment import RULE_VERSION, judge_requirements
 from .analysis_models import QualificationAnalysisRun
 from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .qualification_analysis import analysis_run_response, load_qualification_analysis_run
+from .qualification_analysis import analysis_run_response
 from .qualification_judgment import (
+    load_judgment_analysis,
     QualificationJudgmentError,
     _load_case,
     _load_company,
@@ -49,7 +50,7 @@ def run_targeted_qualification_judgment(
             "자격 판정을 위해 사전검토 건에 회사 프로필이 필요합니다.",
             status_code=422,
         )
-    analysis_run = load_qualification_analysis_run(db, analysis_run_id)
+    analysis_run = load_judgment_analysis(db, analysis_run_id)
     allowed_versions = {case.current_version_id}
     if case.baseline_version_id is not None:
         allowed_versions.add(case.baseline_version_id)
@@ -77,10 +78,9 @@ def run_targeted_qualification_judgment(
         profile,
         preflight_case_id=str(case.id),
         reference_date=actual_reference_date,
+        analysis_status=analysis_run.status,
     )
     overall_status = evaluation.overall_status
-    if analysis_run.status == "PARTIAL" and overall_status == "eligible":
-        overall_status = "insufficient_data"
 
     run = QualificationJudgmentRun(
         preflight_case_id=case.id,

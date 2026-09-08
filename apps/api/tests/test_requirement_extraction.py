@@ -227,3 +227,28 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
     assert calls["count"] == 2
     assert result["status"] == "ok"
     assert result["slots"] == []
+
+
+def test_quote_suffix_cannot_be_fabricated_after_matching_prefix():
+    raw = "서울특별시에주된영업소를두고입찰공고일전일부터계약체결일까지계속하여해당소재지에서사업을운영하는업체는"
+    assert not validate_extracted_slot({"raw": raw + " 모든 자격이 면제된다."}, [{"text": raw + " 등록하여야 한다."}])[0]
+    assert validate_extracted_slot({"raw": "서울  소재\n업체"}, [{"text": "서울 소재 업체"}])[0]
+
+
+def test_truncated_input_is_partial_and_not_silently_successful():
+    chunks = [{"text": "서울 소재 업체\n" + "긴 원문 " * 10000, "chunk_id": "long"}]
+    result = extract_legacy_slots(chunks, structured_extract=lambda *args: {"requirements": [{"유형": "지역요건", "raw": "서울 소재 업체", "지역_raw": "서울"}]})
+    assert result["status"] == "partial"
+    assert "길이 제한" in result["notes"]
+
+
+def test_other_document_requirements_are_not_suppressed_by_section_anchor():
+    chunks = _chunks() + [{"text": "개발 인력 5명 이상 보유", "chunk_id": "extra", "source_blocks": [{"document_id": "rfp"}]}]
+    assert chunks[-1] in select_eligibility_chunks(chunks)
+
+
+def test_clause_reference_must_belong_to_the_grounded_chunk():
+    from apps.api.app.ai.requirement_extraction import validate_extracted_slot
+    chunks = [{"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"}, {"text": "9. 다른 문서", "clause_label": "9"}]
+    assert validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "2-1-1"}, chunks)[0]
+    assert not validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "9"}, chunks)[0]

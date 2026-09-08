@@ -8,15 +8,15 @@ import { LoaderCircle } from 'lucide-react';
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
 import { Button } from '@/components/ui/button';
-import { absoluteApiUrl, getDocumentText, type NoticeDocument, type NoticeDocumentText } from '@/lib/api';
-import { currentVersion, loadCaseWorkspace, workspaceHref, type CaseWorkspace } from '@/lib/case-workspace';
+import { absoluteApiUrl, getDocumentText, type NoticeDocumentText } from '@/lib/api';
+import { currentVersion, useCaseWorkspace, workspaceHref, type CaseWorkspace } from '@/lib/case-workspace';
 
 function displayLocation(location: Record<string, unknown>) {
   const display = location.display;
   if (typeof display === 'string' && display) return display;
   const page = location.page;
   const clause = location.clause_label;
-  return [clause, page != null ? `p.${page}` : null].filter(Boolean).join(' ') || '위치 정보 없음';
+  return [clause, typeof page === 'number' || typeof page === 'string' ? `p.${page}` : null].filter(Boolean).join(' ') || '위치 정보 없음';
 }
 
 function blockText(block: Record<string, unknown>) {
@@ -31,35 +31,34 @@ export default function EvidencePage() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get('caseId');
   const evidenceParam = searchParams.get('evidence');
-  const [workspace, setWorkspace] = useState<CaseWorkspace | null>(null);
-  const [documentId, setDocumentId] = useState('');
-  const [documentText, setDocumentText] = useState<NoticeDocumentText | null>(null);
-  const [selectedEvidenceKey, setSelectedEvidenceKey] = useState(evidenceParam ?? '');
-  const [error, setError] = useState('');
+  const { workspace, error } = useCaseWorkspace(caseId);
+  if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
+  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  return <EvidenceWorkspace key={`${caseId}:${workspace.currentAnalysis?.id}:${evidenceParam}`} workspace={workspace} evidenceParam={evidenceParam} />;
+}
+
+function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorkspace; evidenceParam: string | null }) {
+  const version = currentVersion(workspace);
+  const initialEvidence = evidenceParam
+    ? workspace.currentAnalysisDetail?.evidence.find((item) => item.evidence_key === evidenceParam)
+    : workspace.currentAnalysisDetail?.evidence[0];
+  const [documentId, setDocumentId] = useState(initialEvidence?.document_id ?? version.documents[0]?.id ?? '');
+  const [selectedEvidenceKey, setSelectedEvidenceKey] = useState(initialEvidence?.evidence_key ?? '');
+  const [loadedText, setLoadedText] = useState<{ documentId: string; text: NoticeDocumentText | null; error: string } | null>(null);
+  const document = version.documents.find((item) => item.id === documentId) ?? null;
+  const documentText = loadedText?.documentId === documentId ? loadedText.text : null;
+  const textError = loadedText?.documentId === documentId ? loadedText.error : '';
 
   useEffect(() => {
-    if (!caseId) return;
-    loadCaseWorkspace(caseId).then((value) => {
-      setWorkspace(value);
-      const version = currentVersion(value);
-      const evidenceDoc = evidenceParam
-        ? value.currentAnalysisDetail?.evidence.find((item) => item.evidence_key === evidenceParam)?.document_id
-        : null;
-      setDocumentId(evidenceDoc ?? version.documents[0]?.id ?? '');
-      if (!selectedEvidenceKey) setSelectedEvidenceKey(value.currentAnalysisDetail?.evidence[0]?.evidence_key ?? '');
-    }).catch((cause) => setError(cause instanceof Error ? cause.message : '근거 데이터를 불러오지 못했습니다.'));
-  }, [caseId, evidenceParam]);
-
-  const version = workspace ? currentVersion(workspace) : null;
-  const document = version?.documents.find((item) => item.id === documentId) ?? null;
-
-  useEffect(() => {
-    if (!document) {
-      setDocumentText(null);
-      return;
-    }
-    getDocumentText(document.text_url).then(setDocumentText).catch(() => setDocumentText(null));
-  }, [document?.id]);
+    let cancelled = false;
+    if (!document) return;
+    getDocumentText(document.text_url).then((text) => {
+      if (!cancelled) setLoadedText({ documentId: document.id, text, error: '' });
+    }).catch(() => {
+      if (!cancelled) setLoadedText({ documentId: document.id, text: null, error: '원문 텍스트를 불러오지 못했습니다. 원본 열기로 확인해 주세요.' });
+    });
+    return () => { cancelled = true; };
+  }, [document]);
 
   const evidence = workspace?.currentAnalysisDetail?.evidence.find((item) => item.evidence_key === selectedEvidenceKey) ?? null;
   const requirement = evidence
@@ -74,8 +73,6 @@ export default function EvidencePage() {
     return workspace.currentAnalysisDetail.evidence.slice(0, 8);
   }, [workspace]);
 
-  if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -85,7 +82,7 @@ export default function EvidencePage() {
 
         <div className="mt-5 flex flex-wrap gap-2">
           {version?.documents.map((item) => (
-            <button key={item.id} type="button" onClick={() => setDocumentId(item.id)} className={`h-10 rounded-full px-5 text-[14px] font-semibold ${documentId === item.id ? 'bg-[var(--product-ink)] text-white' : 'border border-[var(--product-line)] bg-white'}`}>{item.name}</button>
+            <button key={item.id} type="button" onClick={() => { setDocumentId(item.id); setSelectedEvidenceKey(workspace.currentAnalysisDetail?.evidence.find((entry) => entry.document_id === item.id)?.evidence_key ?? ''); }} className={`h-10 rounded-full px-5 text-[14px] font-semibold ${documentId === item.id ? 'bg-[var(--product-ink)] text-white' : 'border border-[var(--product-line)] bg-white'}`}>{item.name}</button>
           ))}
         </div>
 
@@ -101,9 +98,12 @@ export default function EvidencePage() {
               {documentText?.blocks?.length ? documentText.blocks.map((block, index) => {
                 const text = blockText(block);
                 if (!text) return null;
-                const active = evidence?.quote && text.includes(evidence.quote.slice(0, Math.min(24, evidence.quote.length)));
+                const start = evidence?.location.block_start;
+                const end = evidence?.location.block_end;
+                const blockIndex = typeof block.block_index === 'number' ? block.block_index : index;
+                const active = evidence?.document_id === document?.id && typeof start === 'number' && typeof end === 'number' && blockIndex >= start && blockIndex <= end;
                 return <div key={index} className={`flex gap-4 rounded-[20px] px-[18px] py-[14px] text-[14.5px] leading-[1.85] ${active ? 'bg-[#fbf0dc] font-semibold' : ''}`}><span className="w-10 shrink-0 text-[13px] font-semibold text-[var(--product-muted)]">{index + 1}</span><p>{text}</p></div>;
-              }) : documentText?.text ? <pre className="whitespace-pre-wrap text-[14px] leading-7 text-[var(--product-body)]">{documentText.text}</pre> : <div className="grid min-h-[420px] place-items-center text-[14px] text-[var(--product-muted)]">추출 텍스트가 없습니다. 원본 열기로 확인해 주세요.</div>}
+              }) : documentText?.text ? <pre className="whitespace-pre-wrap text-[14px] leading-7 text-[var(--product-body)]">{documentText.text}</pre> : <div className="grid min-h-[420px] place-items-center text-[14px] text-[var(--product-muted)]">{textError || '추출 텍스트가 없습니다. 원본 열기로 확인해 주세요.'}</div>}
             </div>
             <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">원문을 그대로 표시하며, 이 화면에서 문장을 요약하거나 고쳐 쓰지 않습니다.</p>
           </div>

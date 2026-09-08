@@ -1,13 +1,13 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GitCompareArrows, LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { Button } from '@/components/ui/button';
 import { runQualificationRevalidation, type QualificationRevalidation } from '@/lib/qualification-api';
-import { baselineVersion, currentVersion, loadCaseWorkspace, type CaseWorkspace } from '@/lib/case-workspace';
+import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -20,21 +20,15 @@ function money(value: number | null | undefined) {
 
 export default function ChangesPage() {
   const caseId = useSearchParams().get('caseId');
-  const [workspace, setWorkspace] = useState<CaseWorkspace | null>(null);
+  return <ChangesWorkspace key={caseId} caseId={caseId} />;
+}
+
+function ChangesWorkspace({ caseId }: { caseId: string | null }) {
+  const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
   const [result, setResult] = useState<QualificationRevalidation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function reload() {
-    if (!caseId) return;
-    try {
-      setWorkspace(await loadCaseWorkspace(caseId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '변경 이력을 불러오지 못했습니다.');
-    }
-  }
-
-  useEffect(() => { void reload(); }, [caseId]);
 
   async function revalidate() {
     if (!workspace?.sourceJudgment || !workspace.baselineAnalysis || !workspace.currentAnalysis) return;
@@ -43,7 +37,7 @@ export default function ChangesPage() {
     try {
       const next = await runQualificationRevalidation(workspace.caseItem.id, {
         source_judgment_run_id: workspace.sourceJudgment.id,
-        baseline_analysis_run_id: workspace.baselineAnalysis.id,
+        baseline_analysis_run_id: workspace.sourceJudgment.analysis_run_id,
         current_analysis_run_id: workspace.currentAnalysis.id,
       });
       setResult(next);
@@ -70,7 +64,7 @@ export default function ChangesPage() {
   }, [workspace]);
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || error || <LoaderCircle className="size-7 animate-spin" />}</main>;
 
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
@@ -86,7 +80,7 @@ export default function ChangesPage() {
         <section className="mt-8">
           <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">공고 차수</h2><span className="text-[13.5px] text-[var(--product-muted)]">판정은 차수에 묶입니다</span></div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {workspace.versions.map((version) => <article key={version.id} className={`rounded-[20px] border px-5 py-[18px] ${version.is_current ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}><div className="flex items-center gap-2"><strong className="text-[14.5px]">{version.version_number}차 {version.version_number === 1 ? '공고' : '변경'}</strong>{version.is_current && <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold">현재 판정 기준</span>}</div><p className="mt-2 text-[12.5px] text-[var(--product-muted)]">{formatDate(version.changed_at ?? version.posted_at ?? version.collected_at)}</p><p className="mt-2 text-[13px]">{version.change_reason ?? (version.version_number === 1 ? '최초 공고' : '변경 사유 미기재')}</p></article>)}
+            {workspace.versions.map((version) => <article key={version.id} className={`rounded-[20px] border px-5 py-[18px] ${version.version_number === workspace.caseItem.current_version_number ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}><div className="flex items-center gap-2"><strong className="text-[14.5px]">{version.version_number}차 {version.version_number === 1 ? '공고' : '변경'}</strong>{version.version_number === workspace.caseItem.current_version_number && <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold">현재 판정 기준</span>}</div><p className="mt-2 text-[12.5px] text-[var(--product-muted)]">{formatDate(version.changed_at ?? version.posted_at ?? version.collected_at)}</p><p className="mt-2 text-[13px]">{version.change_reason ?? (version.version_number === 1 ? '최초 공고' : '변경 사유 미기재')}</p></article>)}
           </div>
         </section>
 

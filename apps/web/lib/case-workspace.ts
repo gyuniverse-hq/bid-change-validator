@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getNotice,
   getNoticeVersions,
@@ -17,6 +18,7 @@ import {
   type QualificationAnalysisRun,
   type QualificationAnalysisSummary,
   type QualificationJudgmentRun,
+  type QualificationJudgmentSummary,
   type QualificationQuestion,
 } from '@/lib/qualification-api';
 
@@ -59,21 +61,25 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
   const currentVersionId = versions.find(
     (item) => item.version_number === caseItem.current_version_number,
   )?.id;
+  if (!currentVersionId || (caseItem.baseline_version_number && !baselineVersionId)) {
+    throw new Error('검토 건에 지정된 공고 차수를 찾을 수 없습니다.');
+  }
   const baselineSummary = baselineVersionId
-    ? judgmentSummaries.find((item) => item.notice_version_id === baselineVersionId)
+    ? judgmentSummaries.find((item) => judgmentMatchesAnalysis(item, baselineAnalysis, caseItem.company_id))
     : null;
-  const latestSummary = judgmentSummaries[0] ?? null;
-  const sourceSummary = baselineSummary ?? latestSummary;
   const displaySummary =
-    judgmentSummaries.find((item) => item.notice_version_id === currentVersionId) ?? latestSummary;
+    judgmentSummaries.find((item) => judgmentMatchesAnalysis(item, currentAnalysis, caseItem.company_id));
+  const sourceSummary = baselineVersionId ? baselineSummary : displaySummary;
 
-  const [sourceJudgment, displayJudgment] = await Promise.all([
-    sourceSummary ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
+  const [source, display] = await Promise.all([
+    sourceSummary && sourceSummary.id !== displaySummary?.id ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
     displaySummary ? getQualificationJudgment(displaySummary.id) : Promise.resolve(null),
   ]);
+  const displayJudgment = display?.rule_version === 'qualification-rules-v0.2' ? display : null;
+  const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === 'qualification-rules-v0.2' ? source : null;
 
-  const questions = sourceJudgment
-    ? await listQualificationQuestions(caseItem.id, sourceJudgment.id)
+  const questions = displayJudgment
+    ? await listQualificationQuestions(caseItem.id, displayJudgment.id)
     : [];
 
   return {
@@ -91,11 +97,51 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
 }
 
 export function currentVersion(workspace: CaseWorkspace) {
-  return (
-    workspace.versions.find(
+  const version = workspace.versions.find(
       (item) => item.version_number === workspace.caseItem.current_version_number,
-    ) ?? workspace.notice.latest
-  );
+    );
+  if (!version) throw new Error('검토 차수의 공고를 찾을 수 없습니다.');
+  return version;
+}
+
+export function judgmentMatchesAnalysis(judgment: QualificationJudgmentSummary, analysis: QualificationAnalysisSummary | null, companyId: string | null) {
+  return Boolean(analysis && analysis.status !== 'FAILED' && judgment.analysis_run_id === analysis.id && judgment.notice_version_id === analysis.notice_version_id && judgment.company_id === companyId);
+}
+
+export async function loadCurrentJudgment(caseItem: PreflightCase) {
+  const [analyses, judgments] = await Promise.all([
+    listQualificationAnalyses(caseItem.notice_id, caseItem.current_version_number),
+    listQualificationJudgments(caseItem.id),
+  ]);
+  const summary = judgments.find((item) => judgmentMatchesAnalysis(item, analyses[0] ?? null, caseItem.company_id));
+  if (!summary) return null;
+  const run = await getQualificationJudgment(summary.id);
+  return run.rule_version === 'qualification-rules-v0.2' ? run : null;
+}
+
+export function useCaseWorkspace(caseId: string | null) {
+  const [loaded, setLoaded] = useState<CaseWorkspace | null>(null);
+  const [error, setError] = useState('');
+  const generation = useRef(0);
+  const reload = useCallback(async () => {
+    const request = ++generation.current;
+    setError('');
+    if (!caseId) return;
+    try {
+      const value = await loadCaseWorkspace(caseId);
+      if (request === generation.current) setLoaded(value);
+    } catch (cause) {
+      if (request === generation.current) {
+        setLoaded(null);
+        setError(cause instanceof Error ? cause.message : '검토 데이터를 불러오지 못했습니다.');
+      }
+    }
+  }, [caseId]);
+  useEffect(() => {
+    const timer = setTimeout(() => { setLoaded(null); void reload(); }, 0);
+    return () => { clearTimeout(timer); generation.current += 1; };
+  }, [reload]);
+  return { workspace: loaded?.caseItem.id === caseId ? loaded : null, error, reload };
 }
 
 export function baselineVersion(workspace: CaseWorkspace) {

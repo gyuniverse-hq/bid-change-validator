@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
@@ -10,33 +10,23 @@ import { EvidenceQuote } from '@/components/product/evidence-quote';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { answerQualificationQuestion, type QualificationQuestion } from '@/lib/qualification-api';
-import { loadCaseWorkspace, workspaceHref, type CaseWorkspace } from '@/lib/case-workspace';
+import { useCaseWorkspace, workspaceHref } from '@/lib/case-workspace';
 
 type AnswerChoice = 'yes' | 'no' | 'unknown';
 
 export default function AskBackPage() {
-  const searchParams = useSearchParams();
-  const caseId = searchParams.get('caseId');
-  const [workspace, setWorkspace] = useState<CaseWorkspace | null>(null);
+  const caseId = useSearchParams().get('caseId');
+  return <AskBackWorkspace key={caseId} caseId={caseId} />;
+}
+
+function AskBackWorkspace({ caseId }: { caseId: string | null }) {
+  const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
   const [choice, setChoice] = useState<Record<string, AnswerChoice>>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  async function reload() {
-    if (!caseId) return;
-    setError('');
-    try {
-      setWorkspace(await loadCaseWorkspace(caseId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '검토 데이터를 불러오지 못했습니다.');
-    }
-  }
-
-  useEffect(() => {
-    void reload();
-  }, [caseId]);
 
   const allQuestions = workspace?.questions ?? [];
   const askable = allQuestions.filter((item) => item.askable);
@@ -56,7 +46,7 @@ export default function AskBackPage() {
   }, [workspace]);
 
   async function submit(question: QualificationQuestion) {
-    if (!workspace?.sourceJudgment || !question.askable) return;
+    if (!workspace?.displayJudgment || !question.askable) return;
     const selected = choice[question.requirement_key] ?? 'unknown';
     if (selected === 'unknown') {
       setMessage('이 항목은 사용자 답변 없이 확인 필요 상태로 유지합니다.');
@@ -67,11 +57,11 @@ export default function AskBackPage() {
     setMessage('');
     try {
       await answerQualificationQuestion(workspace.caseItem.id, {
-        source_judgment_run_id: workspace.sourceJudgment.id,
+        source_judgment_run_id: workspace.displayJudgment.id,
         requirement_key: question.requirement_key,
         satisfies_requirement: selected === 'yes',
         normalized_value: values[question.requirement_key]?.trim() || undefined,
-        evidence_held: selected === 'yes',
+        evidence_held: false,
       });
       await reload();
       setMessage('답변한 Requirement만 부분 재판정했습니다. 이 답은 이번 검토의 판정 근거로 저장됩니다.');
@@ -83,7 +73,7 @@ export default function AskBackPage() {
   }
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || error || <LoaderCircle className="size-7 animate-spin" />}</main>;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -141,7 +131,7 @@ export default function AskBackPage() {
             return <section key={question.requirement_key} className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold">묻지 않습니다</span><span className="text-[12.5px] text-[var(--product-muted)]">{question.askability_reason_code}</span></div><h3 className="mt-3 text-[18px] font-bold">{question.raw_requirement}</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">{question.askability_reason}</p>{evidence && <div className="mt-4"><EvidenceQuote label={evidence.label} quote={evidence.quote} /></div>}<Link href={`${workspaceHref('/evidence', workspace.caseItem.id)}&evidence=${encodeURIComponent(evidence?.label ?? '')}`}><Button variant="outline" className="mt-4 rounded-full">근거 원문에서 확인</Button></Link></section>;
           })}
 
-          {totalUnknown === 0 && <section className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-12 text-center"><h3 className="text-[19px] font-bold">지금 답하실 확인 필요 항목이 없습니다</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">판정 결과에서 사용자 확인이 필요한 항목이 생기면 이 화면에 표시됩니다.</p><Link href={workspaceHref('/qualification', workspace.caseItem.id)}><Button variant="outline" className="mt-5 rounded-full">참가자격 검토로 돌아가기</Button></Link></section>}
+          {totalUnknown === 0 && <section className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-12 text-center"><h3 className="text-[19px] font-bold">{workspace.displayJudgment ? '지금 답하실 확인 필요 항목이 없습니다' : '현재 분석의 판정이 필요합니다'}</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">판정 결과에서 사용자 확인이 필요한 항목이 생기면 이 화면에 표시됩니다.</p><Link href={workspaceHref('/qualification', workspace.caseItem.id)}><Button variant="outline" className="mt-5 rounded-full">참가자격 검토로 돌아가기</Button></Link></section>}
         </div>
       </div>
     </main>

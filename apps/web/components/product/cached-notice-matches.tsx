@@ -47,7 +47,7 @@ export function CachedNoticeMatches() {
     setError('');
     try {
       const cases = await listPreflightCases();
-      const existing = cases.items.find((item) => item.notice_id === match.notice_id && item.company_id === companyId);
+      const existing = cases.items.find((item) => item.notice_id === match.notice_id && item.company_id === companyId && item.current_version_number === match.version_number);
       if (existing) {
         router.push(`/qualification?caseId=${existing.id}`);
         return;

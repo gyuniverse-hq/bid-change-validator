@@ -8,6 +8,7 @@ import { AlertCircle, CheckCircle2, FileSearch, GitCompareArrows, LoaderCircle, 
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
+import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
@@ -42,12 +43,10 @@ import {
 } from '@/lib/qualification-api';
 
 type Busy = 'load' | 'create' | 'analysis' | 'judgment' | 'revalidation' | null;
-
 type RequirementView = {
   requirement: CanonicalRequirement;
   judgment: QualificationJudgment | null;
   evidenceLabel: string;
-  evidenceQuote: string | null;
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -75,36 +74,27 @@ function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefi
 function companyValue(requirement: CanonicalRequirement, company: CompanyProfile | null) {
   if (!company) return '회사 프로필 없음';
   switch (requirement.type) {
-    case 'INDUSTRY':
-      return company.industries.length ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ') : '비어 있음';
-    case 'REGION':
-      return company.region_name ?? company.region_code ?? '비어 있음';
-    case 'COMPANY_SIZE':
-      return company.company_size;
-    case 'STAFF':
-      return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
-    case 'PERFORMANCE_COUNT':
-      return `${company.performances.length}건`;
+    case 'INDUSTRY': return company.industries.length ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ') : '비어 있음';
+    case 'REGION': return company.region_name ?? company.region_code ?? '비어 있음';
+    case 'COMPANY_SIZE': return company.company_size;
+    case 'STAFF': return company.staff ? `${company.staff.total_count}명${company.staff.roles.length ? ` · ${company.staff.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ')}` : ''}` : '비어 있음';
+    case 'PERFORMANCE_COUNT': return `${company.performances.length}건`;
     case 'PERFORMANCE_AMOUNT': {
       const total = company.performances.reduce((sum, item) => sum + item.amount, 0);
       const max = Math.max(0, ...company.performances.map((item) => item.amount));
       return company.performances.length ? `합계 ${(total / 100_000_000).toFixed(1)}억 · 단일 최대 ${(max / 100_000_000).toFixed(1)}억` : '비어 있음';
     }
-    case 'REGISTRATION_CERTIFICATION':
-      return company.certifications.length ? company.certifications.map((item) => item.name).join(', ') : '비어 있음';
+    case 'REGISTRATION_CERTIFICATION': return company.certifications.length ? company.certifications.map((item) => item.name).join(', ') : '비어 있음';
     case 'EXPERIENCE_FIELD': {
       const fields = [...new Set(company.performances.flatMap((item) => item.fields))];
       return fields.length ? fields.join(', ') : '비어 있음';
     }
-    default:
-      return '프로필 값 확인';
+    default: return '프로필 값 확인';
   }
 }
 
 export default function QualificationPage() {
-  const searchParams = useSearchParams();
-  const requestedCaseId = searchParams.get('caseId');
-
+  const requestedCaseId = useSearchParams().get('caseId');
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
   const [cases, setCases] = useState<PreflightCase[]>([]);
@@ -126,14 +116,11 @@ export default function QualificationPage() {
 
   const selectedNotice = useMemo(() => notices.find((item) => item.id === noticeId) ?? null, [noticeId, notices]);
   const company = useMemo(() => companies.find((item) => item.id === companyId) ?? null, [companies, companyId]);
+  const currentVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.current_version_number) ?? null, [activeCase, versions]);
   const baselineVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.baseline_version_number) ?? null, [activeCase, versions]);
 
   async function loadAnalysisDetail(summary: QualificationAnalysisSummary | null) {
-    if (!summary) {
-      setAnalysisDetail(null);
-      return;
-    }
-    setAnalysisDetail(await getQualificationAnalysis(summary.id));
+    setAnalysisDetail(summary ? await getQualificationAnalysis(summary.id) : null);
   }
 
   async function hydrateCase(caseId: string) {
@@ -181,9 +168,7 @@ export default function QualificationPage() {
       setCases(caseResult.items);
       setNoticeId(noticeResult.items[0]?.id ?? '');
       setCompanyId(companyResult[0]?.id ?? '');
-      const targetCase = requestedCaseId && caseResult.items.some((item) => item.id === requestedCaseId)
-        ? requestedCaseId
-        : caseResult.items[0]?.id;
+      const targetCase = requestedCaseId && caseResult.items.some((item) => item.id === requestedCaseId) ? requestedCaseId : caseResult.items[0]?.id;
       if (targetCase) await hydrateCase(targetCase);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '초기 데이터를 불러오지 못했습니다.');
@@ -246,10 +231,7 @@ export default function QualificationPage() {
   async function runInitialJudgment() {
     if (!activeCase) return;
     const target = activeCase.baseline_version_number ? baselineAnalysis : currentAnalysis;
-    if (!target) {
-      setError('먼저 자격요건 분석을 실행하세요.');
-      return;
-    }
+    if (!target) return setError('먼저 자격요건 분석을 실행하세요.');
     setBusy('judgment');
     setError('');
     try {
@@ -286,8 +268,7 @@ export default function QualificationPage() {
     return analysisDetail.requirements.map((requirement) => {
       const judgment = displayJudgment?.judgments.find((item) => item.requirement_key === requirement.requirement_key) ?? null;
       const evidenceKey = requirement.evidence_keys[0];
-      const evidence = evidenceKey ? analysisDetail.evidence.find((item) => item.evidence_key === evidenceKey) : null;
-      return { requirement, judgment, evidenceLabel: evidenceKey ?? '근거 없음', evidenceQuote: evidence?.quote ?? null };
+      return { requirement, judgment, evidenceLabel: evidenceKey ?? '근거 없음' };
     });
   }, [analysisDetail, displayJudgment]);
 
@@ -297,120 +278,59 @@ export default function QualificationPage() {
   const unsatisfied = displayJudgment?.judgments.filter((item) => item.status === 'UNSATISFIED').length ?? 0;
   const [conclusionTitle, conclusionDescription] = overallCopy(displayJudgment?.overall_status);
   const canRevalidate = Boolean(activeCase?.baseline_version_number && baselineAnalysis && currentAnalysis && sourceJudgment && baselineVersion && sourceJudgment.notice_version_id === baselineVersion.id);
+  const askableQuestionKeys = new Set(questions.filter((item) => item.askable).map((item) => item.requirement_key));
 
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
-        {(error || message) && (
-          <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[13px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-            {error ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}
-            <span>{error || message}</span>
-          </div>
-        )}
+        {(error || message) && <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[13px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}<span>{error || message}</span></div>}
 
         {!activeCase ? (
           <section className="rounded-[22px] border border-[var(--product-line)] bg-white p-7 shadow-sm">
             <h2 className="text-[24px] font-extrabold tracking-[-0.03em]">새 참가자격 검토</h2>
             <p className="mt-2 text-[14px] text-[var(--product-muted)]">회사 프로필과 공고를 연결해 검토 건을 만듭니다.</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <NativeSelect value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{companies.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.name}</NativeSelectOption>)}</NativeSelect>
-              <NativeSelect value={noticeId} onChange={(event) => setNoticeId(event.target.value)}>{notices.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
-            </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-2"><NativeSelect value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{companies.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.name}</NativeSelectOption>)}</NativeSelect><NativeSelect value={noticeId} onChange={(event) => setNoticeId(event.target.value)}>{notices.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div>
             <Button className="mt-4" onClick={() => void createCase()} disabled={!companyId || !noticeId || busy !== null}>검토 건 만들기</Button>
           </section>
         ) : (
           <>
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-              <div className="min-w-0">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>
-                  {activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}
-                  {analysisDetail?.status && <Badge variant="outline">분석 {analysisDetail.status}</Badge>}
-                </div>
-                <h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2>
-                <p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} /> 새로고침</Button>
-                <Link href="/notices"><Button variant="outline">공고 목록</Button></Link>
-              </div>
+              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">분석 {analysisDetail.status}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p></div>
+              <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw className={busy === 'load' ? 'animate-spin' : ''} /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
             </section>
 
-            <section className="mt-8">
-              <div className="flex flex-wrap gap-2 border-b border-[var(--product-line)] pb-3">
-                <span className="rounded-full bg-[var(--product-accent-deep)] px-5 py-2 text-[13px] font-bold text-white">판정</span>
-                <Link href="/evaluation" className="rounded-full px-5 py-2 text-[13px] font-semibold text-[var(--product-muted)]">평가 대응</Link>
-                <Link href="/changes" className="rounded-full px-5 py-2 text-[13px] font-semibold text-[var(--product-muted)]">변경 이력</Link>
-              </div>
-            </section>
+            <section className="mt-8"><div className="flex flex-wrap gap-2 border-b border-[var(--product-line)] pb-3"><span className="rounded-full bg-[var(--product-accent-deep)] px-5 py-2 text-[13px] font-bold text-white">판정</span><Link href={`/evaluation?caseId=${activeCase.id}`} className="rounded-full px-5 py-2 text-[13px] font-semibold text-[var(--product-muted)]">평가 대응</Link><Link href={`/changes?caseId=${activeCase.id}`} className="rounded-full px-5 py-2 text-[13px] font-semibold text-[var(--product-muted)]">변경 이력</Link></div></section>
 
-            <section className="mt-6 grid gap-4 lg:grid-cols-3">
+            <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} analysis={analysisDetail} />
+
+            <section className="mt-7 grid gap-4 lg:grid-cols-3">
               <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">회사 프로필</span><strong className="mt-1 block text-[16px]">{company?.name ?? '미연결'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">{company?.region_name ?? '-'} · {company?.company_size ?? '-'}</p></div>
               <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">자격요건 분석</span><strong className="mt-1 block text-[16px]">{currentAnalysis ? `${currentAnalysis.requirement_count}건 구조화` : '분석 전'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">Evidence {currentAnalysis?.evidence_count ?? 0}건</p></div>
-              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{questions.length}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">답변 가능한 UNKNOWN 항목</p></div>
+              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{unknown}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p></div>
             </section>
 
-            <div className="mt-6">
-              <ConclusionBox
-                title={conclusionTitle}
-                description={conclusionDescription}
-                satisfied={satisfied}
-                unknown={unknown}
-                unsatisfied={unsatisfied}
-                action={!analysisDetail ? <Button onClick={() => void prepareAnalyses()} disabled={busy !== null}>{busy === 'analysis' ? <LoaderCircle className="animate-spin" /> : <Play />} 자격요건 분석</Button> : !displayJudgment ? <Button onClick={() => void runInitialJudgment()} disabled={busy !== null}>{busy === 'judgment' ? <LoaderCircle className="animate-spin" /> : <CheckCircle2 />} 자격 판정</Button> : undefined}
-              />
-            </div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={!analysisDetail ? <Button onClick={() => void prepareAnalyses()} disabled={busy !== null}>{busy === 'analysis' ? <LoaderCircle className="animate-spin" /> : <Play />} 자격요건 분석</Button> : !displayJudgment ? <Button onClick={() => void runInitialJudgment()} disabled={busy !== null}>{busy === 'judgment' ? <LoaderCircle className="animate-spin" /> : <CheckCircle2 />} 자격 판정</Button> : undefined} /></div>
 
             <section className="mt-9">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-                <div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div>
-                <span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span>
-              </div>
-
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
-                <div className="hidden min-h-[45px] grid-cols-[122px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[12px] font-semibold text-[var(--product-muted)] lg:grid">
-                  <div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">귀사 값</div><div className="px-3">근거</div><div className="px-3">조치</div>
-                </div>
-                {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => (
-                  <QualificationRow
-                    key={requirement.requirement_key}
-                    status={judgmentStatus(judgment)}
-                    condition={`${TYPE_LABELS[requirement.type] ?? requirement.type} · ${requirement.raw}`}
-                    companyValue={companyValue(requirement, company)}
-                    evidenceLabel={evidenceLabel}
-                    actionLabel={judgment?.status === 'UNKNOWN' ? '확인하기' : judgment ? '판정 완료' : '판정 필요'}
-                    onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined}
-                    onAction={judgment?.status === 'UNKNOWN' && questions.some((item) => item.requirement_key === requirement.requirement_key) ? () => { window.location.href = `/ask-back?caseId=${activeCase.id}`; } : undefined}
-                  />
-                )) : <div className="px-6 py-14 text-center"><FileSearch className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 text-[14px] font-semibold">아직 구조화된 자격요건이 없습니다.</p><Button className="mt-4" onClick={() => void prepareAnalyses()} disabled={busy !== null}>자격요건 분석 시작</Button></div>}
+                <div className="hidden min-h-[45px] grid-cols-[122px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[12px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">귀사 값</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
+                {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
+                  const askable = askableQuestionKeys.has(requirement.requirement_key);
+                  const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
+                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} condition={`${TYPE_LABELS[requirement.type] ?? requirement.type} · ${requirement.raw}`} companyValue={companyValue(requirement, company)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { window.location.href = askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref; } : undefined} />;
+                }) : <div className="px-6 py-14 text-center"><FileSearch className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 text-[14px] font-semibold">아직 구조화된 자격요건이 없습니다.</p><Button className="mt-4" onClick={() => void prepareAnalyses()} disabled={busy !== null}>자격요건 분석 시작</Button></div>}
               </div>
             </section>
 
-            {selectedEvidence && (
-              <section className="mt-7">
-                <h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2>
-                <EvidenceQuote label={selectedEvidence.evidence_key} quote={selectedEvidence.quote} note={`문서 ID ${selectedEvidence.document_id}`} />
-              </section>
-            )}
+            {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote label={selectedEvidence.evidence_key} quote={selectedEvidence.quote} note={`문서 ID ${selectedEvidence.document_id}`} /></section>}
 
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6">
-                <h2 className="text-[20px] font-extrabold">분석 완전성</h2>
-                <p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p>
-                <div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>
-                {analysisDetail?.diagnostics.length ? <div className="mt-4 space-y-2">{analysisDetail.diagnostics.map((item) => <p key={`${item.code}-${item.message}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}
-              </div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6">
-                <h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2>
-                <p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p>
-                <Button className="mt-5" variant="outline" onClick={() => void revalidate()} disabled={!canRevalidate || busy !== null}>{busy === 'revalidation' ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button>
-                {revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}
-              </div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{analysisDetail?.diagnostics.length ? <div className="mt-4 space-y-2">{analysisDetail.diagnostics.map((item) => <p key={`${item.code}-${item.message}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void revalidate()} disabled={!canRevalidate || busy !== null}>{busy === 'revalidation' ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
 
-            <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5">
-              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => void hydrateCase(event.target.value)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div>
-            </section>
+            <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => void hydrateCase(event.target.value)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>
           </>
         )}
       </div>

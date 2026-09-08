@@ -1,6 +1,20 @@
 # 08. Team Handoff — Current Integration State
 
-> 기준: `integration/mvp-baseline` Stage 0~9. 이 문서는 설계 원칙이 아니라 **현재 실제 구현 상태와 다음 담당 작업 시작점**을 전달하는 snapshot입니다.
+> 기준: 2026-09-08, `fix/product-baseline-audit` / PR #74 코드 `87b9a5f` (Draft, merge 전). 이 문서는 설계 원칙이 아니라 **현재 실제 구현 상태와 다음 담당 작업 시작점**을 전달하는 snapshot입니다.
+
+## 담당자별 인계 시작점
+
+README의 기존 역할 배분을 기준으로 연결한다. 새로운 개인별 역할 합의를 가정하지 않는다.
+
+| 팀원 / 기존 역할 | 인계할 다음 작업 |
+| --- | --- |
+| 황수빈 — Frontend Main | 7개 IA/Case identity 유지, 접근성 lint, profile 변경·역사판정 UX와 전체 클릭 E2E |
+| 전진환 — Backend / Overall Structure | AnalysisRun validation/cache 정책, 동시성 검증, merge 후 rebuild·재분석 운영 절차 |
+| 정예린 — DB / Data | meaningful G2 실제 원문 쌍 수집, 10건 검산 후 후보 확대·보험 XLSX 확인, version/hash 보존 |
+| 김재현·이홍규 — LLM / RAG | 표/예외 문맥·recall 라벨링 회귀, grounding 유지, Evaluation 전용 extraction 후속 연결 |
+| 이홍규 — Collaboration / Frontend Sub | PR/CI·문서 동기화와 프런트엔드 보조, 담당자와 G0/G1/G2 재검증 결과 공유 |
+
+Integration Ready 판단은 팀 리뷰로 결정하며 G2 미확보를 완료로 전환하지 않는다.
 
 ## 1. Current product baseline
 
@@ -16,14 +30,14 @@
 → Analysis persistence
 → Company Profile deterministic Judgment
 → SATISFIED / UNSATISFIED / UNKNOWN
-→ UNKNOWN Ask-back
+→ ASKABLE UNKNOWN만 Ask-back
 → USER_ANSWER partial re-judgment
 → Changed Notice Canonical Diff
 → affected-only Revalidation
-→ Qualification reference UI (/qualification)
+→ Figma 01~07 Product UI (02~06 shared Case)
 ```
 
-Golden E2E 기준 흐름:
+G0 합성 회귀 흐름(실제 LLM/근거 검증을 대신하지 않음):
 
 ```text
 v1
@@ -67,7 +81,7 @@ SATISFIED / UNSATISFIED / UNKNOWN
 eligible / ineligible / insufficient_data
 ```
 
-Frontend 표시용 종합 상태이며 Requirement-level status를 대체하지 않습니다.
+필수 그룹의 확정 미달은 ineligible, 나머지 UNKNOWN/그룹 부재/분석 비SUCCEEDED는 insufficient_data, 나머지만 eligible입니다. ALL_OF/ANY_OF의 세부 집계는 [04](04-contract-and-status-map.md)를 따릅니다. PARTIAL은 답변 후 자동 eligible이 되지 않습니다. Rule은 `qualification-rules-v0.2`입니다.
 
 ### Changed-notice diff
 
@@ -75,7 +89,7 @@ Frontend 표시용 종합 상태이며 Requirement-level status를 대체하지 
 UNCHANGED / MODIFIED / ADDED / REMOVED
 ```
 
-`MODIFIED` / `ADDED`만 affected-only re-judgment 대상입니다.
+`MODIFIED` / `ADDED`는 재판정합니다. `UNCHANGED`도 승계할 유효 source record가 없으면 재판정합니다. source analysis/reference_date/rule/profile snapshot과 최신 baseline judgment가 일치해야 합니다.
 
 ## 3. Canonical Requirement 8 types
 
@@ -96,22 +110,11 @@ COMPANY_SIZE
 
 # Frontend handoff
 
-## 4. Current frontend reference
+## 4. Current frontend product
 
-실제 Qualification vertical slice reference screen:
+Figma 7개 화면이 Product IA Source of Truth다. `/notices`, `/qualification`, `/ask-back`, `/evidence`, `/evaluation`, `/changes`, `/company`가 연결되어 있고 02~06은 같은 `caseId`를 공유한다. `apps/web/lib/qualification-api.ts`와 `apps/web/lib/case-workspace.ts`를 재사용한다.
 
-```text
-/apps/web/app/qualification/page.tsx
-/apps/web/lib/qualification-api.ts
-```
-
-Route:
-
-```text
-/qualification
-```
-
-기존 `apps/web/app/page.tsx`는 Integration Baseline에서 대규모 수정하지 않았습니다. 최종 UI/UX는 기존 화면에 `qualification-api.ts` contract를 이식하는 방식이 안전합니다.
+현재 analysis/version/company/rule이 일치하는 judgment와 질문을 사용하고, 잘못된 Case는 오류로 남긴다. 7개 화면 navigation smoke와 원문 문서 전환은 확인했다. 전체 실제 G2 클릭 E2E 및 Figma 픽셀 대조 완료를 의미하지 않는다. [화면별 범위](03-screen-system-map.md)를 따른다.
 
 ## 5. Frontend API surface
 
@@ -165,17 +168,11 @@ result (new QualificationJudgmentRun)
 
 ## 6. Frontend next actions
 
-추천 우선순위:
+1. P1: 기존 전체 lint 오류 27개(접근성/React Compiler 등)와 profile 갱신 후 현재 회사값/역사판정 표시를 검증한다.
+2. P1: 실제 safe-answer와 meaningful G2를 포함한 전체 클릭 E2E를 수행한다.
+3. P2: 모바일/키보드, Evidence 자동 스크롤, 역사 차수 링크/요약을 검증한다.
 
-1. 기존 최종 디자인의 “참가 자격 판정” 화면에 `qualification-api.ts` 연결
-2. 판정 → 근거 → 해결 순서로 `SATISFIED / UNKNOWN / UNSATISFIED` 표현
-3. `UNKNOWN`만 Ask-back UI 노출
-4. `requirement_evidence_keys`를 Analysis Evidence와 연결해 원문 근거 이동
-5. 변경공고 화면에서 `MODIFIED / ADDED / REMOVED`와 `revalidated_keys`를 분리 표시
-6. loading / empty / PARTIAL / FAILED / API error UX 보강
-7. 기존 full-repo frontend lint debt 별도 정리
-
-현재 `/qualification`은 최종 디자인이 아니라 **실제 API가 끝까지 연결되는 reference implementation**입니다.
+판정→근거→해결, ASKABLE UNKNOWN만 답변, USER_ANSWER/PROFILE 구분을 유지한다. Evaluation 화면은 자격요건 참고자료이며 전용 extraction 미완료를 계속 표시한다.
 
 ---
 
@@ -197,7 +194,7 @@ result (new QualificationJudgmentRun)
 009 qualification revalidation lineage
 ```
 
-Stage 9 CI에서 `alembic upgrade head` 전체 chain이 실제 통과했습니다.
+PR #74 CI에서 `alembic upgrade head` 전체 chain이 실제 통과했습니다.
 
 ## 8. Main persistence trace
 
@@ -240,17 +237,15 @@ QualificationRevalidationRun
 - 변경공고 affected-only Revalidation은 source judgment의 profile snapshot과 현재 profile이 같을 때만 허용
 - profile이 달라졌으면 `PROFILE_CHANGED_FULL_REJUDGMENT_REQUIRED`
 
-## 10. Backend / DB next actions
+## 10. Backend / DB / Data next actions
 
-추천 우선순위:
+1. Backend P1: 기존 AnalysisRun의 validation revision/cache 무효화 정책을 마련한다. 현재는 자동 충족을 가정하지 않고 [merge 후 full re-analysis](06-handoff-and-merge.md)를 수행한다.
+2. Backend P1: 행 잠금·stale 검사 이후 실제 동시성/중복 실행을 검증한다. 순차 회귀 통과를 부하 검증으로 확대 해석하지 않는다.
+3. DB/Data blocker: meaningful 지역/업종/실적 등 자격조건이 바뀐 실제 원문 쌍을 확보한다. 10건 후보 검산은 [G2 결과](05-e2e-golden-path.md)를 재사용하고 R26BK01716110 보험 XLSX를 확인한다.
+4. Backend P2: Matching 요청/쿼리 수를 측정한 뒤 N+1을 batch로 개선한다.
+5. 운영 고도화: auth, observability/retry, 배포 E2E는 별도 검증한다. Policy B는 후속 설계이며 현재 Profile 자동 승격은 금지다.
 
-1. transaction / idempotency 정책 보강
-2. analysis/judgment/revalidation 중복 실행 정책 확정
-3. Company profile completeness 입력/수정 UX와 provenance 정책 확정
-4. USER_ANSWER를 실제 Profile에 승격하는 정책 설계
-5. OpenAPI contract 재생성/검산
-6. 운영 데이터 migration/seed 전략 보강
-7. observability / run audit / failure retry 보강
+Backend 코드 변경 후 `docker compose up -d --build api`가 필요하다.
 
 ---
 
@@ -307,11 +302,11 @@ apps/api/app/ai/requirement_diff.py
 - unsupported / ambiguous clause 평가
 - abstention / PARTIAL / diagnostic 품질
 
-Stage 9의 Golden E2E는 제품 연결 회귀 테스트이지 모델 품질 평가가 아닙니다.
+G0는 합성 제품 연결 회귀입니다. 실제 G1은 PARTIAL 2요건, UNKNOWN 2, unsafe Yes 422를 확인했지만 extraction 품질 완료는 아닙니다. 표/인접 예외/중복 chunk/긴 문서 recall을 실제 라벨링으로 검증해야 합니다.
 
 ### B. Proposal RAG
 
-현재 자격판정 vertical slice와 별개로 **제안서/제출서류 대응 확인**은 아직 본격 구현되지 않았습니다.
+Proposal 업로드·추출·원문 및 기존 문서 검증 기능은 존재하며 dead code로 분류하지 않습니다. 현재 자격판정 workspace와의 Proposal RAG 대응 근거 통합 범위/완료 여부는 별도 검증해야 합니다.
 
 목표 후보:
 
@@ -336,7 +331,7 @@ ProposalDocument extracted_blocks
 
 ## 13. Automated baseline verification
 
-Stage 9 기준 GitHub Actions:
+코드 `87b9a5f` 기준 GitHub Actions [#58 성공](https://github.com/gyuniverse-hq/bid-change-validator/actions/runs/34178537233):
 
 ```text
 .github/workflows/mvp-integration-baseline.yml
@@ -353,7 +348,7 @@ PostgreSQL 16
 검증 결과:
 
 ```text
-69 passed
+102 passed
 ```
 
 Frontend gate:
@@ -364,7 +359,7 @@ pnpm install --frozen-lockfile
 → vinext build (blocking)
 ```
 
-production build 통과를 확인했습니다.
+production build 통과를 확인했습니다. 별도 로컬 검증은 Node 회귀 3개, tsc, 수정 파일 oxlint, build 통과입니다. Node/tsc/수정 파일 lint는 위 CI가 실행하는 항목이 아닙니다. 전체 lint는 기존 27개 오류로 실패하며 CI에서는 non-blocking입니다.
 
 Golden E2E:
 
@@ -387,7 +382,7 @@ Baseline 완성 여부와 별개로 다음은 이후 고도화 대상입니다.
 - 실제 OpenAI + 실공고 품질 Eval
 - Proposal RAG / 제출서류 누락 검사 제품 연결
 - USER_ANSWER → Company Profile 영구 반영
-- Evidence click-through 최종 UX
+- Evidence 자동 스크롤/모바일·키보드 최종 UX
 - Frontend 전체 lint debt
 - production auth / authorization
 - production observability / retry / job orchestration
@@ -402,7 +397,7 @@ Baseline 완성 여부와 별개로 다음은 이후 고도화 대상입니다.
 ### Frontend
 
 ```text
-qualification-api.ts contract를 신뢰하고 최종 UX에 연결
+현재 7개 화면의 identity/Policy A를 유지하고 접근성·전체 E2E 보강
 ```
 
 ### Backend / DB
@@ -420,10 +415,10 @@ extracted_blocks → RequirementAnalysisResult contract를 신뢰하고 모델 �
 ### Integration
 
 ```text
-Golden E2E + CI를 공통 회귀 기준선으로 사용
+G0 + CI를 회귀 기준으로 사용; merge 후 기존 Demo/Golden full re-analysis, 실제 G1 safe-answer/G2/전체 클릭 검증 후 Ready 재평가
 ```
 
-다음 통합 단계는 팀 Review 후:
+현재 Product Baseline Ready는 G2 미확보와 실공고 추출 품질/전체 E2E 미완료로 보류입니다. 아래는 blocker 해소와 팀 Review 이후의 절차이며 현재 merge 승인이 아닙니다:
 
 ```text
 integration/mvp-baseline

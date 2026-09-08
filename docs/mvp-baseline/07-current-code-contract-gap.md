@@ -6,6 +6,20 @@
 >
 > Purpose: compare the current integrated repository, existing contracts, and the Notion page `LLM & RAG · 파이프라인 & 현재 진행현황` before implementing the MVP Integration Spine.
 
+## 현재 상태 안내 — 과거 audit 보존
+
+아래 본문은 **2026-09-07 Stage 2, Spine 구현 전 이력**이며 현재 미구현 목록으로 사용하지 않는다. 2026-09-08 PR #74 코드 `87b9a5f` 기준 업데이트:
+
+| 과거 gap | 현재 상태 |
+| --- | --- |
+| Analysis API / Requirement·Evidence DB 미연결 | 구현됨 |
+| Judgment / Answer / Revalidation 미연결 | 저장·API·Rule·lineage 구현됨 |
+| Frontend reference 연결 필요 | Figma 01~07 route 및 02~06 Case workspace 연결됨 |
+| 상태 mapping 미정 | qualification-rules-v0.2의 보수 aggregate 적용 |
+| Evaluation | 계약 foundation 존재, 전용 extraction/제품 연결 미완료 |
+
+현재 계약은 [04](04-contract-and-status-map.md), 검증 상태는 [11 audit](11-product-baseline-audit.md)를 따른다. G0 통과, G1 보류 동작 확인, G2 미확보로 Ready는 보류다. 기존 Proposal/문서 검증 기능은 유지되며 아래 과거 gap을 근거로 dead code라고 판단하지 않는다.
+
 ## 1. Executive summary
 
 The repository is farther along than the earlier planning snapshot in one area and still intentionally incomplete in another.

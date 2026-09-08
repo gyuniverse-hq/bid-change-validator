@@ -2,6 +2,8 @@
 
 > 목적: `integration/mvp-baseline → develop` PR 전 팀이 공통으로 확인할 최종 Review 기준입니다.
 
+현재 snapshot: 2026-09-08, PR #74 코드 `87b9a5f`, Draft/미merge. **Product Baseline Ready 보류**다. 아래 체크박스는 reviewer sign-off 항목이며 테스트 실행 결과와 구분한다. PR #74 안전성 변경 검토가 곧 develop/main merge 승인이나 Ready 선언은 아니다.
+
 ## 1. Review decision
 
 이 Review에서 결정할 것은 “모든 기능이 완성됐는가?”가 아닙니다.
@@ -20,7 +22,7 @@ Go 조건:
 
 ---
 
-## 2. Current Golden Path
+## 2. G0 합성 회귀 Golden Path
 
 ```text
 Notice v1 / Company Profile
@@ -39,6 +41,8 @@ Notice v1 / Company Profile
 → overall ineligible
 ```
 
+G1은 PARTIAL 2요건/UNKNOWN 2·unsafe 답변 422까지 확인했다. G2는 10건 원문 검산 후에도 meaningful Qualification Diff 미확보다. R26BK01715087은 설명회 안내/시간 변경뿐이고 RFP가 같아 탈락했다. [상세 결과](05-e2e-golden-path.md)를 따른다.
+
 ### Review
 
 - [ ] 위 흐름이 서비스 정의와 일치한다
@@ -50,17 +54,19 @@ Notice v1 / Company Profile
 
 ## 3. Automated verification
 
-Stage 9 GitHub Actions 기준:
+PR #74 CI [#58 성공](https://github.com/gyuniverse-hq/bid-change-validator/actions/runs/34178537233), 코드 `87b9a5f` 기준:
 
 ```text
 PostgreSQL 16
 → Alembic 001 → 009
-→ Backend full pytest: 69 passed
+→ Backend full pytest: 102 passed
 
 Frontend
 → frozen install
 → production build success
 ```
+
+로컬 별도 검증: Node 회귀 3개, tsc, 수정 파일 oxlint, build 통과. CI는 Node/tsc/수정 파일 lint를 실행하지 않으며 전체 lint는 기존 27개 오류가 있는 non-blocking 단계다.
 
 Golden E2E:
 
@@ -80,28 +86,28 @@ apps/api/tests/test_mvp_golden_e2e.py
 
 ## 4. Frontend reviewer checklist
 
-Reference implementation:
+현재 01~07 화면 및 02~06 공유 Case 구현:
 
 ```text
 /qualification
 apps/web/lib/qualification-api.ts
 ```
 
-- [ ] Company 선택 → Case 생성 흐름이 최종 UI에 이식 가능하다
+- [ ] 01~07 화면과 동일 Case 탭 이동/현재 analysis·rule 결과 연결을 재검증했다
 - [ ] `SATISFIED / UNSATISFIED / UNKNOWN`을 UI 상태로 충분히 표현할 수 있다
 - [ ] `eligible / ineligible / insufficient_data` 종합 상태가 UI 요구와 맞는다
 - [ ] Ask-back API가 필요한 입력 UX를 지원한다
 - [ ] 변경공고 `UNCHANGED / MODIFIED / ADDED / REMOVED`를 화면에 표현할 수 있다
-- [ ] 기존 메인 디자인을 Baseline이 강제로 덮어쓰지 않은 구조가 적절하다
+- [ ] Figma 7개 화면을 Product IA Source of Truth로 유지한다
 
 ### Frontend Known Gap
 
-- [ ] Evidence click-through 최종 UX
-- [ ] 최종 참가자격 화면 디자인 이식
+- [ ] Evidence 모바일/키보드·자동 스크롤 검증
+- [ ] 프로필 갱신 후 역사판정/현재 회사값 표시 검증
 - [ ] 전체 lint debt 정리
 - [ ] Proposal RAG 결과 UI
 
-위 항목은 develop merge blocker가 아니라 이후 Frontend 고도화 항목으로 분리 가능한지 확인합니다.
+우선순위와 완료 기준을 팀이 확인합니다. 현재 화면 연결은 완료했지만 전체 실제 제품 E2E는 별도 gate입니다.
 
 ---
 
@@ -224,14 +230,14 @@ UNCHANGED / MODIFIED / ADDED / REMOVED
 
 # Known Gap Review
 
-## 9. Explicit non-blockers candidate
+## 9. Blocker와 후속 backlog 구분
 
-다음은 현재 Baseline에서 명시적으로 남겨둔 고도화 후보입니다.
+Ready blocker는 meaningful 실제 G2 미확보, 실공고 추출 완전성 부족, safe-answer부터 변경공고까지 전체 E2E 미완료입니다. 이를 자동 non-blocker로 분류하지 않습니다. 다음은 추가 검토할 backlog입니다.
 
 - 실제 OpenAI / 실공고 Quality Eval
 - Proposal RAG / 제안서 대응 누락검사
-- USER_ANSWER → Company Profile 자동 반영
-- Evidence 최종 UX
+- 명시적 provenance를 갖춘 Policy B (현재 Policy A 유지)
+- Evidence 모바일/키보드 최종 UX
 - Frontend lint debt
 - Production auth
 - Retry / queue / observability
@@ -253,7 +259,11 @@ C. MVP scope 밖
 
 ## 10. Required before `integration/mvp-baseline → develop`
 
-- [ ] Stage 9 CI green
+- [ ] PR #74 이후 적용 코드 CI green
+- [ ] Backend 코드 반영 시 `docker compose up -d --build api` 수행
+- [ ] 기존 Demo/Golden baseline/current full re-analysis 및 새 run/근거 검증 (기존 AnalysisRun의 자동 validation 충족을 가정하지 않음)
+- [ ] 실제 meaningful G2와 safe-answer 포함 전체 E2E 확보
+- [ ] Evaluation 전용 extraction 미완료와 기존 Proposal 기능의 별도 범위를 확인
 - [ ] Handoff snapshot review
 - [ ] Frontend reviewer 확인
 - [ ] Backend / DB reviewer 확인
@@ -300,4 +310,4 @@ Owner: ...
 Next: integration/mvp-baseline → develop PR 여부
 ```
 
-이 결과를 기준으로 Stage 12를 진행합니다.
+이 결과와 [merge 후 재분석 절차](06-handoff-and-merge.md)를 기준으로 다음 통합 여부를 결정합니다.

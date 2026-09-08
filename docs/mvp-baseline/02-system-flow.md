@@ -18,7 +18,7 @@ PostgreSQL + document storage
 notice/document extracted blocks
 ```
 
-공고 수집과 문서 추출, Company Profile, Preflight Case는 Backend 영역에 이미 존재합니다.
+공고 수집과 문서 추출, Company Profile, Preflight Case 및 Analysis/Requirement/Evidence/Judgment/Answer/Revalidation 저장과 API가 구현되어 있습니다. 구현 기준은 PR #74 코드 `87b9a5f`입니다.
 
 AI 영역에는 Backend state를 직접 수정하지 않는 Qualification 분석 파이프라인이 존재합니다.
 
@@ -38,9 +38,9 @@ Canonical Requirement + Evidence
 RequirementAnalysisResult
 ```
 
-## 2. Target MVP Integration Flow
+## 2. 구현된 Product Flow와 검증 범위
 
-Baseline에서 연결하려는 최종 흐름입니다.
+아래 API/서비스 흐름은 구현되어 있습니다. G0 통과와 G1 보류 경로 확인을 실제 meaningful G2 완료로 해석하지 않습니다. [검증 결과](05-e2e-golden-path.md)를 참조합니다.
 
 ```text
 [1] 나라장터 Notice Sync / Poller
@@ -65,9 +65,9 @@ Baseline에서 연결하려는 최종 흐름입니다.
     UNSATISFIED
     UNKNOWN
         ↓
-[10] UNKNOWN → Ask-back
+[10] UNKNOWN → Askability → ASKABLE만 Ask-back
         ↓
-[11] User Answer 저장
+[11] User Answer 저장 (Policy A / apply_to_profile=false)
         ↓
 [12] 영향 Requirement 부분 재판정
         ↓
@@ -137,9 +137,9 @@ Frontend는 Canonical 판정 로직을 자체 복제하지 않습니다.
 - Extracted blocks
 - Company Profile
 - Preflight Case
-- Baseline에서 추가 연결되는 Requirement / Evidence / Judgment / Answer / Revalidation state
+- 구현된 Requirement / Evidence / Judgment / Answer / Revalidation state
 
-실제 저장 Model 존재 여부는 Stage 2에서 코드 기준으로 확정합니다.
+저장 모델은 `analysis_models.py`, `judgment_models.py`, `ask_back_models.py`, `revalidation_models.py`에 연결되어 있습니다.
 
 ### LLM / RAG — `apps/api/app/ai` + related modules
 
@@ -157,14 +157,14 @@ AI가 Backend DB PK나 원본 문서 ID를 임의 생성해 source of truth를 �
 
 ### Judgment / Rule layer
 
-Baseline 목표 책임:
+현재 구현 책임:
 
 - Canonical Requirement와 Company Profile 비교
 - `SATISFIED / UNSATISFIED / UNKNOWN` 생성
 - `reason_code`, basis, profile reference 기록
 - UNKNOWN이 사용자 입력으로 해소 가능한지 식별
 
-구체 구현 위치는 Stage 2 Gap 검산 후 확정합니다.
+`apps/api/app/ai/judgment.py`의 `qualification-rules-v0.2`가 초기/부분/Matching/변경 재검증의 공통 판정 기준입니다.
 
 ## 4. Identifier chain
 
@@ -228,15 +228,12 @@ Requirement는 유효
 
 AI 분석 실패와 사용자 Profile 정보 부족은 서로 다른 상태이므로 같은 상태값으로 합치지 않습니다.
 
-## 7. Stage 2 verification points
+## 7. 현재 화면/운영 연결
 
-다음 연결부는 실제 코드/DB 모델을 확인해 **Implemented / Connect / Missing**으로 분류합니다.
+01 조회와 분석된 공고 Matching → 02 검토 시작 한 번으로 Analysis와 Judgment 순차 호출 → 03 안전한 답변 → 04 원문 → 05 평가 참고 → 06 변경 검토 → 07 회사정보 관리가 연결됩니다. 02~06은 같은 Case와 current analysis/judgment를 사용하고 baseline judgment는 변경 비교의 source로 구분합니다.
 
-- AI pipeline 호출 entry point
-- AI result DB persistence
-- Requirement/Evidence persistence
-- Judgment implementation
-- Ask-back model/API
-- Answer persistence
-- Requirement Diff / Revalidation implementation
-- Frontend result mapping
+Evaluation 전용 extraction은 미완료입니다. 기존 Proposal 업로드·추출·문서 검증 경로는 유지하며 Qualification 흐름과의 제품 연결 범위는 별도로 확인합니다.
+
+PARTIAL은 필수 그룹의 확정 미달을 제외하면 insufficient_data를 유지하고, FAILED는 성공 판정 입력으로 쓰지 않습니다. Evidence는 전체 raw·source-local 조항을 검증하지만 과거 AnalysisRun에 검증이 소급 적용되지는 않습니다.
+
+Backend 코드 변경 후 `docker compose up -d --build api`가 필요합니다. PR #74 merge 후 기존 Demo/Golden full re-analysis 절차는 [06](06-handoff-and-merge.md)에 있습니다. 실제 G2와 전체 성공 클릭 흐름은 미완료입니다.

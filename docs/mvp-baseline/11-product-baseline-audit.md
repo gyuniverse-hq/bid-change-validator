@@ -1,5 +1,7 @@
 # Product Baseline 최종 점검 — 2026-09-08
 
+문서 동기화 기준: PR #74 코드 `87b9a5f`, 2026-09-08, Draft/merge 전. 구현과 아래 테스트 결과는 해당 코드 기준이며 이번 문서 갱신에서 재실행한 결과가 아니다. 현재 화면은 [03](03-screen-system-map.md), 검증 요약은 [05](05-e2e-golden-path.md), 후속 담당 작업은 [08](08-team-handoff-current-state.md)에 연결한다.
+
 ## 1. Executive Summary
 
 **이번 변경은 안전성 보강 PR이며, Product Baseline Ready 선언은 보류한다.**
@@ -71,11 +73,17 @@ Backend 102개, 프런트엔드 데이터 연결 회귀 3개, 타입 검사, 수
 ## 4. 실제 수정한 내용
 
 - Rule 버전 `qualification-rules-v0.2`. 과거 판정은 DB에 남기고 화면에서 현재 Rule 결과로 재사용하지 않는다.
-- 초기/부분/Matching/변경 재검증 모두 동일한 분석 완전성 규칙을 적용한다. PARTIAL이라도 확실한 UNSATISFIED가 있으면 ineligible, 그렇지 않으면 insufficient_data를 유지한다.
+- 초기/부분/Matching/변경 재검증 모두 동일한 분석 완전성 규칙을 적용한다. PARTIAL이라도 필수 그룹이 확정 미달이면 ineligible, 그렇지 않으면 insufficient_data를 유지한다.
 - 원문 전체 인용 검증, 문서별 선택, source-local 조항번호, 추출 누락/잘림 diagnostic을 보강했다.
 - Case 기준 행 잠금과 source freshness 검증, source 분석/기준일/profile 보존으로 부분 재판정의 전제를 고정했다.
 - current analysis에 연결된 judgment와 questions만 표시한다. 없는 Case/차수는 오류로 남긴다.
 - 문서/Evidence 상태 및 다른 Case 선택의 URL을 연결하고, `evidence_held`를 Yes 답변만으로 true로 만들지 않는다.
+
+### 기존 AnalysisRun과 merge 후 재분석
+
+Rule `qualification-rules-v0.2`와 AI contract `ai-analysis-v0.2`는 별도다. 기존 AnalysisRun은 동일 contract/SUCCEEDED라는 이유만으로 강화된 전체 raw grounding·source-local reference·상동 guard를 자동 충족하지 않는다. 자동 validation revision/cache 무효화는 미구현 P1이며 과거 run은 보존한다.
+
+PR #74 merge 이후 기존 Demo/Golden Case의 baseline/current 모두 **full re-analysis**하고 새 분석으로 판정/재검증해야 한다. Rule 재판정만으로 과거 추출을 정정할 수 없다. Backend 코드 변경 후 `docker compose up -d --build api`가 필요하다. 실행 순서와 기록할 identity는 [06 운영 절차](06-handoff-and-merge.md)를 따른다.
 
 ## 5. 수정하지 않은 내용과 이유
 
@@ -98,6 +106,8 @@ Figma `7:45` 직접 대조는 Figma 도구의 사용량 제한 때문에 완료�
 | `git diff --check` | 통과 | 공백 오류 |
 | Docker API rebuild | 성공 | source bind가 아닌 새 이미지 적용 |
 | 브라우저 | 01~07 navigation smoke 통과 | 실공고 E2E 전체 완료와 구분 |
+
+PR #74 [CI #58](https://github.com/gyuniverse-hq/bid-change-validator/actions/runs/34178537233)도 성공했다. CI는 fresh PostgreSQL/migration/Backend pytest와 Frontend install/non-blocking 전체 lint/build를 실행한다. Node 3개·tsc·수정 파일 lint는 별도 로컬 검사다.
 
 최종 Backend 전체 실행은 `codex_baseline_audit_20260908` DB를 별도로 사용했다.
 `DATABASE_URL` 설정 후 `get_settings.cache_clear()`를 호출하고, import된 engine의 DB명을 assert하여 대상이 맞는지 확인했다.
@@ -180,10 +190,10 @@ raw 변경은 보수적으로 MODIFIED가 되어 문구만 달라진 항목까�
 | 담당 | 다음 작업 | 유지할 계약 |
 |---|---|---|
 | Frontend | 기존 접근성 lint, profile 갱신/역사판정 표현, 모바일/키보드 E2E | 7개 IA, 02~06 같은 Case·current analysis/judgment |
-| Backend | 추가 오류 경로 점검, 실제 동시성 검증, Matching query 측정 | PARTIAL 전파, source lineage, USER_ANSWER Policy A |
+| Backend | AnalysisRun validation revision/cache 정책, 실제 동시성 검증, Matching query 측정 | PARTIAL 전파, source lineage, USER_ANSWER Policy A |
 | DB/Data | 실제 지역/업종/실적 조건 변경 원문 쌍 확보; 보험 XLSX 확인 | NoticeVersion 보존, 문서 해시·출처 |
 | LLM/RAG | 표/라벨/인접 예외의 실제 라벨링 회귀 및 recall 개선 | LLM은 추출·매핑, 불확실하면 UNMAPPED/PARTIAL |
-| Integration | G1 safe-answer + 실제 G2를 포함한 전체 클릭 E2E 후 동결 재평가 | build/tests 외 제품 완료 조건 별도 확인 |
+| Integration | PR #74 merge 후 기존 Demo/Golden full re-analysis, G1 safe-answer + 실제 G2 전체 클릭 E2E 후 동결 재평가 | build/tests 외 제품 완료 조건 별도 확인 |
 
 연결된 ChatGPT 작업 **integration mvp baseline 진행중**에 진행 상황과 G2 한계를 공유했고, 확인되지 않은 G2를 완료 처리하지 않는 방향을 교차 확인했다.
 
@@ -193,9 +203,9 @@ raw 변경은 보수적으로 MODIFIED가 되어 문구만 달라진 항목까�
 - 작업: `fix/product-baseline-audit`.
 - Backend: `c0bec5f` — conservative decisions / revalidation lineage.
 - Frontend: `4df4424` — current analysis/judgment workspace binding.
-- 보고서: 이 문서를 별도 문서 커밋으로 추가한다.
+- 최초 audit 보고서: `a2942c6`.
 - PR: [#74](https://github.com/gyuniverse-hq/bid-change-validator/pull/74), 대상 `integration/mvp-baseline`, Draft, 자동 merge하지 않는다.
-- 후속 오류 처리 커밋: 승인된 서비스 파일만 사용해 missing analysis 오류를 HTTP 404로 통일하고 회귀 2개를 추가했다.
+- 후속 오류 처리 커밋: `87b9a5f` — 승인된 서비스 파일만 사용해 missing analysis 오류를 HTTP 404로 통일하고 회귀 2개를 추가했다.
 
 ## 11. Merge 가능 여부와 원래 목적 평가
 

@@ -10,7 +10,7 @@ Baseline에서 계약 충돌이 생기면 조용히 변환하지 않고 아래 �
 4. 기존 `docs/contracts/*` 초안
 5. 화면 표시용 derived status
 
-기존 문서는 폐기하지 않습니다. 서로 다른 상태 체계가 있으면 Stage 2 Contract Gap으로 기록하고 명시적으로 통합합니다.
+기존 문서는 폐기하지 않습니다. 과거 차이는 [Stage 2 이력](07-current-code-contract-gap.md)으로 보존하고 현재 구현은 이 문서로 구분합니다.
 
 ## 2. Canonical Requirement types
 
@@ -121,33 +121,15 @@ warning
 
 반면 현재 Canonical code는 Requirement-level `SATISFIED / UNSATISFIED / UNKNOWN`을 사용합니다.
 
-### Baseline decision
+### 현재 aggregate mapping — qualification-rules-v0.2
 
-Stage 1에서는 기존 상태를 삭제하거나 강제로 하나로 합치지 않습니다.
+- 필수 ANY_OF 그룹: 하나라도 SATISFIED이면 그룹 충족, 그렇지 않고 UNKNOWN이 있으면 보류, 모두 미달이면 그룹 미달.
+- 필수 ALL_OF 그룹: 하나라도 UNSATISFIED이면 그룹 미달, 그렇지 않고 UNKNOWN이 있으면 보류, 모두 충족이면 그룹 충족.
+- 필수 그룹 중 미달이 있으면 `ineligible`.
+- 그 외 미확정 그룹, 필수 그룹 부재, 또는 분석이 `SUCCEEDED`가 아니면 `insufficient_data`.
+- 나머지만 `eligible`.
 
-- Canonical business judgment: `SATISFIED / UNSATISFIED / UNKNOWN`
-- AI execution status: `SUCCEEDED / PARTIAL / FAILED`
-- Frontend aggregate status: **Stage 2에서 mapping 확정**
-
-### Mapping candidate for Stage 2 discussion
-
-아래는 확정값이 아니라 검토 기준입니다.
-
-```text
-all required SATISFIED
-→ eligible 후보
-
-any required UNSATISFIED
-→ ineligible 후보
-
-no UNSATISFIED + one or more UNKNOWN
-→ insufficient_data / needs_review 중 reason_code에 따라 구분 후보
-
-AI PARTIAL
-→ business judgment와 별도로 warning 표시 후보
-```
-
-`UNKNOWN`과 `PARTIAL`을 같은 의미로 취급하지 않습니다.
+따라서 PARTIAL은 Ask-back 이후에도 자동 eligible로 승격되지 않는다. UNKNOWN은 사용자 질문 가능 여부와 다르다. 기존 초안 `needs_review`와 `warning`을 현재 aggregate 반환값으로 가정하지 않는다.
 
 ## 8. Evidence contract
 
@@ -161,6 +143,8 @@ Evidence는 최소 다음 identity를 보존합니다.
 - `quote`
 - `source_sha256`
 - `extracted_text_sha256`
+
+전체 raw는 공백 정규화 후 실제 source chunk에 포함되어야 하며 세부 필드도 같은 원문에서 검증한다. reference는 해당 chunk의 조항 라벨/줄 시작을 확인한다. 일부 추출 거절이나 입력 잘림은 diagnostic/PARTIAL로 남긴다. 인용문 일치는 주변 예외·표 문맥의 완전한 이해를 보장하지 않는다.
 
 ### Location rule
 
@@ -212,22 +196,21 @@ Requirement는 최소 다음을 추적합니다.
 - `requirement_evidence_keys`
 - `rule_version`
 
-Stage 2에서는 이 object가 실제 어디서 생성되고 저장되는지 검산합니다.
+현재 Judgment service가 생성하고 JudgmentRun/Record에 저장합니다.
 
-## 11. Contract Gap checklist for Stage 2
+## 11. 구현된 경계와 남은 validation 과제
 
-- [ ] 기존 draft `eligible/...`와 Canonical Judgment status mapping
-- [ ] Company Profile field ↔ Requirement type mapping
-- [ ] RequirementAnalysisResult API entry point
-- [ ] Requirement / Evidence persistence model
-- [ ] Judgment generator / persistence model
-- [ ] Ask-back Question contract
-- [ ] User Answer contract
-- [ ] Answer가 어떤 Requirement/Judgment를 invalidate하는지 관계
-- [ ] Notice Version relation / 변경공고 연결 규칙
-- [ ] Requirement Diff identity rule
-- [ ] Revalidation Run identity/status
-- [ ] Frontend aggregate status contract
+Analysis/Requirement/Evidence, Judgment, Answer, Revalidation 저장과 API는 구현되어 있다. 모델은 `analysis_models.py`, `judgment_models.py`, `ask_back_models.py`, `revalidation_models.py`다.
+
+- LLM/RAG는 문서 이해·요건 추출·근거 연결을 담당한다. normalization, 최종 회사 비교, Askability, Diff는 deterministic code다.
+- `UNKNOWN != ASKABLE`: 사용자에게 알려진 단일 사실로 안전하게 해결 가능한 조건만 질문한다. 복합 법률·절차·상동 표 참조는 mapping/rule/askability 공통 guard로 보류한다.
+- Policy A: `apply_to_profile=false`, `basis_type=USER_ANSWER`; 해당 검토 판정만 갱신한다. Yes만으로 `evidence_held=true`가 되지 않는다. unsafe answer는 422, stale source는 409다.
+- 답변은 Case 행 잠금과 최신 source/analysis/rule/company/profile 검증을 거친다.
+- Diff는 `UNCHANGED / MODIFIED / ADDED / REMOVED`. 의미 일치를 우선하고 key fallback을 적용하며 raw 변경도 MODIFIED다. UNCHANGED는 유효 source record가 있을 때 승계하고 없으면 재판정한다.
+- 재검증은 baseline source analysis, 최신 baseline judgment, 동일 reference_date/rule/profile snapshot을 요구한다.
+- AI contract `ai-analysis-v0.2`와 Rule `qualification-rules-v0.2`는 별도다. 기존 AnalysisRun은 동일 contract 또는 SUCCEEDED라는 이유만으로 새 grounding/validation 정책을 충족하지 않는다. 자동 재검증/캐시 무효화는 미구현이다.
+- PR #74 merge 이후 기존 Demo/Golden Case는 [운영 절차](06-handoff-and-merge.md)에 따라 **full re-analysis**해야 한다. Rule 재판정만으로 이전 추출 문제를 해결할 수 없다.
+- `EvaluationCriterion`/`EvaluationAnalysisResult` foundation은 존재하지만 Evaluation 전용 extraction/API/제품 연결은 미완료다.
 
 ## 12. Change rule
 

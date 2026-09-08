@@ -1,5 +1,34 @@
 # 05. E2E Golden Path
 
+## 0. 현재 결과 — 2026-09-08 / PR #74
+
+| 구분 | 현재 상태 | 증명하지 못한 것 |
+| --- | --- | --- |
+| G0 | 합성 DB/Canonical 회귀 통과: 4억→6억 MODIFIED, USER_ANSWER 승계 | 실제 LLM extraction / Evidence grounding |
+| G1 | R26BK01687395: PARTIAL 2요건/2근거, UNKNOWN 2, insufficient_data, unsafe Yes 2건 422 | safe-answer 성공과 추출 품질 완료; 다른 공고 R26BK01689803은 FAILED/0 |
+| G2 | 실제 후보 10건 검산, meaningful Qualification Diff 미확보 | 실제 affected-only 및 전체 Human Click E2E |
+
+7개 화면 navigation smoke와 G0 성공만으로 Product Baseline Ready를 선언하지 않는다. G1 저장 분석은 최종 상동 guard 이전 실행이며 최종 Rule/Ask-back 차단을 확인한 것이다. PR #74 merge 후 기존 Demo/Golden의 baseline/current를 모두 [full re-analysis](06-handoff-and-merge.md)해야 한다.
+
+### 실제 후보 10건 검산 요약
+
+| 공고 | 원문/차수 비교 결과 | G2 판단 |
+| --- | --- | --- |
+| R26BK01715087 | v1→2 설명회 미개최 안내·시작시간 13→14시, v2→3 14→14:30, v3/v4 동일; RFP 동일 | 의미 있는 자격변경 없음으로 탈락 |
+| R26BK01715236 | v1→2 취소, 현재 문서 0 | 현재 자격원문 없음 |
+| R26BK01715042 | v1→2 취소, 현재 문서 0 | 동일 |
+| R26BK01715257 | v1→2 취소, 현재 문서 0 | 동일 |
+| R26BK01715375 | 예정가격 범위 ±2%→±3% | 자격조건 변경 아님 |
+| R26BK01715394 | v1→2 취소, 현재 문서 0 | 비교 불가 |
+| R26BK01715477 | 낙찰하한율 88→90%, 시간 11→12시, 중복 PDF 감소 | 자격조건 변경 아님 |
+| R26BK01715691 | 양 차수 문서 0 | 확인 불가 |
+| R26BK01715492 | v1→2 취소, 현재 문서 0 | 확인 불가 |
+| R26BK01716110 | 기존 5종 추출 해시 동일, 미추출 보험 XLSX 추가, 특수조건 source_field 이동 | 자격변경 미입증, XLSX 확인 필요 |
+
+R26BK01715087 v1/v4 분석은 source-local 참조 개선 전에 모두 FAILED/0이었다. 빈 분석의 Diff를 성공으로 세지 않는다. 문서 재배치는 삭제로 간주하지 않았다. 실행 ID/해시 검증 범위는 [audit](11-product-baseline-audit.md)에 보존한다.
+
+아래 단계와 체크박스는 **실제 제품 acceptance 재검증 절차**이며 현재 모두 통과했다는 기록이 아니다.
+
 ## 1. Purpose
 
 Golden Path는 “각 파트가 따로 동작한다”가 아니라 **실제 사용자 흐름이 전 구간을 통과한다**는 것을 증명하는 Baseline 시나리오입니다.
@@ -62,7 +91,7 @@ Golden Company Profile을 생성 또는 선택합니다.
 인증/특정 확인값 → 일부 부족
 ```
 
-정확한 fixture 값은 Stage 3에서 확정합니다.
+합성 G0 fixture는 `apps/api/tests/test_mvp_golden_e2e.py`에 고정되어 있습니다. 실제 G1/G2에는 조건을 인위적으로 만들지 않습니다.
 
 ### Step 4. Requirement Analysis
 
@@ -122,7 +151,7 @@ Expected:
 
 Expected:
 
-- Answer가 저장된다.
+- ASKABLE만 허용하며 `apply_to_profile=false`로 Answer가 저장된다.
 - `basis_type=USER_ANSWER`로 추적할 수 있다.
 - Answer가 어떤 Requirement를 해소하는지 알 수 있다.
 
@@ -174,16 +203,16 @@ Expected:
 
 V1과 V2 Requirement를 비교합니다.
 
-최소 하나의 Requirement가 다음 중 하나로 변화하도록 Golden Scenario를 구성합니다.
+실제 원문에서 의미 있는 MODIFIED/ADDED와 UNCHANGED를 확인해야 합니다. 반환 상태는 다음과 같습니다.
 
 ```text
 ADDED
 REMOVED
-CHANGED
+MODIFIED
 UNCHANGED
 ```
 
-정확한 diff contract 명칭은 Stage 2/7에서 확정합니다.
+가격·시간 변경만으로 Qualification Diff를 통과 처리하지 않습니다.
 
 ### Step 14. Revalidation
 

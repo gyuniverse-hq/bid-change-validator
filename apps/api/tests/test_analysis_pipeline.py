@@ -240,3 +240,21 @@ def test_pipeline_rejects_duplicate_backend_document_ids():
         assert "document_id values must be unique" in str(error)
     else:
         raise AssertionError("duplicate document ids should be rejected")
+
+
+def test_rejected_slot_preserves_partial_analysis_status():
+    def extract(*args):
+        result = _fake_extract(*args)
+        result["requirements"].append({"유형": "지역요건", "raw": "원문에 없는 부산 소재 업체", "지역_raw": "부산"})
+        return result
+    result = analyze_qualification_documents(_input(), structured_extract=extract)
+    assert result.status == "PARTIAL"
+    assert result.requirements
+    assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
+
+
+def test_composite_registration_cannot_be_canonicalized_into_simple_fact():
+    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    requirements, diagnostics = adapt_legacy_slot({"유형": "등록요건", "raw": "공동수급체 구성원 모두 정보통신공사업 등록업체이어야 한다.", "등록인증_raw": "정보통신공사업"}, notice_version_id="v", key_prefix="r")
+    assert requirements == []
+    assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"

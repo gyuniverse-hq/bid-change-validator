@@ -128,8 +128,8 @@ def build_requirement_analysis_result(
         diagnostics.insert(
             0,
             AnalysisDiagnostic(
-                code="EXTRACTION_FAILED",
-                severity="ERROR",
+                code="EXTRACTION_PARTIAL" if extraction_status == "partial" else "EXTRACTION_FAILED",
+                severity="WARNING" if extraction_status == "partial" else "ERROR",
                 message="구조화 Requirement 추출 단계가 완료되지 않았습니다.",
                 details={
                     "status": extraction_status,

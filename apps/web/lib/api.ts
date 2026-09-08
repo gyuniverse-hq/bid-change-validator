@@ -68,8 +68,21 @@ export type ViewableDocument = NoticeDocument | ProposalDocument;
 export type BidNoticeVersion = {
   id: string;
   version_number: number;
+  bid_notice_order: string;
   is_current: boolean;
+  notice_kind: string | null;
+  registration_type: string | null;
+  is_reannouncement: boolean;
+  posted_at: string | null;
+  changed_at: string | null;
+  bid_started_at: string | null;
+  bid_closed_at: string | null;
+  opened_at: string | null;
+  allocated_budget: number | null;
+  estimated_price: number | null;
+  contract_method: string | null;
   change_reason: string | null;
+  detail_url: string | null;
   collected_at: string;
   documents: NoticeDocument[];
 };
@@ -79,7 +92,13 @@ export type BidNoticeSummary = {
   bid_notice_no: string;
   title: string;
   business_type: string;
+  notice_kind: string | null;
+  announcing_institution_code: string | null;
   announcing_institution_name: string | null;
+  demanding_institution_code: string | null;
+  demanding_institution_name: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
   current_version: number;
 };
 
@@ -100,6 +119,17 @@ export type PreflightCase = {
   documents: ProposalDocument[];
   created_at: string;
   updated_at: string;
+};
+
+export type NoticeDocumentText = {
+  document_id: string;
+  name: string;
+  extraction_status: string;
+  extractor: string | null;
+  char_count: number | null;
+  text_sha256: string | null;
+  text: string | null;
+  blocks: Array<Record<string, unknown>> | null;
 };
 
 type ListResponse<T> = {
@@ -154,5 +184,5 @@ export function uploadProposalDocument(caseId: string, file: File) {
 }
 
 export function getDocumentText(textUrl: string) {
-  return apiRequest<{ text: string | null }>(textUrl);
+  return apiRequest<NoticeDocumentText>(textUrl);
 }

@@ -25,7 +25,9 @@ export function productProfileAreas(company: CompanyProfile | null): ProductProf
     { key: 'REGION', label: '소재지', filled: Boolean(company.region_name || company.region_code) },
     { key: 'COMPANY_SIZE', label: '기업 구분', filled: company.company_size !== 'NONE' },
     { key: 'STAFF', label: '상시 근로자 수', filled: Boolean(company.staff) },
-    { key: 'PERFORMANCE_COUNT', label: '최근 수행 실적 건수', filled: hasPerformance },
+    // An existing company has a known record count, including zero.  Amount and
+    // experience detail remain incomplete until at least one performance exists.
+    { key: 'PERFORMANCE_COUNT', label: '최근 수행 실적 건수', filled: true },
     { key: 'PERFORMANCE_AMOUNT', label: '최근 수행 실적 금액', filled: hasPerformance },
     { key: 'REGISTRATION_CERTIFICATION', label: '인증 · 등록', filled: company.certifications.length > 0 },
   ];

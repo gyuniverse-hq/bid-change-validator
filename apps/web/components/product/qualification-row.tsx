@@ -3,9 +3,12 @@ import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export type QualificationRowStatus = 'SATISFIED' | 'UNSATISFIED' | 'UNKNOWN' | 'UNJUDGED';
+export type QualificationRowBasis = 'PROFILE' | 'USER_ANSWER' | 'NONE';
 
 type QualificationRowProps = {
   status: QualificationRowStatus;
+  /** 판정이 무엇에 근거했는지. USER_ANSWER면 NFR-5에 따라 문서 근거와 구분해서 표시한다. */
+  basisType?: QualificationRowBasis;
   condition: string;
   companyValue: string;
   evidenceLabel: string;
@@ -15,14 +18,27 @@ type QualificationRowProps = {
 };
 
 const STATUS_STYLE: Record<QualificationRowStatus, { label: string; className: string }> = {
-  SATISFIED: { label: '충족', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  UNSATISFIED: { label: '미달', className: 'border-rose-200 bg-rose-50 text-rose-700' },
-  UNKNOWN: { label: '확인 필요', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  UNJUDGED: { label: '미판정', className: 'border-slate-200 bg-slate-50 text-slate-600' },
+  SATISFIED: {
+    label: '충족',
+    className: 'border-[var(--product-ok-line)] bg-[var(--product-ok-soft)] text-[var(--product-ok)]',
+  },
+  UNSATISFIED: {
+    label: '미달',
+    className: 'border-[var(--product-bad-line)] bg-[var(--product-bad-soft)] text-[var(--product-bad)]',
+  },
+  UNKNOWN: {
+    label: '확인 필요',
+    className: 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] text-[var(--product-warn)]',
+  },
+  UNJUDGED: {
+    label: '미판정',
+    className: 'border-[var(--product-neutral-line)] bg-[var(--product-neutral-soft)] text-[var(--product-neutral)]',
+  },
 };
 
 export function QualificationRow({
   status,
+  basisType = 'PROFILE',
   condition,
   companyValue,
   evidenceLabel,
@@ -31,22 +47,32 @@ export function QualificationRow({
   onAction,
 }: QualificationRowProps) {
   const statusMeta = STATUS_STYLE[status];
-  const userAnswerDerived = companyValue === '비어 있음' && (status === 'SATISFIED' || status === 'UNSATISFIED');
+
+  // NFR-5 · 사용자 답변에 근거한 판정은 문서 근거 판정과 같은 모양으로 보이면 안 된다.
+  // 색은 판정 그대로 두고(NFR-10), 테두리를 점선으로 바꾸고 근거를 라벨에 붙인다.
+  const isUserAnswer = basisType === 'USER_ANSWER' && (status === 'SATISFIED' || status === 'UNSATISFIED');
+  const statusLabel = isUserAnswer ? `${statusMeta.label} · 귀사 답변 기준` : statusMeta.label;
+  const borderStyle = isUserAnswer ? 'border-dashed' : 'border-solid';
 
   return (
-    <div className="grid min-h-[64px] grid-cols-1 border-t border-[var(--product-line-2)] lg:grid-cols-[122px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px]">
+    <div className="grid min-h-[64px] grid-cols-1 border-t border-[var(--product-line-2)] lg:grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px]">
       <div className="flex items-center px-3 py-3">
-        <span className={`rounded-full border px-2.5 py-1 text-[12px] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span>
+        <span
+          className={`rounded-full border ${borderStyle} px-2.5 py-1 text-[12px] font-semibold ${statusMeta.className}`}
+        >
+          {statusLabel}
+        </span>
       </div>
       <div className="flex items-center px-3 py-3 text-[14px] font-medium leading-6 text-[var(--product-body)]">{condition}</div>
       <div className="flex items-center px-3 py-3 text-[13px] leading-5 text-[var(--product-muted)]">
-        {userAnswerDerived ? (
+        {isUserAnswer ? (
           <div>
-            <span className="inline-flex rounded-full bg-[#eef1ff] px-2.5 py-1 text-[11px] font-bold text-[var(--product-accent-deep)]">USER_ANSWER</span>
-            <p className="mt-1.5 font-medium text-[var(--product-body)]">사용자 답변으로 판정</p>
-            <p className="text-[11.5px]">회사 프로필에는 값 없음</p>
+            <p className="font-medium text-[var(--product-body)]">귀사가 답한 값으로 판정했습니다</p>
+            <p className="text-[11.5px]">회사 프로필에는 저장하지 않았습니다</p>
           </div>
-        ) : companyValue}
+        ) : (
+          companyValue
+        )}
       </div>
       <div className="flex items-center px-3 py-3">
         <button

@@ -72,7 +72,7 @@ export default function EvaluationPage() {
         </section>
 
         <section className="mt-8 grid gap-4 lg:grid-cols-2">
-          {rows.filter((item) => item.evidence).slice(0, 4).map(({ requirement, evidence }) => <div key={requirement.requirement_key}><EvidenceQuote label={evidence!.evidence_key} quote={evidence!.quote} note="공고 원문 근거" /></div>)}
+          {rows.filter((item) => item.evidence).slice(0, 4).map(({ requirement, evidence }) => <div key={requirement.requirement_key}><EvidenceQuote quote={evidence!.quote} location={evidence!.location} /></div>)}
         </section>
 
         <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5 text-[13px] leading-6 text-[var(--product-muted)]">

@@ -114,8 +114,26 @@ export type QualificationAnalysisRun = QualificationAnalysisSummary & {
     evidence_key: string;
     document_id: string;
     quote: string;
-    location: Record<string, unknown>;
+    location: EvidenceLocation;
   }>;
+};
+
+/**
+ * 근거의 위치. 백엔드가 extracted_blocks를 기준으로 만든다.
+ * HWP/HWPX에는 페이지가 없어서 page가 null인 경우가 정상이다.
+ * 화면이 "3.2항 p.4"를 직접 조립하지 말고 display를 그대로 쓴다.
+ */
+export type EvidenceLocation = {
+  block_start?: number | null;
+  block_end?: number | null;
+  page?: number | null;
+  section_index?: number | null;
+  paragraph_start?: number | null;
+  paragraph_end?: number | null;
+  source_line_start?: number | null;
+  source_line_end?: number | null;
+  clause_label?: string | null;
+  display?: string | null;
 };
 
 export type QualificationJudgment = {

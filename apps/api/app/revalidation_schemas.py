@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from .ai.requirement_diff import RequirementChange
+from .qualification.rules.requirement_diff import RequirementChange
 from .judgment_schemas import QualificationJudgmentRunRead
 
 

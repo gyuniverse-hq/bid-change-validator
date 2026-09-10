@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..ai.contracts import Judgment
-from ..ai.judgment import RULE_VERSION, derive_overall_status, judge_requirement
-from ..ai.requirement_diff import RequirementChange, diff_requirements
+from .rules.judgment import RULE_VERSION, derive_overall_status, judge_requirement
+from .rules.requirement_diff import RequirementChange, diff_requirements
 from ..analysis_models import QualificationAnalysisRun
 from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
 from ..models import PreflightCase

@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..ai.askability import build_semantic_question, classify_askability
+from .rules.askability import build_semantic_question, classify_askability
 from ..ai.contracts import Judgment
-from ..ai.judgment import RULE_VERSION, derive_overall_status
+from .rules.judgment import RULE_VERSION, derive_overall_status
 from ..analysis_models import QualificationAnalysisRun
 from ..models import PreflightCase
 from ..ask_back_models import QualificationAnswer

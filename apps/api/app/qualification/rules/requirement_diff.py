@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 from pydantic import BaseModel
-from .contracts import QualificationRequirement
+from ...ai.contracts import QualificationRequirement
 
 ChangeType = Literal["UNCHANGED","MODIFIED","ADDED","REMOVED"]
 

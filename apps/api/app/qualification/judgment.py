@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..ai.contracts import Judgment
-from ..ai.judgment import (
+from .rules.judgment import (
     RULE_VERSION,
     CompanyProfileSnapshot,
     ProfileCertificationFact,

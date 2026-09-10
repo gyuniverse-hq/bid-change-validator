@@ -18,8 +18,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .contracts import Judgment, QualificationRequirement
-from .askability import unsafe_clause_reason
+from ...ai.contracts import Judgment, QualificationRequirement
+from .clause_safety import unsafe_clause_reason
 
 
 RULE_VERSION = "qualification-rules-v0.2"

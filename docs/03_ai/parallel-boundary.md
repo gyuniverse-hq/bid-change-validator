@@ -1,19 +1,22 @@
 # AI Core ↔ Copilot 병렬 개발 기준
 
-> **문서 상태: Proposed**  
+> **문서 상태: Ownership Accepted / Contract Current화 중**  
 > 작성: 2026-09-10 · 기준: 최신 `develop`
 
 ## 목적
 
-LLM/RAG 두 명이 같은 파일을 동시에 수정하는 구조를 피하고, 김재현의 Core Intelligence와 이홍규의 AI Copilot을 독립적으로 개발·테스트한 뒤 안정된 Contract에서 통합합니다.
+LLM/RAG 두 명이 같은 파일을 동시에 수정하는 구조를 피하고, **김재현 = Core Intelligence + Evaluation / 이홍규 = AI Copilot + Integration**으로 역할을 분리해 독립적으로 개발·테스트한 뒤 안정된 Contract에서 통합합니다.
+
+역할 분리는 팀 합의 완료 상태입니다. 다만 폴더와 공개 Contract의 세부 형태는 실제 코드·테스트와 맞춰가며 Current로 고정합니다.
 
 ## 원칙
 
-- 김재현 Core: 공고문을 신뢰 가능한 Requirement / Evidence / Judgment 기반으로 변환
+- 김재현 Core: 공고문을 신뢰 가능한 Requirement / Evidence / Judgment 기반으로 변환하고 계약 위험조항을 구조화
 - 이홍규 Copilot: 자연어 질문을 기존 Product/API/Core 기능에 연결하고 결과를 근거 기반으로 설명
 - Copilot은 참가 가능 여부를 새로 판정하지 않음
 - 의존 방향은 `Copilot → Core / Business API` 단방향
 - 공유 수정 영역은 Contract와 통합 지점으로 최소화
+- 05 평가 대응은 Frontend 구조안 확정 전까지 별도 Contract를 고정하지 않음
 
 ## 현재 Core
 
@@ -70,18 +73,19 @@ apps/api/app/
 │  │  ├─ evidence.py
 │  │  ├─ notice.py
 │  │  ├─ askback.py
-│  │  ├─ changes.py
-│  │  └─ evaluation.py
+│  │  └─ changes.py
 │  └─ prompts/
 │
 └─ 기존 qualification_* / routers / services
 ```
 
+`evaluation.py` 같은 05 평가 대응 Tool은 Frontend 구조가 확정된 뒤 필요 여부와 Contract를 결정합니다.
+
 ## Owner
 
 | 영역 | Primary | 규칙 |
 | --- | --- | --- |
-| `app/ai/**` | 김재현 | Core 품질·Retrieval·Extraction·Evidence·Guardrail·Eval |
+| `app/ai/**` | 김재현 | Core 품질·Retrieval·Extraction·Evidence·Guardrail·위험조항·Eval |
 | `app/copilot/**` | 이홍규 | Intent·Context·Tool Orchestration·Grounded Answer |
 | `app/ai/contracts.py` | 공동 | Breaking 변경 금지, 필요 시 사전 합의 |
 | Backend qualification API | 전진환 중심 | Copilot에서 재구현하지 않고 기존 Service/API 재사용 |
@@ -120,11 +124,12 @@ develop
 
 두 기능 Branch는 최신 `develop`에서 출발합니다. 통합 브랜치가 필요할 경우 두 작업을 검증하기 위한 임시 Integration 용도로만 둡니다.
 
-## 확정 전 체크
+## Current 체크
 
-- [ ] 김재현 현재 작업물이 원격 `LLM` 최신 상태와 같은지 확인
-- [ ] Core 이식 후보 범위 합의
-- [ ] Core → Copilot Contract 필수 필드 합의
+- [x] Core / Copilot 역할 분리 합의
+- [ ] 김재현 현재 작업물과 최신 `develop` Diff 최종 확인
+- [ ] Core 이식 후보 범위 확정
+- [ ] Core → Copilot Contract 필수 필드 확정
 - [ ] `app/copilot/**` 첫 Vertical Slice 작성
 - [ ] 각 Branch 독립 테스트
-- [ ] Integration E2E 통과 후 이 문서를 `Current`로 승격
+- [ ] Integration E2E 통과 후 상세 폴더/Contract를 완전한 Current로 승격

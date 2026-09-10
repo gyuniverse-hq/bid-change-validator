@@ -600,7 +600,7 @@ def judge_requirement(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    if unsafe_clause_reason(requirement.raw):
+    if unsafe_clause_reason(requirement.raw) or requirement.condition_complexity == "composite":
         return _unknown(requirement, preflight_case_id, unsupported=True)
     if requirement.type == "REGION":
         return _judge_region(requirement, profile, preflight_case_id)
@@ -639,7 +639,7 @@ def derive_overall_status(
     grouped: dict[str, tuple[str, list[str]]] = {}
 
     for requirement in requirements:
-        if not requirement.required:
+        if requirement.requirement_role != "mandatory":
             continue
         group_key = requirement.requirement_group_key or requirement.requirement_key
         operator = requirement.group_operator or "ALL_OF"

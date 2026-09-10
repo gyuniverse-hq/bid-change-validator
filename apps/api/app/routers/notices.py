@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session, selectinload
 from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
-from ..models import BidNotice, BidNoticeVersion, NoticeCollectionRun, NoticeDocument
+from ..models import (
+    BidNotice,
+    BidNoticeVersion,
+    NoticeCollectionRun,
+    NoticeDocument,
+    NoticeFact,
+    NoticeRelation,
+)
 from ..schemas import (
     BidNoticeDetail,
     BidNoticeSearchResponse,
@@ -20,12 +27,16 @@ from ..schemas import (
     DocumentExtractionBatchRead,
     NoticeCollectionRunRead,
     NoticeDocumentTextRead,
+    NoticeFactDiffRead,
+    NoticeFactRead,
+    NoticeRelationRead,
     NoticeSyncRequest,
 )
 from ..services.g2b import G2BApiError, G2BClient
 from ..services.document_storage import build_document_downloader
 from ..services.document_extraction import extract_pending_documents
 from ..services.notices import run_notice_sync
+from ..services.notice_facts import diff_notice_facts
 
 
 router = APIRouter(prefix="/api/v1/notices", tags=["bid notices"])
@@ -407,9 +418,29 @@ def get_notice(
         raise ApiError(404, "NOTICE_NOT_FOUND", "입찰공고를 찾을 수 없습니다.")
     notice, version = row
     summary = _summary(notice, version)
+    relation = db.get(NoticeRelation, notice.id)
+    relation_read = None
+    if relation is not None:
+        previous_notice = (
+            db.get(BidNotice, relation.previous_notice_id)
+            if relation.previous_notice_id is not None
+            else None
+        )
+        relation_read = NoticeRelationRead(
+            notice_id=relation.notice_id,
+            previous_notice_id=relation.previous_notice_id,
+            previous_bid_notice_no=relation.previous_bid_notice_no,
+            previous_notice_title=previous_notice.title if previous_notice is not None else None,
+            match_method=relation.match_method,
+            match_confidence=relation.match_confidence,
+            resolved=relation.previous_notice_id is not None,
+            created_at=relation.created_at,
+            updated_at=relation.updated_at,
+        )
     return BidNoticeDetail(
         **summary.model_dump(),
         latest=BidNoticeVersionRead.model_validate(version),
+        relation=relation_read,
     )
 
 
@@ -427,3 +458,108 @@ def list_notice_versions(
         .order_by(BidNoticeVersion.version_number.desc())
     ).all()
     return [BidNoticeVersionRead.model_validate(version) for version in versions]
+
+
+@router.get(
+    "/{notice_id}/versions/{version_number}/facts",
+    response_model=list[NoticeFactRead],
+)
+def list_notice_facts(
+    notice_id: UUID,
+    version_number: int,
+    db: Session = Depends(get_db),
+) -> list[NoticeFactRead]:
+    version = db.scalar(
+        select(BidNoticeVersion).where(
+            BidNoticeVersion.notice_id == notice_id,
+            BidNoticeVersion.version_number == version_number,
+        )
+    )
+    if version is None:
+        raise ApiError(404, "NOTICE_VERSION_NOT_FOUND", "입찰공고 버전을 찾을 수 없습니다.")
+    facts = db.scalars(
+        select(NoticeFact)
+        .where(NoticeFact.notice_version_id == version.id)
+        .order_by(NoticeFact.fact_key)
+    ).all()
+    return [NoticeFactRead.model_validate(fact) for fact in facts]
+
+
+@router.get("/{notice_id}/fact-changes", response_model=NoticeFactDiffRead)
+def get_notice_fact_changes(
+    notice_id: UUID,
+    baseline_version_id: UUID | None = None,
+    current_version_id: UUID | None = None,
+    include_unchanged: bool = False,
+    db: Session = Depends(get_db),
+) -> NoticeFactDiffRead:
+    notice = db.get(BidNotice, notice_id)
+    if notice is None:
+        raise ApiError(404, "NOTICE_NOT_FOUND", "입찰공고를 찾을 수 없습니다.")
+
+    if current_version_id is None:
+        current = db.scalar(
+            select(BidNoticeVersion).where(
+                BidNoticeVersion.notice_id == notice_id,
+                BidNoticeVersion.is_current.is_(True),
+            )
+        )
+    else:
+        current = db.get(BidNoticeVersion, current_version_id)
+        if current is not None and current.notice_id != notice_id:
+            current = None
+    if current is None:
+        raise ApiError(404, "CURRENT_NOTICE_VERSION_NOT_FOUND", "현재 공고 버전을 찾을 수 없습니다.")
+
+    relation = db.get(NoticeRelation, notice_id)
+    allowed_baseline_notice_ids = {notice_id}
+    if relation is not None and relation.previous_notice_id is not None:
+        allowed_baseline_notice_ids.add(relation.previous_notice_id)
+
+    if baseline_version_id is not None:
+        baseline = db.get(BidNoticeVersion, baseline_version_id)
+        if baseline is not None and baseline.notice_id not in allowed_baseline_notice_ids:
+            raise ApiError(
+                400,
+                "BASELINE_NOTICE_VERSION_INVALID",
+                "비교 기준 버전은 같은 공고 또는 연결된 직전 공고에 속해야 합니다.",
+            )
+    else:
+        baseline = db.scalar(
+            select(BidNoticeVersion)
+            .where(
+                BidNoticeVersion.notice_id == notice_id,
+                BidNoticeVersion.version_number < current.version_number,
+            )
+            .order_by(BidNoticeVersion.version_number.desc())
+            .limit(1)
+        )
+        if (
+            baseline is None
+            and relation is not None
+            and relation.previous_notice_id is not None
+        ):
+            baseline = db.scalar(
+                select(BidNoticeVersion).where(
+                    BidNoticeVersion.notice_id == relation.previous_notice_id,
+                    BidNoticeVersion.is_current.is_(True),
+                )
+            )
+    if baseline is None:
+        raise ApiError(404, "BASELINE_NOTICE_VERSION_NOT_FOUND", "비교 기준 공고 버전을 찾을 수 없습니다.")
+
+    baseline_facts = db.scalars(
+        select(NoticeFact).where(NoticeFact.notice_version_id == baseline.id)
+    ).all()
+    current_facts = db.scalars(
+        select(NoticeFact).where(NoticeFact.notice_version_id == current.id)
+    ).all()
+    return NoticeFactDiffRead(
+        baseline_version_id=baseline.id,
+        current_version_id=current.id,
+        changes=diff_notice_facts(
+            list(baseline_facts),
+            list(current_facts),
+            include_unchanged=include_unchanged,
+        ),
+    )

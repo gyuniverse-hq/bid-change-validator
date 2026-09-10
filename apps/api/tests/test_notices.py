@@ -11,15 +11,23 @@ from sqlalchemy import func, select
 from apps.api.app.database import SessionLocal
 from apps.api.app.config import get_settings
 from apps.api.app.main import app
-from apps.api.app.models import BidNotice, BidNoticeVersion, NoticeDocument
+from apps.api.app.models import (
+    BidNotice,
+    BidNoticeVersion,
+    NoticeCollectionRun,
+    NoticeDocument,
+    NoticeFact,
+    NoticeRelation,
+)
 from apps.api.app.routers import notices as notices_router
 from apps.api.app.routers import preflight_cases as preflight_cases_router
-from apps.api.app.schemas import BusinessType
+from apps.api.app.schemas import BusinessType, NoticeInquiryType, NoticeSyncRequest
+from apps.api.app.services.g2b import G2BPage
 from apps.api.app.services.document_storage import (
     LocalDocumentStorage,
     NoticeDocumentDownloader,
 )
-from apps.api.app.services.notices import save_notice_snapshot
+from apps.api.app.services.notices import run_notice_sync, save_notice_snapshot
 
 
 client = TestClient(app)
@@ -280,5 +288,230 @@ def test_notice_version_deduplication_file_download_and_api(
             persisted = db.get(BidNotice, notice_id)
             if persisted is not None:
                 db.delete(persisted)
+                db.commit()
+        db.close()
+
+
+def test_reannouncement_relation_is_preserved_and_resolved_later() -> None:
+    previous_notice_no = f"TEST-PREV-{uuid4()}"
+    current_notice_no = f"TEST-RE-{uuid4()}"
+    current_notice_id = None
+    previous_notice_id = None
+    db = SessionLocal()
+    try:
+        reannouncement = _item(current_notice_no)
+        reannouncement["reNtceYn"] = "Y"
+        reannouncement["befBidBbancNo"] = previous_notice_no
+
+        result, current_notice, _ = save_notice_snapshot(
+            db,
+            item=reannouncement,
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        current_notice_id = current_notice.id
+
+        assert result == "CREATED"
+        unresolved = db.get(NoticeRelation, current_notice.id)
+        assert unresolved is not None
+        assert unresolved.previous_bid_notice_no == previous_notice_no
+        assert unresolved.previous_notice_id is None
+        assert unresolved.match_confidence == "CONFIRMED"
+
+        _, previous_notice, _ = save_notice_snapshot(
+            db,
+            item=_item(previous_notice_no),
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        previous_notice_id = previous_notice.id
+        db.expire_all()
+
+        resolved = db.get(NoticeRelation, current_notice.id)
+        assert resolved is not None
+        assert resolved.previous_notice_id == previous_notice.id
+
+        response = client.get(f"/api/v1/notices/{current_notice.id}")
+        assert response.status_code == 200
+        assert response.json()["relation"]["previous_notice_id"] == str(previous_notice.id)
+        assert response.json()["relation"]["resolved"] is True
+    finally:
+        for notice_id in (current_notice_id, previous_notice_id):
+            if notice_id is None:
+                continue
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        db.close()
+
+
+def test_notice_facts_are_versioned_and_diffed() -> None:
+    notice_no = f"TEST-FACT-{uuid4()}"
+    notice_id = None
+    db = SessionLocal()
+    try:
+        first = _item(notice_no)
+        first["cmmnSpldmdMethdCd"] = ""
+        first["cmmnSpldmdMethdNm"] = "(없음)공동수급불허"
+        _, notice, first_version = save_notice_snapshot(
+            db,
+            item=first,
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        notice_id = notice.id
+
+        second = _item(notice_no)
+        second["bidClseDt"] = "2026-09-12 10:00:00"
+        second["asignBdgtAmt"] = "150000000"
+        second["cmmnSpldmdMethdCd"] = "공500001"
+        second["cmmnSpldmdMethdNm"] = "(전자)공동이행"
+        _, _, second_version = save_notice_snapshot(
+            db,
+            item=second,
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+
+        assert db.scalar(
+            select(func.count())
+            .select_from(NoticeFact)
+            .where(NoticeFact.notice_version_id == first_version.id)
+        ) == 4
+        assert db.scalar(
+            select(func.count())
+            .select_from(NoticeFact)
+            .where(NoticeFact.notice_version_id == second_version.id)
+        ) == 4
+
+        response = client.get(f"/api/v1/notices/{notice.id}/fact-changes")
+        assert response.status_code == 200, response.text
+        changes = {item["fact_key"]: item for item in response.json()["changes"]}
+        assert set(changes) == {
+            "BUDGET_AMOUNT",
+            "JOINT_SUPPLY",
+            "SUBMISSION_DEADLINE",
+        }
+        assert all(item["change_type"] == "MODIFIED" for item in changes.values())
+    finally:
+        if notice_id is not None:
+            persisted = db.get(BidNotice, notice_id)
+            if persisted is not None:
+                db.delete(persisted)
+                db.commit()
+        db.close()
+
+
+def test_fact_diff_rejects_unrelated_baseline_version() -> None:
+    first_notice_id = None
+    other_notice_id = None
+    db = SessionLocal()
+    try:
+        _, first_notice, _ = save_notice_snapshot(
+            db,
+            item=_item(f"TEST-FIRST-{uuid4()}"),
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        _, other_notice, other_version = save_notice_snapshot(
+            db,
+            item=_item(f"TEST-OTHER-{uuid4()}"),
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        first_notice_id = first_notice.id
+        other_notice_id = other_notice.id
+
+        response = client.get(
+            f"/api/v1/notices/{first_notice.id}/fact-changes",
+            params={"baseline_version_id": str(other_version.id)},
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "BASELINE_NOTICE_VERSION_INVALID"
+    finally:
+        for notice_id in (first_notice_id, other_notice_id):
+            if notice_id is None:
+                continue
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        db.close()
+
+
+def test_sync_fetches_and_links_direct_previous_notice() -> None:
+    previous_notice_no = f"TEST-PREV-{uuid4()}"
+    current_notice_no = f"TEST-RE-{uuid4()}"
+    reannouncement = _item(current_notice_no)
+    reannouncement["reNtceYn"] = "Y"
+    reannouncement["befBidBbancNo"] = previous_notice_no
+    previous = _item(previous_notice_no)
+
+    class FakeG2BClient:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def fetch_page(self, **kwargs) -> G2BPage:
+            self.calls.append(kwargs)
+            items = (
+                [previous]
+                if kwargs["inquiry_type"] == NoticeInquiryType.NOTICE_NUMBER
+                else [reannouncement]
+            )
+            return G2BPage(
+                items=items,
+                total_count=len(items),
+                page_number=kwargs["page_number"],
+                page_size=kwargs["page_size"],
+                endpoint="getBidPblancListInfoServc",
+            )
+
+    fake_client = FakeG2BClient()
+    db = SessionLocal()
+    run_id = None
+    notice_ids = []
+    try:
+        run = run_notice_sync(
+            db,
+            request=NoticeSyncRequest(
+                business_type=BusinessType.SERVICE,
+                inquiry_type=NoticeInquiryType.REGISTERED,
+                window_started_at=datetime(2026, 9, 5, 9, tzinfo=KST),
+                window_ended_at=datetime(2026, 9, 5, 10, tzinfo=KST),
+            ),
+            client=fake_client,
+        )
+        run_id = run.id
+
+        current = db.scalar(
+            select(BidNotice).where(BidNotice.bid_notice_no == current_notice_no)
+        )
+        previous_notice = db.scalar(
+            select(BidNotice).where(BidNotice.bid_notice_no == previous_notice_no)
+        )
+        assert current is not None
+        assert previous_notice is not None
+        notice_ids = [current.id, previous_notice.id]
+        relation = db.get(NoticeRelation, current.id)
+        assert relation is not None
+        assert relation.previous_notice_id == previous_notice.id
+        assert run.api_calls == 2
+        assert len(fake_client.calls) == 2
+    finally:
+        for notice_id in notice_ids:
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        if run_id is not None:
+            collection_run = db.get(NoticeCollectionRun, run_id)
+            if collection_run is not None:
+                db.delete(collection_run)
                 db.commit()
         db.close()

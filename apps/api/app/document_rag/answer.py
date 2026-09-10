@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -27,11 +28,17 @@ class GroundedCitation(BaseModel):
 
 class GroundedDocumentAnswer(BaseModel):
     answer: str
+    # Only refs used in the answer, deduplicated in first-appearance order.
     citations: list[GroundedCitation] = Field(default_factory=list)
+    # All input hits, retaining retrieval rank and their original source metadata.
+    sources: list[GroundedCitation] = Field(default_factory=list)
 
 
 def build_grounded_prompt(question: str, hits: list[DocumentChunkHit]) -> list[dict[str, str]]:
     """Render a LangChain prompt while keeping OpenAI SDK calls project-native."""
+
+    if len({hit.metadata.notice_version_id for hit in hits}) > 1:
+        raise ValueError("grounded answer cannot mix notice versions")
 
     try:
         from langchain_core.prompts import ChatPromptTemplate
@@ -41,9 +48,13 @@ def build_grounded_prompt(question: str, hits: list[DocumentChunkHit]) -> list[d
     context_parts: list[str] = []
     for index, hit in enumerate(hits, start=1):
         metadata = hit.metadata
-        locator = metadata.clause_label or ", ".join(metadata.source_locations) or "위치 정보 없음"
+        location = ", ".join(metadata.source_locations)
+        if not location and metadata.page is not None:
+            location = f"p.{metadata.page}"
         context_parts.append(
-            f"[S{index}] document={metadata.document_name}; locator={locator}; "
+            f"[S{index}] document={metadata.document_name}; "
+            f"clause={metadata.clause_label or '정보 없음'}; "
+            f"location={location or '위치 정보 없음'}; "
             f"notice_version_id={metadata.notice_version_id}\n{hit.text}"
         )
 
@@ -56,7 +67,10 @@ def build_grounded_prompt(question: str, hits: list[DocumentChunkHit]) -> list[d
                 "제공된 SOURCE 밖의 사실을 공고 근거처럼 만들지 마세요. "
                 "참가 가능/불가를 독자적으로 판정하지 마세요. "
                 "질문에 답할 근거가 부족하면 확인할 수 없다고 명시하세요. "
-                "사용한 근거는 반드시 [S1] 형식으로 표시하세요.",
+                "실제로 사용한 SOURCE만 [S1] 형식으로 인용하세요. "
+                "여러 SOURCE를 사용하면 [S1] [S2]처럼 각각 표시하세요. "
+                "제공되지 않은 Source ID를 생성하지 마세요. "
+                "근거가 없으면 억지로 인용을 생성하지 마세요.",
             ),
             (
                 "human",
@@ -82,7 +96,7 @@ def generate_grounded_answer(
     model: str | None = None,
     client: Any | None = None,
 ) -> GroundedDocumentAnswer:
-    """Generate an answer from retrieved chunks and return stable citation metadata."""
+    """Return all sources separately from explicit [S#] citations in the answer."""
 
     if not question.strip():
         raise ValueError("question must not be blank")
@@ -109,7 +123,7 @@ def generate_grounded_answer(
     if not content:
         raise RuntimeError("OpenAI grounded answer returned empty content")
 
-    citations = [
+    sources = [
         GroundedCitation(
             ref=f"S{index}",
             document_id=hit.metadata.document_id,
@@ -123,4 +137,14 @@ def generate_grounded_answer(
         )
         for index, hit in enumerate(hits, start=1)
     ]
-    return GroundedDocumentAnswer(answer=str(content), citations=citations)
+    answer = str(content)
+    refs = list(dict.fromkeys(re.findall(r"\[(S[0-9]+)\]", answer)))
+    by_ref = {source.ref: source for source in sources}
+    unknown_refs = [ref for ref in refs if ref not in by_ref]
+    if unknown_refs:
+        raise ValueError(f"answer cites unknown source refs: {', '.join(unknown_refs)}")
+    return GroundedDocumentAnswer(
+        answer=answer,
+        citations=[by_ref[ref] for ref in refs],
+        sources=sources,
+    )

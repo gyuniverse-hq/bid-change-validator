@@ -7,16 +7,22 @@ from ..qualification.extraction.requirement_extraction import build_extraction_b
 from .scoring import score_case
 
 
-def evaluate_case(case, *, structured_extract=None):
+def chunk_and_select(document_blocks):
+    """Chunk each document separately, preserving Core's global chunk numbering."""
     chunks = []
-    for doc in case.analysis_input.documents:
-        blocks = canonical_source_blocks(document_id=doc.document_id,
-                                        blocks=doc.extracted_blocks,
-                                        file_sha256=doc.file_sha256,
-                                        text_sha256=doc.extracted_text_sha256)
+    for blocks in document_blocks:
         for chunk in chunk_source_blocks(blocks):
             chunks.append({**chunk, "chunk_id": f"CHUNK-{len(chunks):04d}"})
-    selected = select_eligibility_chunks(chunks)
+    return chunks, select_eligibility_chunks(chunks)
+
+
+def evaluate_case(case, *, structured_extract=None):
+    chunks, selected = chunk_and_select(
+        canonical_source_blocks(document_id=doc.document_id,
+                                blocks=doc.extracted_blocks,
+                                file_sha256=doc.file_sha256,
+                                text_sha256=doc.extracted_text_sha256)
+        for doc in case.analysis_input.documents)
     result = None
     calls = 0
     if structured_extract is not None:

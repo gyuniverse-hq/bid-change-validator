@@ -1,7 +1,7 @@
 from datetime import date
 
 from apps.api.app.ai.contracts import QualificationRequirement
-from apps.api.app.ai.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirements
+from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirements
 
 REFERENCE_DATE = date(2026, 9, 7)
 
@@ -79,7 +79,7 @@ def test_any_of_group_does_not_make_one_failed_alternative_ineligible():
 
 
 def test_industry_identifiers_require_exact_match():
-    from apps.api.app.ai.judgment import ProfileIndustryFact
+    from apps.api.app.qualification.rules.judgment import ProfileIndustryFact
     profile = _profile().model_copy(update={"industries": [ProfileIndustryFact(code="11426", name="다른 업종")]})
     req = _requirement("industry", "INDUSTRY", value="1426")
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"

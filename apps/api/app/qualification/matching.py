@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from ..ai.judgment import judge_requirements
+from .rules.judgment import judge_requirements
 from ..analysis_models import QualificationAnalysisRun
 from ..judgment_models import CompanyQualificationProfileCompleteness
 from ..matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse

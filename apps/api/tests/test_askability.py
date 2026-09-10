@@ -1,4 +1,4 @@
-from apps.api.app.ai.askability import build_semantic_question, classify_askability
+from apps.api.app.qualification.rules.askability import build_semantic_question, classify_askability
 from apps.api.app.ai.contracts import QualificationRequirement
 
 
@@ -69,5 +69,5 @@ def test_missing_or_incompatible_operator_is_not_askable():
 
 
 def test_real_staff_table_ditto_is_not_a_single_user_fact():
-    from apps.api.app.ai.askability import unsafe_clause_reason
+    from apps.api.app.qualification.rules.clause_safety import unsafe_clause_reason
     assert unsafe_clause_reason("4. 인허가중급1〃") == "UNRESOLVED_TABLE_REFERENCE"

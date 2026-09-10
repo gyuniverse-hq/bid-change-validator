@@ -302,7 +302,7 @@ def test_pipeline_does_not_report_empty_retry_as_success():
 
 def test_extracted_industry_code_reaches_existing_deterministic_judge():
     from datetime import date
-    from apps.api.app.ai.judgment import CompanyProfileSnapshot, judge_requirement
+    from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot, judge_requirement
 
     raw = "소프트웨어사업(업종코드: 1468) 등록업체"
     analysis_input = QualificationAnalysisInput(

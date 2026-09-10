@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from .ai.contracts import Judgment
-from .ai.judgment import OverallQualificationStatus, ProfileCompleteness
+from .qualification.rules.judgment import OverallQualificationStatus, ProfileCompleteness
 
 
 class QualificationProfileCompletenessRead(BaseModel):

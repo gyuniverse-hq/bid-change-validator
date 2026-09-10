@@ -1,5 +1,5 @@
 from apps.api.app.ai.contracts import QualificationRequirement
-from apps.api.app.ai.requirement_diff import diff_requirements, requirements_to_revalidate
+from apps.api.app.qualification.rules.requirement_diff import diff_requirements, requirements_to_revalidate
 
 
 def _req(key: str, *, req_type: str = "PERFORMANCE_AMOUNT", value=400_000_000, raw: str = "최근 3년 실적 4억원 이상"):

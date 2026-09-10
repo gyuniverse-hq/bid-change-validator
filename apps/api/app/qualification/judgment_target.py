@@ -13,11 +13,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from .ai.judgment import RULE_VERSION, judge_requirements
-from .analysis_models import QualificationAnalysisRun
-from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .qualification_analysis import analysis_run_response
-from .qualification_judgment import (
+from ..ai.judgment import RULE_VERSION, judge_requirements
+from ..analysis_models import QualificationAnalysisRun
+from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
+from .analysis import analysis_run_response
+from .judgment import (
     load_judgment_analysis,
     QualificationJudgmentError,
     _load_case,

@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .database import get_db
 from .errors import ApiError
-from .qualification_analysis_router import router as qualification_analysis_router
-from .qualification_ask_back_router import router as qualification_ask_back_router
-from .qualification_judgment_router import router as qualification_judgment_router
-from .qualification_matching_router import router as qualification_matching_router
-from .qualification_revalidation_router import router as qualification_revalidation_router
+from .qualification.routers.analysis import router as qualification_analysis_router
+from .qualification.routers.ask_back import router as qualification_ask_back_router
+from .qualification.routers.judgment import router as qualification_judgment_router
+from .qualification.routers.matching import router as qualification_matching_router
+from .qualification.routers.revalidation import router as qualification_revalidation_router
 from .routers.companies import router as companies_router
 from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router

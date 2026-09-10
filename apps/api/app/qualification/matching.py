@@ -13,13 +13,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .ai.judgment import judge_requirements
-from .analysis_models import QualificationAnalysisRun
-from .judgment_models import CompanyQualificationProfileCompleteness
-from .matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse
-from .models import BidNotice, BidNoticeVersion
-from .qualification_analysis import analysis_run_response
-from .qualification_judgment import _load_company, _record_to_completeness, build_company_profile_snapshot
+from ..ai.judgment import judge_requirements
+from ..analysis_models import QualificationAnalysisRun
+from ..judgment_models import CompanyQualificationProfileCompleteness
+from ..matching_schemas import NoticeMatchRead, NoticeMatchSearchResponse
+from ..models import BidNotice, BidNoticeVersion
+from .analysis import analysis_run_response
+from .judgment import _load_company, _record_to_completeness, build_company_profile_snapshot
 
 
 _STATUS_ORDER = {"eligible": 0, "insufficient_data": 1, "ineligible": 2}

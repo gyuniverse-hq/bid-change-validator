@@ -5,11 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from .database import get_db
-from .errors import ApiError
-from .matching_schemas import NoticeMatchSearchResponse
-from .qualification_judgment import QualificationJudgmentError
-from .qualification_matching import match_cached_notices
+from ...database import get_db
+from ...errors import ApiError
+from ...matching_schemas import NoticeMatchSearchResponse
+from ..judgment import QualificationJudgmentError
+from ..matching import match_cached_notices
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification matching"])

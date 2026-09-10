@@ -5,11 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .database import get_db
-from .errors import ApiError
-from .judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationJudgmentTrigger, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
-from .qualification_judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, update_profile_completeness
-from .qualification_judgment_target import run_targeted_qualification_judgment
+from ...database import get_db
+from ...errors import ApiError
+from ...judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationJudgmentTrigger, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
+from ..judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, update_profile_completeness
+from ..judgment_target import run_targeted_qualification_judgment
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification judgment"])

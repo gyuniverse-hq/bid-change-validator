@@ -8,21 +8,21 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .ai.qualification.extraction.analysis_pipeline import (
+from ..ai.qualification.extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     StructuredExtractor,
     analyze_qualification_documents,
 )
-from .ai.qualification.extraction.analysis_result import RequirementAnalysisResult
-from .ai.contracts import Evidence, EvidenceLocation, QualificationRequirement
-from .analysis_models import (
+from ..ai.qualification.extraction.analysis_result import RequirementAnalysisResult
+from ..ai.contracts import Evidence, EvidenceLocation, QualificationRequirement
+from ..analysis_models import (
     QualificationAnalysisRun,
     QualificationEvidenceRecord,
     QualificationRequirementRecord,
 )
-from .analysis_schemas import QualificationAnalysisRunRead, QualificationAnalysisRunSummary
-from .models import BidNoticeVersion, NoticeDocument
+from ..analysis_schemas import QualificationAnalysisRunRead, QualificationAnalysisRunSummary
+from ..models import BidNoticeVersion, NoticeDocument
 
 
 class QualificationAnalysisError(ValueError):

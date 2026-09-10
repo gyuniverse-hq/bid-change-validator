@@ -20,6 +20,12 @@ class GoldenSpan:
     span_kind: SpanKind
     quote: str
     note: str = ""
+    expected_type: str | None = None
+    expected_operator: str | None = None
+    expected_value: int | float | str | None = None
+    expected_unit: str | None = None
+    expected_period_months: float | None = None
+    expected_judgment: str | None = None
 
     def is_in(self, text: str) -> bool:
         probe = squash(self.quote)

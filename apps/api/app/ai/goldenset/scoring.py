@@ -4,6 +4,7 @@ import statistics
 from typing import Any
 
 from .fixtures import GoldenCase
+from .spans import GoldenSpan, squash
 
 
 def _has_span(chunk: dict[str, Any], span) -> bool:
@@ -13,11 +14,39 @@ def _has_span(chunk: dict[str, Any], span) -> bool:
     return span.document_id in source_ids and span.is_in(chunk.get("text") or "")
 
 
+def _read(item: Any, field: str) -> Any:
+    if isinstance(item, dict):
+        return item.get(field)
+    return getattr(item, field, None)
+
+
+def _raw_matches(span: GoldenSpan, item: Any) -> bool:
+    label = squash(span.quote)
+    raw = squash(str(_read(item, "raw") or ""))
+    return bool(label and raw) and (label in raw or (len(raw) >= 20 and raw in label))
+
+
+def _canonical_matches(span: GoldenSpan, item: Any) -> bool:
+    if not _raw_matches(span, item):
+        return False
+    expected = {
+        "type": span.expected_type,
+        "operator": span.expected_operator,
+        "value": span.expected_value,
+        "unit": span.expected_unit,
+        "period_months": span.expected_period_months,
+    }
+    return all(value is None or _read(item, field) == value for field, value in expected.items())
+
+
 def score_case(
     case: GoldenCase,
     chunks: list[dict[str, Any]],
     retrieved: list[dict[str, Any]],
     *,
+    extracted_slots: list[Any] | None = None,
+    canonical_requirements: list[Any] | None = None,
+    judgments: list[Any] | None = None,
     max_chars: int = 1800,
     budget_chars: int = 32_000,
 ) -> dict[str, Any]:
@@ -29,14 +58,36 @@ def score_case(
     for span in positives:
         contained = any(_has_span(chunk, span) for chunk in chunks)
         selected = any(_has_span(chunk, span) for chunk in retrieved)
+        extracted = (
+            None
+            if extracted_slots is None
+            else any(_raw_matches(span, item) for item in extracted_slots)
+        )
+        matching_requirements = (
+            []
+            if canonical_requirements is None
+            else [item for item in canonical_requirements if _canonical_matches(span, item)]
+        )
+        canonical = None if canonical_requirements is None else bool(matching_requirements)
+        judgment = None
+        if span.expected_judgment is not None and judgments is not None:
+            requirement_keys = {
+                _read(item, "requirement_key") for item in matching_requirements
+            }
+            judgment = any(
+                _read(item, "requirement_key") in requirement_keys
+                and _read(item, "status") == span.expected_judgment
+                for item in judgments
+            )
         rows.append(
             {
                 "span_id": span.span_id,
                 "note": span.note,
                 "contained": contained,
                 "retrieved": selected,
-                "extracted": None,
-                "canonical": None,
+                "extracted": extracted,
+                "canonical": canonical,
+                "judgment": judgment,
             }
         )
 
@@ -49,6 +100,15 @@ def score_case(
     retrieved_positive_spans = sum(row["retrieved"] for row in rows)
     return {
         "notice_no": case.notice_no,
+        "counts": {
+            "positive_spans": len(positives),
+            "trap_spans": len(traps),
+            "contained_positive_spans": sum(row["contained"] for row in rows),
+            "retrieved_positive_spans": retrieved_positive_spans,
+            "retrieved_chunks": len(retrieved),
+            "retrieved_positive_chunks": retrieved_positive_chunks,
+            "retrieved_trap_spans": retrieved_traps,
+        },
         "chunk_health": {
             "chunks": len(chunks),
             "median_chars": statistics.median(lengths) if lengths else 0,

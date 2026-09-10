@@ -21,6 +21,8 @@ class GoldenCase:
     notice_no: str
     documents: tuple[GoldenDocument, ...]
     spans: tuple[GoldenSpan, ...]
+    profile_path: str | None = None
+    reference_date: str | None = None
 
 
 def load_cases(root: Path) -> list[GoldenCase]:
@@ -32,15 +34,31 @@ def load_cases(root: Path) -> list[GoldenCase]:
                 notice_no=raw_case["notice_no"],
                 documents=tuple(GoldenDocument(**item) for item in raw_case["documents"]),
                 spans=tuple(GoldenSpan(**item) for item in raw_case["spans"]),
+                profile_path=raw_case.get("profile_path"),
+                reference_date=raw_case.get("reference_date"),
             )
         )
     return cases
 
 
-def load_case_chunks(case: GoldenCase, *, repo_root: Path) -> list[dict[str, Any]]:
+def load_case_chunks(
+    case: GoldenCase,
+    *,
+    repo_root: Path,
+    chunker: str = "default",
+) -> list[dict[str, Any]]:
     """Extract cached fixtures through the same adapter used by the demo."""
     from ..demo.documents import FetchedDocument, G2BDocumentSource
-    from ..chunking import chunk_source_blocks
+    from ..chunking import chunk_source_blocks, chunk_source_blocks_hygienic
+
+    chunkers = {
+        "default": chunk_source_blocks,
+        "hygienic": chunk_source_blocks_hygienic,
+    }
+    try:
+        chunk_source = chunkers[chunker]
+    except KeyError as error:
+        raise ValueError(f"unknown chunker: {chunker}") from error
 
     chunks: list[dict[str, Any]] = []
     source = G2BDocumentSource()
@@ -59,7 +77,7 @@ def load_case_chunks(case: GoldenCase, *, repo_root: Path) -> list[dict[str, Any
             {**block, "document_id": document.document_id, "document_role": document.role}
             for block in fetched.blocks
         ]
-        for chunk in chunk_source_blocks(blocks):
+        for chunk in chunk_source(blocks):
             chunks.append({**chunk, "chunk_id": f"CHUNK-{len(chunks):04d}"})
     return chunks
 

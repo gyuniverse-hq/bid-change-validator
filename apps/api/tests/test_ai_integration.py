@@ -1,5 +1,5 @@
 from apps.api.app.ai.extraction.backend_blocks import canonical_source_blocks
-from apps.api.app.ai.chunking import chunk_source_blocks
+from apps.api.app.ai.chunking import chunk_source_blocks, chunk_source_blocks_hygienic
 from apps.api.app.ai.extraction.legacy_slots import adapt_legacy_slot
 
 
@@ -362,3 +362,33 @@ def test_legacy_other_requirement_stays_diagnostic() -> None:
 
     assert requirements == []
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"
+
+
+def test_hygienic_chunker_accumulates_short_numbered_paragraphs() -> None:
+    blocks = [
+        {"text": f"{index}. 항목\n" + (chr(96 + index) * 110), "document_id": "doc"}
+        for index in range(1, 5)
+    ]
+
+    chunks = chunk_source_blocks_hygienic(blocks, min_chars=300, max_chars=1800)
+
+    assert len(chunks) == 2
+    assert len(chunks[0]["text"]) >= 300
+    assert chunks[0]["clause_label"] == "1"
+    assert chunks[1]["clause_label"] == "4"
+
+
+def test_hygienic_chunker_enforces_hard_cap_and_resets_inherited_label() -> None:
+    chunks = chunk_source_blocks_hygienic(
+        [{"text": "1. 긴 항목\n" + ("가" * 950), "document_id": "doc"}],
+        min_chars=100,
+        max_chars=400,
+        overlap_chars=40,
+    )
+
+    assert len(chunks) == 4
+    assert all(len(chunk["text"]) <= 400 for chunk in chunks)
+    assert chunks[0]["clause_label"] == "1"
+    assert chunks[1]["clause_label"] is None
+    assert chunks[2]["clause_label"] is None
+    assert chunks[3]["clause_label"] is None

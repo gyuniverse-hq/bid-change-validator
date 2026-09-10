@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .contracts import QualificationRequirement, RequirementOperator, RequirementType
-from .askability import unsafe_clause_reason
+from ...contracts import QualificationRequirement, RequirementOperator, RequirementType
+from ...askability import unsafe_clause_reason
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 _INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")

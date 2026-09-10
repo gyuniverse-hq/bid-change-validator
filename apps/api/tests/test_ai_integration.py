@@ -1,6 +1,6 @@
-from apps.api.app.ai.backend_blocks import canonical_source_blocks
-from apps.api.app.ai.chunking import chunk_source_blocks
-from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+from apps.api.app.ai.qualification.extraction.backend_blocks import canonical_source_blocks
+from apps.api.app.ai.qualification.extraction.chunking import chunk_source_blocks
+from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
 
 
 def test_pdf_backend_block_contract_is_preserved() -> None:

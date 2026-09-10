@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from .ai.analysis_result import AnalysisDiagnostic
+from .ai.qualification.extraction.analysis_result import AnalysisDiagnostic
 from .ai.contracts import Evidence, QualificationRequirement
 
 

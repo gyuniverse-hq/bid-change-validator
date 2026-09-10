@@ -1,4 +1,4 @@
-from apps.api.app.ai.analysis_pipeline import (
+from apps.api.app.ai.qualification.extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     analyze_qualification_documents,
@@ -254,7 +254,7 @@ def test_rejected_slot_preserves_partial_analysis_status():
 
 
 def test_composite_registration_cannot_be_canonicalized_into_simple_fact():
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
     requirements, diagnostics = adapt_legacy_slot({"유형": "등록요건", "raw": "공동수급체 구성원 모두 정보통신공사업 등록업체이어야 한다.", "등록인증_raw": "정보통신공사업"}, notice_version_id="v", key_prefix="r")
     assert requirements == []
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"

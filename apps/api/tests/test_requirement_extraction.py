@@ -1,6 +1,6 @@
-from apps.api.app.ai.backend_blocks import canonical_source_blocks
-from apps.api.app.ai.chunking import chunk_source_blocks
-from apps.api.app.ai.requirement_extraction import (
+from apps.api.app.ai.qualification.extraction.backend_blocks import canonical_source_blocks
+from apps.api.app.ai.qualification.extraction.chunking import chunk_source_blocks
+from apps.api.app.ai.qualification.extraction.requirement_extraction import (
     SLOT_SCHEMA,
     extract_legacy_slots,
     select_eligibility_chunks,
@@ -248,7 +248,7 @@ def test_other_document_requirements_are_not_suppressed_by_section_anchor():
 
 
 def test_clause_reference_must_belong_to_the_grounded_chunk():
-    from apps.api.app.ai.requirement_extraction import validate_extracted_slot
+    from apps.api.app.ai.qualification.extraction.requirement_extraction import validate_extracted_slot
     chunks = [{"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"}, {"text": "9. 다른 문서", "clause_label": "9"}]
     assert validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "2-1-1"}, chunks)[0]
     slot = {"raw": "서울 소재 업체", "근거조항": "9"}

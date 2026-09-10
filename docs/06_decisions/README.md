@@ -57,10 +57,17 @@ ADR-002-short-title.md
 언제 다시 검토할 것인가?
 ```
 
-## 현재 ADR 후보
+## 현재 ADR 후보 / 상태
 
-- deterministic Rule이 최종 Qualification 판정을 담당하는 구조
-- Product Integration Baseline 우선 전략
-- AI Core와 AI Copilot 병렬 모듈 분리안
+- deterministic Rule이 최종 Qualification 판정을 담당하는 구조 — **Accepted architecture candidate**
+- Product Integration Baseline 우선 전략 — **Accepted / 이미 develop 반영**
+- AI Core와 AI Copilot 역할 분리 — **Accepted ownership decision**
+  - 김재현: LLM/RAG Core + Evaluation
+  - 이홍규: AI Copilot + Integration
+  - 세부 폴더/Contract는 구현·테스트와 함께 Current화
+- 위험조항 9종 taxonomy 및 `AI Core 분류 → Backend 저장` 경계 — **Accepted contract candidate**
+- 05 평가 대응 — **Pending Frontend Design**, 점수 예측 제외
+- Production Web/API 배포 구조 — **TBD**
+- 첨부파일 최종 저장소 — **TBD**, 현재 LOCAL
 
-위 항목은 현재 Notion Decision 또는 docs에 배경이 있으며, 팀 합의와 구현이 안정화되는 시점에 개별 ADR로 승격합니다.
+역할·범위가 합의됐더라도 실제 코드 구조가 안정화되지 않았다면 즉시 ADR 파일로 고정하지 않습니다. 구현과 테스트가 따라온 시점에 개별 ADR로 승격합니다.

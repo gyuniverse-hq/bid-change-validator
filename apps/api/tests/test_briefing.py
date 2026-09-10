@@ -4,8 +4,8 @@
 모델에게 넘어가는 것은 확정된 사실과 원문 인용뿐이다.
 """
 
-from apps.api.app.ai.analysis_result import AnalysisDiagnostic
-from apps.api.app.ai.briefing import (
+from apps.api.app.ai.extraction.analysis_result import AnalysisDiagnostic
+from apps.api.app.ai.narration.briefing import (
     CHAT_SYSTEM_PROMPT,
     answer_question,
     build_briefing,

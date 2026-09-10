@@ -22,10 +22,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
-from .clause_review.contracts import VERDICT_LABELS as CLAUSE_VERDICT_LABELS
-from .clause_review.contracts import ClauseFinding, apply_overlapping_categories
-from .contracts import Evidence, Judgment, QualificationRequirement
+from ..extraction.analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
+from ..clause_review.contracts import VERDICT_LABELS as CLAUSE_VERDICT_LABELS
+from ..clause_review.contracts import ClauseFinding, apply_overlapping_categories
+from ..contracts import Evidence, Judgment, QualificationRequirement
 from .notice_digest import NoticeDigest
 from .summary import Narrator, NoticeSummary, narrate_report
 

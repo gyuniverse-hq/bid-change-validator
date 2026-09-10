@@ -32,7 +32,7 @@ from typing import Any
 
 from ..normalization import extract_values
 from ..providers.embeddings import Embedder, similarity_matrix
-from ..requirement_extraction import StructuredExtractor
+from ..extraction.requirement_extraction import StructuredExtractor
 from .contracts import ClauseVerdict
 
 

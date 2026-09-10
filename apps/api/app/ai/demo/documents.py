@@ -35,10 +35,10 @@ from xml.etree import ElementTree
 
 import requests
 
-from ..ai.notice_requirements import extract_notice_facts
+from ..extraction.notice_requirements import extract_notice_facts
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 DOCUMENT_CACHE_DIR = REPO_ROOT / "data" / "demo" / "notice-documents"
 
 # Attachments are usually a 공고문 plus forms, drawings and price sheets. Only the
@@ -250,7 +250,7 @@ class G2BDocumentSource:
                 document.error = f"HWPML 파싱 실패: {type(error).__name__}"
             return
 
-        from ..services.document_extraction import (
+        from ...services.document_extraction import (
             UnsupportedDocumentError,
             extract_document,
         )

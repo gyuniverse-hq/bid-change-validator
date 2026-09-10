@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from ..ai.goldenset import load_case_chunks, load_cases, score_case
-from ..ai.requirement_extraction import select_eligibility_chunks
+from ..ai.extraction.requirement_extraction import select_eligibility_chunks
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

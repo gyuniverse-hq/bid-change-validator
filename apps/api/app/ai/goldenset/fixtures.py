@@ -39,7 +39,7 @@ def load_cases(root: Path) -> list[GoldenCase]:
 
 def load_case_chunks(case: GoldenCase, *, repo_root: Path) -> list[dict[str, Any]]:
     """Extract cached fixtures through the same adapter used by the demo."""
-    from ...demo.documents import FetchedDocument, G2BDocumentSource
+    from ..demo.documents import FetchedDocument, G2BDocumentSource
     from ..chunking import chunk_source_blocks
 
     chunks: list[dict[str, Any]] = []

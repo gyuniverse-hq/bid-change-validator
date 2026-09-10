@@ -1,6 +1,6 @@
-from apps.api.app.ai.backend_blocks import canonical_source_blocks
+from apps.api.app.ai.extraction.backend_blocks import canonical_source_blocks
 from apps.api.app.ai.chunking import chunk_source_blocks
-from apps.api.app.ai.requirement_extraction import (
+from apps.api.app.ai.extraction.requirement_extraction import (
     SLOT_SCHEMA,
     extract_legacy_slots,
     select_eligibility_chunks,
@@ -279,8 +279,33 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
     result = extract_legacy_slots(_chunks(), structured_extract=fake_extract, max_retry=1)
 
     assert calls["count"] == 2
-    assert result["status"] == "ok"
+    assert result["status"] == "partial"
     assert result["slots"] == []
+    assert result["dropped_requirements"] == [
+        {
+            "raw": "존재하지 않는 문장",
+            "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+        }
+    ]
+
+
+def test_rejected_requirement_keeps_full_raw_and_stable_reason_code():
+    rejected_raw = "원문에 존재하지 않는 매우 긴 탈락 요건 " + "가" * 80
+
+    def fake_extract(_system, _body, _schema):
+        return {
+            "requirements": [
+                {"유형": "지역요건", "raw": "서울 소재 업체", "지역_raw": "서울"},
+                {"유형": "지역요건", "raw": rejected_raw, "지역_raw": "부산"},
+            ]
+        }
+
+    result = extract_legacy_slots(_chunks(), structured_extract=fake_extract)
+
+    assert result["dropped_requirements"] == [
+        {"raw": rejected_raw, "reason_code": "RAW_NOT_FOUND_IN_SOURCE"}
+    ]
+    assert rejected_raw not in result["notes"]
 
 
 def test_quote_suffix_cannot_be_fabricated_after_matching_prefix():
@@ -311,7 +336,7 @@ def test_clause_reference_must_belong_to_the_grounded_chunk():
     위치를 못 쓰게 만든다는 안전 성질은 그대로다. 화면이 엉뚱한 조항을 가리키는
     일은 여전히 막는다.
     """
-    from apps.api.app.ai.requirement_extraction import validate_extracted_slot
+    from apps.api.app.ai.extraction.requirement_extraction import validate_extracted_slot
 
     chunks = [
         {"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"},

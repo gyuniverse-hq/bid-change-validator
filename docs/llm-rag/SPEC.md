@@ -206,6 +206,9 @@
 ```jsonc
 {
   "risk_type": "LATE_PENALTY_RATE",   // 9종. 목록 밖이면 null
+  "risk_types": [                     // 같은 원문에 걸린 전체 코드. 단일 원인도 길이 1
+    "LATE_PENALTY_RATE", "LATE_PENALTY"
+  ],
   "category": "지체상금 요율",         // 단일 결과의 화면 표시용 분류명
   "categories": [                     // JSONB. 원인이 하나여도 길이 1
     "지체상금 요율", "지체상금 상한"
@@ -233,6 +236,27 @@
 
 따라서 탐지기 실행 순서가 바뀌어도 대표 분류는 변하지 않으며, 정상 판정이 확인 필요
 판정보다 먼저 그룹 대표가 되는 일도 없다. `categories[0]`은 항상 `category`와 같다.
+같은 방식으로 `risk_types[0]`은 항상 `risk_type`과 같다.
+
+### 3.3.1 구조화 탈락 요건
+
+`RequirementAnalysisResult`는 원문 대조에서 탈락한 모델 후보를 진단 문자열과 분리해
+다음 배열로 제공한다.
+
+```json
+{
+  "dropped_requirements": [
+    {
+      "raw": "모델이 추출한 요건 원문 전체",
+      "reason_code": "RAW_NOT_FOUND_IN_SOURCE"
+    }
+  ]
+}
+```
+
+`raw`는 길이를 자르지 않는다. `reason_code`는 `MISSING_RAW`,
+`RAW_NOT_FOUND_IN_SOURCE`, `DETAIL_NOT_FOUND_IN_SOURCE`,
+`SOURCE_VALIDATION_FAILED` 중 하나이며 표시 문장은 프론트에서 매핑한다.
 
 ### 3.4 나머지 엔드포인트
 

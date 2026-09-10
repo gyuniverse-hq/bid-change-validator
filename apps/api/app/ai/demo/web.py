@@ -1,6 +1,6 @@
 """공고 검토 데모 — 브라우저에서 클릭하며 보는 화면.
 
-    uvicorn apps.api.app.ai.demo_web:app --port 8200
+    uvicorn apps.api.app.ai.demo.web:app --port 8200
     http://localhost:8200
 
 `app.ai` 의 실제 파이프라인을 HTTP 로 노출만 합니다. **판정은 전부 코드가 합니다** —
@@ -27,29 +27,29 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from .analysis_pipeline import (
+from ..extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     analyze_qualification_documents,
 )
-from .briefing import ChatAnswer, answer_question, build_briefing
-from .business_plan import BusinessPlanDraft, BusinessPlanInputs, generate_business_plan_draft
-from .chunking import chunk_source_blocks
-from .clause_review import (
+from ..narration.briefing import ChatAnswer, answer_question, build_briefing
+from ..narration.business_plan import BusinessPlanDraft, BusinessPlanInputs, generate_business_plan_draft
+from ..chunking import chunk_source_blocks
+from ..clause_review import (
     ClauseFinding,
     detect_patterns,
     detect_standard_diff,
     overlapping_categories,
     scope_for_notice,
 )
-from .clause_review.contracts import VERDICT_LABELS
-from .clause_review.standards import SCOPE_LABELS, load_clauses, resolve_all
-from .extensions import describe_required, parse_answer_for
-from .judgment import CompanyProfileSnapshot, judge_requirements
-from .notice_digest import build_notice_digest
+from ..clause_review.contracts import VERDICT_LABELS
+from ..clause_review.standards import SCOPE_LABELS, load_clauses, resolve_all
+from ..extensions import describe_required, parse_answer_for
+from ..judgment import CompanyProfileSnapshot, judge_requirements
+from ..narration.notice_digest import build_notice_digest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 
 # The model providers read `os.environ`, while `Settings` reads `.env` without
 # exporting it — so without this a key sitting in `.env` looks like no key at all.
@@ -64,7 +64,7 @@ except ImportError:  # python-dotenv is optional; the env may be set already
 
 STANDARDS_PATH = REPO_ROOT / "data" / "standards" / "clauses.json"
 DOCUMENT_CACHE = REPO_ROOT / "data" / "demo" / "notice-documents"
-PAGE_PATH = Path(__file__).with_name("demo_web.html")
+PAGE_PATH = Path(__file__).with_name("web.html")
 
 BUSINESS_TYPE_ORDER = ("SERVICE", "GOODS", "CONSTRUCTION", "FOREIGN", "OTHER")
 
@@ -85,7 +85,7 @@ def _clauses() -> list[dict[str, Any]]:
 
 
 def _providers() -> tuple[Any, Any]:
-    from .providers.openai import OpenAINarrator, OpenAIStructuredExtractor
+    from ..providers.openai import OpenAINarrator, OpenAIStructuredExtractor
 
     return OpenAIStructuredExtractor(), OpenAINarrator()
 
@@ -97,6 +97,7 @@ def _finding_json(
     standard = finding.standard
     return {
         "risk_type": risk_types[0] if risk_types else None,
+        "risk_types": risk_types,
         "category": categories[0] if categories else None,
         # `category` remains the stable grouping value; JSONB `categories` keeps
         # every cause, including the one-element case.
@@ -200,9 +201,9 @@ def _lookup_notice(notice_no: str) -> tuple[dict[str, Any], str] | None:
     함수 안에서 import 합니다 — 클라이언트가 네트워크와 설정을 건드리는데
     `app.ai` 는 둘 다 하지 않는 라이브러리로 남아야 합니다.
     """
-    from ..config import get_settings
-    from ..schemas import BusinessType, NoticeInquiryType
-    from ..services.g2b import G2BApiError, G2BClient
+    from ...config import get_settings
+    from ...schemas import BusinessType, NoticeInquiryType
+    from ...services.g2b import G2BApiError, G2BClient
 
     settings = get_settings()
     service_key = settings.decoded_g2b_service_key
@@ -270,7 +271,7 @@ def _extract_requirements(
 @app.post("/api/notice", tags=["공고"])
 def load_notice(payload: NoticeRequest) -> dict[str, Any]:
     """공고를 받아 계약조건 검토·요건 추출·요약까지 한 번에 준비합니다."""
-    from ..demo.documents import G2BDocumentSource
+    from .documents import G2BDocumentSource
 
     notice_no = payload.notice_no.strip()
     if not payload.refresh and notice_no in _contexts:

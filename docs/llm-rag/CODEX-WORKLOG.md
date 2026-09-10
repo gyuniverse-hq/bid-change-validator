@@ -1,5 +1,15 @@
 # Codex 작업 로그
 
+## 2026-09-10 — `risk_types` 복구 및 구조화 탈락 원문 전달
+
+- 위험조항 저장/API 계약에 대표 코드 `risk_type`과 함께 전체 코드 배열 `risk_types`를 복구했습니다. 단일 원인도 원소 1개짜리 배열이며 `risk_types[0] == risk_type`입니다.
+- 추출 검증에서 탈락한 후보를 30자로 잘라 `notes`에 넣던 로직을 제거했습니다. `RequirementAnalysisResult.dropped_requirements`에 `{raw, reason_code}`로 원문 전체를 보존합니다.
+- 탈락 사유를 `MISSING_RAW`, `RAW_NOT_FOUND_IN_SOURCE`, `DETAIL_NOT_FOUND_IN_SOURCE`, `SOURCE_VALIDATION_FAILED` 코드로 고정했습니다.
+- `qualification_analysis_runs.dropped_requirements` JSONB 컬럼 마이그레이션, ORM 저장·조회, API 스키마, 프론트 타입과 참가자격 화면 표시까지 연결했습니다.
+- 직전 패키지 재배치 커밋이 import를 갱신하지 않아 로드되지 않던 `extraction`, `narration`, `demo` 경로와 이를 참조하는 서비스·스크립트·테스트의 import를 전수 재배치했습니다. 데모 파일 이동으로 달라진 저장소 루트와 HTML 경로도 함께 바로잡았습니다.
+- 검증: 전체 테스트 211건 수집, DB 의존 테스트를 제외한 백엔드 184건, AI 패키지 45개 전수 import, Python 컴파일, Alembic 단일 head(`010_dropped_requirements`), 단독 API OpenAPI 생성, 프론트 TypeScript `--noEmit` 및 Vinext/Vite 프로덕션 빌드가 통과했습니다.
+- 프론트 `oxlint`는 코드 검사 전에 기존 `.oxlintrc.json`의 `options.typeAware` 위치 오류로 중단됐으며, 이번 변경과 무관한 저장소 도구 설정 문제로 남겼습니다.
+
 > Codex가 수행한 LLM/RAG 세부 조정 내역을 시간순으로 기록합니다.
 > 설계와 범위의 기준 문서는 `PROJECT.md`와 `SPEC.md`입니다.
 

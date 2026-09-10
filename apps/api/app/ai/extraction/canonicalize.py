@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .contracts import Evidence, QualificationRequirement
+from ..contracts import Evidence, QualificationRequirement
 from .evidence_adapter import build_evidence_from_slot
 from .legacy_slots import adapt_legacy_slot
 

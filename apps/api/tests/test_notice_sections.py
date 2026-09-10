@@ -1,4 +1,4 @@
-from apps.api.app.ai.notice_sections import (
+from apps.api.app.ai.narration.notice_sections import (
     SECTION_TOPICS,
     build_body,
     select_topic_chunks,

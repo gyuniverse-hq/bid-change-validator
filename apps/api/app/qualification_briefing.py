@@ -20,7 +20,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .ai.briefing import (
+from .ai.narration.briefing import (
     ChatAnswer,
     NoticeBriefing,
     answer_question,
@@ -29,9 +29,9 @@ from .ai.briefing import (
 )
 from .ai.clause_review import detect_patterns, detect_standard_diff
 from .ai.contracts import Evidence, EvidenceLocation, Judgment, QualificationRequirement
-from .ai.notice_digest import NoticeDigest, build_notice_digest
+from .ai.narration.notice_digest import NoticeDigest, build_notice_digest
 from .ai.providers.openai import OpenAINarrator, OpenAIStructuredExtractor
-from .ai.summary import NoticeSummary
+from .ai.narration.summary import NoticeSummary
 from .analysis_models import QualificationAnalysisRun
 from .judgment_models import QualificationJudgmentRun
 from .models import BidNotice, BidNoticeVersion
@@ -107,7 +107,7 @@ def _to_judgment(record: Any, run: QualificationJudgmentRun) -> Judgment:
 
 
 def _to_diagnostics(run: QualificationAnalysisRun) -> list[Any]:
-    from .ai.analysis_result import AnalysisDiagnostic
+    from .ai.extraction.analysis_result import AnalysisDiagnostic
 
     parsed: list[AnalysisDiagnostic] = []
     for item in run.diagnostics or []:
@@ -165,7 +165,7 @@ def _notice_title(db: Session, version: BidNoticeVersion) -> str | None:
 
 def _chunks_for_version(version: BidNoticeVersion) -> list[dict[str, Any]]:
     """저장된 추출 블록에서 청크를 만든다. 청크는 저장되지 않아 매번 새로 만든다."""
-    from .ai.backend_blocks import canonical_source_blocks
+    from .ai.extraction.backend_blocks import canonical_source_blocks
     from .ai.chunking import chunk_source_blocks
 
     analysis_input = build_qualification_analysis_input(version)

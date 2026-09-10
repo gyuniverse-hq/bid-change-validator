@@ -116,6 +116,7 @@
     id                   uuid        pk default gen_random_uuid()
     run_id               uuid        not null  fk -> clause_review_runs(id) on delete cascade
     risk_type            text                  -- 확정 9개 값. 목록 밖이면 NULL
+    risk_types           jsonb       not null  -- 전체 코드. 단일 원인도 배열
     category             text                  -- 대표 한글 라벨 (기존 그룹핑 컬럼)
     categories           jsonb       not null  -- 전체 한글 라벨. 단일 원인도 배열
     rule_id              text        not null  -- 내부 룰 식별자
@@ -142,6 +143,7 @@
       'WARRANTY_PERIOD','LATE_PENALTY','LATE_PENALTY_RATE','COPYRIGHT_OWNERSHIP',
       'ACCEPTANCE_CRITERIA','SCOPE_AMBIGUITY','TERMINATION_CONDITION',
       'PAYMENT_TERMS','LIABILITY_SCOPE'))
+    CHECK (jsonb_typeof(risk_types) = 'array' AND jsonb_array_length(risk_types) >= 1)
     CHECK (jsonb_typeof(categories) = 'array' AND jsonb_array_length(categories) >= 1)
     CHECK (detection_method IN ('STANDARD_DIFF','PATTERN_MATCH'))
     CHECK (matched_via IN ('REGEX','EMBEDDING_LLM','STANDARD_UNRESOLVED'))

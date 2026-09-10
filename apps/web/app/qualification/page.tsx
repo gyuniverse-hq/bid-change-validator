@@ -60,6 +60,13 @@ const TYPE_LABELS: Record<string, string> = {
   EXPERIENCE_FIELD: '경험 분야',
 };
 
+const DROPPED_REASON_LABELS: Record<string, string> = {
+  MISSING_RAW: '추출 결과에 원문이 없습니다.',
+  RAW_NOT_FOUND_IN_SOURCE: '추출된 문장이 공고 원문에서 확인되지 않습니다.',
+  DETAIL_NOT_FOUND_IN_SOURCE: '세부 조건이 해당 공고 원문에서 확인되지 않습니다.',
+  SOURCE_VALIDATION_FAILED: '공고 원문 대조를 통과하지 못했습니다.',
+};
+
 function judgmentStatus(value: QualificationJudgment | null): QualificationRowStatus {
   return value?.status ?? 'UNJUDGED';
 }
@@ -337,6 +344,23 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{ANALYSIS_STATUS_COPY[currentAnalysis.status].description}</p>
               </section>
             )}
+
+            {analysisDetail?.dropped_requirements.length ? (
+              <section className="mt-6 rounded-[18px] border border-[var(--product-warn-line)] bg-white px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <strong className="text-[14px] text-[var(--product-warn)]">구조화에서 제외된 요건</strong>
+                  <Badge variant="outline">{analysisDetail.dropped_requirements.length}건</Badge>
+                </div>
+                <div className="mt-3 divide-y divide-[var(--product-line-2)]">
+                  {analysisDetail.dropped_requirements.map((item, index) => (
+                    <div key={`${item.reason_code}-${index}`} className="py-3">
+                      <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-[var(--product-body)]">{item.raw || '(원문 없음)'}</p>
+                      <p className="mt-1 text-[12px] text-[var(--product-muted)]">{DROPPED_REASON_LABELS[item.reason_code] ?? item.reason_code}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {reviewProgress && <section className="mt-6 rounded-[18px] border border-[#d9def7] bg-[#f5f6ff] px-5 py-4"><div className="flex items-center gap-3">{busy === 'review' ? <LoaderCircle className="size-5 animate-spin text-[var(--product-accent)]" /> : <CheckCircle2 className="size-5 text-emerald-600" />}<div><strong className="text-[14px]">{reviewProgress}</strong>{busy === 'review' && <p className="mt-1 text-[12px] text-[var(--product-muted)]">완료되면 새로고침 없이 이 화면에 즉시 결과가 반영됩니다.</p>}</div></div></section>}
 

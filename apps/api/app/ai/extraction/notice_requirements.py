@@ -27,7 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .contracts import QualificationRequirement
+from ..contracts import QualificationRequirement
 
 
 # Fields that name an actual region a bidder must be in.

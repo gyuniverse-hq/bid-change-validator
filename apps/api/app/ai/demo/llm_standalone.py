@@ -19,9 +19,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import get_settings
-from .errors import ApiError
-from .qualification_briefing_router import router as qualification_briefing_router
+from ...config import get_settings
+from ...errors import ApiError
+from ...qualification_briefing_router import router as qualification_briefing_router
 
 
 settings = get_settings()
@@ -60,7 +60,7 @@ async def handle_api_error(_request, error: ApiError) -> JSONResponse:
 
 @app.get("/health", tags=["system"])
 def health() -> dict[str, object]:
-    from .ai.providers.openai import OpenAINarrator, OpenAIStructuredExtractor
+    from ..providers.openai import OpenAINarrator, OpenAIStructuredExtractor
 
     return {
         "status": "ok",

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from apps.api.app.ai.analysis_result import (
+from apps.api.app.ai.extraction.analysis_result import (
     RequirementAnalysisResult,
     build_requirement_analysis_result,
 )

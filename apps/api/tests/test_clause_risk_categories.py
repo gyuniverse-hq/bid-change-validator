@@ -3,7 +3,7 @@ from apps.api.app.ai.clause_review import (
     apply_overlapping_categories,
     overlapping_categories,
 )
-from apps.api.app.ai.demo_web import _finding_json
+from apps.api.app.ai.demo.web import _finding_json
 
 
 def _finding(
@@ -34,6 +34,7 @@ def test_overlapping_clause_keeps_every_risk_type_and_category() -> None:
     assert risk_types == ["LATE_PENALTY", "LATE_PENALTY_RATE"]
     assert categories == ["지체상금 상한", "지체상금 요율"]
     assert payload["risk_type"] == "LATE_PENALTY"
+    assert payload["risk_types"] == risk_types
     assert payload["category"] == "지체상금 상한"
     assert payload["categories"] == categories
 
@@ -70,6 +71,7 @@ def test_different_source_text_in_same_chunk_is_not_merged() -> None:
 
     stored = apply_overlapping_categories([payment])[0].model_dump()
     assert stored["risk_type"] == "PAYMENT_TERMS"
+    assert stored["risk_types"] == ["PAYMENT_TERMS"]
     assert stored["category"] == "대금지급"
     assert stored["categories"] == ["대금지급"]
 

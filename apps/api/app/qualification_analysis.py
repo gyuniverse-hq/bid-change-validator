@@ -8,13 +8,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .ai.analysis_pipeline import (
+from .ai.extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     StructuredExtractor,
     analyze_qualification_documents,
 )
-from .ai.analysis_result import RequirementAnalysisResult
+from .ai.extraction.analysis_result import RequirementAnalysisResult
 from .ai.contracts import Evidence, EvidenceLocation, QualificationRequirement
 from .analysis_models import (
     QualificationAnalysisRun,
@@ -84,6 +84,9 @@ def _persist_result(
         status=result.status,
         target_chunk_ids=list(result.target_chunk_ids),
         diagnostics=[item.model_dump(mode="json") for item in result.diagnostics],
+        dropped_requirements=[
+            item.model_dump(mode="json") for item in result.dropped_requirements
+        ],
     )
     db.add(run)
     db.flush()
@@ -220,6 +223,7 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
         status=run.status,
         target_chunk_ids=list(run.target_chunk_ids or []),
         diagnostics=list(run.diagnostics or []),
+        dropped_requirements=list(run.dropped_requirements or []),
         requirements=requirements,
         evidence=evidence,
         created_at=run.created_at,

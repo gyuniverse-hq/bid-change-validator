@@ -29,14 +29,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .chunking import chunk_source_blocks
-from .clause_review import (
+from ..chunking import chunk_source_blocks
+from ..clause_review import (
     ClauseFinding,
     detect_patterns,
     detect_standard_diff,
     scope_for_notice,
 )
-from .clause_review.standards import (
+from ..clause_review.standards import (
     SCOPE_LABELS,
     format_value,
     load_clauses,
@@ -44,7 +44,7 @@ from .clause_review.standards import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 STANDARDS_PATH = REPO_ROOT / "data" / "standards" / "clauses.json"
 DOCUMENT_CACHE = REPO_ROOT / "data" / "demo" / "notice-documents"
 
@@ -94,7 +94,7 @@ def _read_cached_documents(directory: Path) -> list[dict[str, Any]]:
     library with no database underneath it. A demo may reach out; the package
     must not.
     """
-    from ..services.document_extraction import extract_document
+    from ...services.document_extraction import extract_document
 
     blocks: list[dict[str, Any]] = []
     for meta_path in sorted(directory.glob("*.json")):
@@ -131,9 +131,9 @@ def fetch_notice(notice_no: str) -> tuple[dict[str, Any], str] | None:
     Imported inside the function: the client reaches the network and pulls in
     settings, and `app.ai` is meant to stay a library that does neither.
     """
-    from ..config import get_settings
-    from ..schemas import BusinessType, NoticeInquiryType
-    from ..services.g2b import G2BApiError, G2BClient
+    from ...config import get_settings
+    from ...schemas import BusinessType, NoticeInquiryType
+    from ...services.g2b import G2BApiError, G2BClient
 
     settings = get_settings()
     service_key = settings.decoded_g2b_service_key
@@ -165,7 +165,7 @@ def fetch_notice(notice_no: str) -> tuple[dict[str, Any], str] | None:
 
 def _download_documents(item: dict[str, Any]) -> list[dict[str, Any]]:
     """Attachments for one notice, downloaded and read into text blocks."""
-    from ..demo.documents import G2BDocumentSource
+    from .documents import G2BDocumentSource
 
     blocks: list[dict[str, Any]] = []
     for document in G2BDocumentSource(cache_dir=DOCUMENT_CACHE).fetch(item):

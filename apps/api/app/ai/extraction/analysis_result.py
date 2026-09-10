@@ -12,12 +12,18 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from .contracts import Evidence, QualificationRequirement
+from ..contracts import Evidence, QualificationRequirement
 
 
 AnalysisStatus = Literal["SUCCEEDED", "PARTIAL", "FAILED"]
 AnalysisKind = Literal["QUALIFICATION_REQUIREMENTS"]
 DiagnosticSeverity = Literal["INFO", "WARNING", "ERROR"]
+DroppedReasonCode = Literal[
+    "MISSING_RAW",
+    "RAW_NOT_FOUND_IN_SOURCE",
+    "DETAIL_NOT_FOUND_IN_SOURCE",
+    "SOURCE_VALIDATION_FAILED",
+]
 
 
 # 진단에는 성격이 다른 두 가지가 섞여 있다. 파이프라인이 제 일을 못 한 것과,
@@ -40,6 +46,13 @@ class AnalysisDiagnostic(BaseModel):
     evidence_keys: list[str] = Field(default_factory=list)
 
 
+class DroppedRequirement(BaseModel):
+    """An extracted candidate rejected by deterministic source validation."""
+
+    raw: str
+    reason_code: DroppedReasonCode
+
+
 class RequirementAnalysisResult(BaseModel):
     """Canonical AI -> Backend result for one notice version."""
 
@@ -53,6 +66,7 @@ class RequirementAnalysisResult(BaseModel):
     requirements: list[QualificationRequirement] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)
+    dropped_requirements: list[DroppedRequirement] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_internal_links(self) -> "RequirementAnalysisResult":
@@ -145,6 +159,7 @@ def build_requirement_analysis_result(
     canonicalized: dict[str, Any],
     extraction_status: str = "ok",
     extraction_notes: str = "",
+    extraction_dropped_requirements: list[dict[str, str]] | None = None,
     target_chunk_ids: list[str] | None = None,
 ) -> RequirementAnalysisResult:
     """Build the stable Backend-facing payload from current pipeline outputs."""
@@ -199,4 +214,5 @@ def build_requirement_analysis_result(
         requirements=requirements,
         evidence=evidence,
         diagnostics=diagnostics,
+        dropped_requirements=list(extraction_dropped_requirements or []),
     )

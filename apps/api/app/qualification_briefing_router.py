@@ -23,9 +23,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .ai.briefing import ChatAnswer, NoticeBriefing
-from .ai.notice_digest import NoticeDigest
-from .ai.summary import NoticeSummary
+from .ai.narration.briefing import ChatAnswer, NoticeBriefing
+from .ai.narration.notice_digest import NoticeDigest
+from .ai.narration.summary import NoticeSummary
 from .database import get_db
 from .errors import ApiError
 from .qualification_briefing import (

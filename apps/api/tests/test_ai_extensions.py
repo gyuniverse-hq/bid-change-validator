@@ -144,7 +144,7 @@ def test_combined_size_and_affiliation_restriction_uses_the_extension_answer() -
 
 
 def test_demo_profile_parser_converts_extension_text_answers() -> None:
-    from apps.api.app.ai.demo_web import _profile_from_payload
+    from apps.api.app.ai.demo.web import _profile_from_payload
 
     profile = _profile_from_payload(
         {"extensions": {"sw_engineer_grade": "특급 2명, 고급 3명"}}

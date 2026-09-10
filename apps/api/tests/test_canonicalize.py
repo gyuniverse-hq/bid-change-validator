@@ -1,4 +1,4 @@
-from apps.api.app.ai.canonicalize import canonicalize_validated_slot
+from apps.api.app.ai.extraction.canonicalize import canonicalize_validated_slot
 
 
 def test_validated_slot_becomes_atomic_requirements_with_shared_evidence() -> None:
@@ -135,7 +135,7 @@ def test_a_registration_requirement_with_an_industry_code_maps_to_industry() -> 
     company's certification list fails on wording alone, while 1468 either is or
     is not among its registered industries.
     """
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.extraction.legacy_slots import adapt_legacy_slot
 
     requirements, diagnostics = adapt_legacy_slot(
         {
@@ -158,7 +158,7 @@ def test_a_registration_requirement_with_an_industry_code_maps_to_industry() -> 
 
 
 def test_a_certification_without_a_code_still_maps_to_registration() -> None:
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.extraction.legacy_slots import adapt_legacy_slot
 
     requirements, _ = adapt_legacy_slot(
         {
@@ -181,7 +181,7 @@ def test_the_industry_code_is_reached_from_either_slot_classification() -> None:
     rather than with the notice, which is the sort of instability that makes a
     judgment untrustworthy.
     """
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.extraction.legacy_slots import adapt_legacy_slot
 
     raw = (
         "나라장터(G2B)에 다음 분야의 입찰참가자격을 등록한 자\n"

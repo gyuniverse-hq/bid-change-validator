@@ -109,6 +109,10 @@ export type QualificationAnalysisRun = QualificationAnalysisSummary & {
   analysis_kind: string;
   target_chunk_ids: string[];
   diagnostics: Array<{ code: string; severity: string; message: string }>;
+  dropped_requirements: Array<{
+    raw: string;
+    reason_code: 'MISSING_RAW' | 'RAW_NOT_FOUND_IN_SOURCE' | 'DETAIL_NOT_FOUND_IN_SOURCE' | 'SOURCE_VALIDATION_FAILED';
+  }>;
   requirements: CanonicalRequirement[];
   evidence: Array<{
     evidence_key: string;

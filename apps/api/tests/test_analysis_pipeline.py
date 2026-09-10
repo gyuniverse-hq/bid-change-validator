@@ -1,4 +1,4 @@
-from apps.api.app.ai.analysis_pipeline import (
+from apps.api.app.ai.extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     analyze_qualification_documents,
@@ -251,10 +251,12 @@ def test_rejected_slot_preserves_partial_analysis_status():
     assert result.status == "PARTIAL"
     assert result.requirements
     assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
+    assert result.dropped_requirements[0].raw == "원문에 없는 부산 소재 업체"
+    assert result.dropped_requirements[0].reason_code == "RAW_NOT_FOUND_IN_SOURCE"
 
 
 def test_composite_registration_cannot_be_canonicalized_into_simple_fact():
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.extraction.legacy_slots import adapt_legacy_slot
     requirements, diagnostics = adapt_legacy_slot({"유형": "등록요건", "raw": "공동수급체 구성원 모두 정보통신공사업 등록업체이어야 한다.", "등록인증_raw": "정보통신공사업"}, notice_version_id="v", key_prefix="r")
     assert requirements == []
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"

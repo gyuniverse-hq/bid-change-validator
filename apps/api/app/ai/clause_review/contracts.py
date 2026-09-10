@@ -124,6 +124,7 @@ class ClauseFinding(BaseModel):
 
     rule_id: str
     risk_type: RiskType | None
+    risk_types: list[RiskType] = Field(default_factory=list)
     category: str | None = None
     categories: list[str] = Field(default_factory=list)
     label: str
@@ -225,6 +226,7 @@ def apply_overlapping_categories(
             finding.model_copy(
                 update={
                     "risk_type": risk_types[0] if risk_types else None,
+                    "risk_types": risk_types,
                     "category": categories[0] if categories else None,
                     "categories": categories,
                 }

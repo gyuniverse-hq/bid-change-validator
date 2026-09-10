@@ -314,6 +314,17 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
     return True, "", source_chunk
 
 
+def _rejection_reason_code(reason: str) -> str:
+    """Map validation prose to the stable code exposed across API/DB/UI."""
+    if reason == "raw 비어 있음":
+        return "MISSING_RAW"
+    if reason.startswith("raw가 본문에 존재하지 않음"):
+        return "RAW_NOT_FOUND_IN_SOURCE"
+    if "_raw가 본문에 존재하지 않음" in reason:
+        return "DETAIL_NOT_FOUND_IN_SOURCE"
+    return "SOURCE_VALIDATION_FAILED"
+
+
 def build_extraction_body(chunks: list[dict[str, Any]], *, max_chars: int | None = 32_000) -> str:
     parts: list[str] = []
     for chunk in chunks:
@@ -329,35 +340,45 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
     full_body = build_extraction_body(target, max_chars=None)
     body = full_body[:32_000]
     last_notes = ""
+    last_rejected: list[dict[str, str]] = []
 
     for attempt in range(max_retry + 1):
         try:
             result = structured_extract(SYSTEM_PROMPT, body, SLOT_SCHEMA)
         except Exception as error:
-            return {"slots": [], "status": "failed", "notes": f"구조화 추출 호출 실패: {type(error).__name__}", "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+            return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": f"구조화 추출 호출 실패: {type(error).__name__}", "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
 
         accepted: list[dict[str, Any]] = []
-        rejected: list[str] = []
+        rejected: list[dict[str, str]] = []
         requirements = result.get("requirements", []) if isinstance(result, dict) else []
 
         for extracted in requirements:
             slot = dict(extracted)
             valid, reason, source_chunk = validate_extracted_slot(slot, target)
             if not valid:
-                rejected.append(f"{slot.get('raw', '')[:30]}: {reason}")
+                rejected.append(
+                    {
+                        "raw": str(slot.get("raw") or ""),
+                        "reason_code": _rejection_reason_code(reason),
+                    }
+                )
                 continue
             if source_chunk is not None:
                 slot["_source_chunk_id"] = source_chunk.get("chunk_id")
                 slot["_source_blocks"] = list(source_chunk.get("source_blocks") or [])
             accepted.append(slot)
 
+        if rejected:
+            last_rejected = rejected
+
         if accepted or not requirements:
+            reported_rejections = rejected or (last_rejected if not requirements else [])
             truncated = len(full_body) > len(body)
-            notes = ([f"검증 탈락 {len(rejected)}건: {rejected}"] if rejected else [])
+            notes = ([f"검증 탈락 {len(reported_rejections)}건"] if reported_rejections else [])
             if truncated:
                 notes.append("입력 길이 제한으로 선택된 원문 일부를 분석하지 못했습니다.")
-            return {"slots": accepted, "status": "partial" if rejected or truncated else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+            return {"slots": accepted, "dropped_requirements": reported_rejections, "status": "partial" if reported_rejections or truncated else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
 
-        last_notes = f"전 슬롯 검증 탈락(시도 {attempt + 1}): {rejected}"
+        last_notes = f"전 슬롯 검증 탈락(시도 {attempt + 1})"
 
-    return {"slots": [], "status": "failed", "notes": last_notes, "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+    return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": last_notes, "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}

@@ -1,5 +1,5 @@
-from apps.api.app.ai.briefing import build_briefing
-from apps.api.app.ai.business_plan import (
+from apps.api.app.ai.narration.briefing import build_briefing
+from apps.api.app.ai.narration.business_plan import (
     BUSINESS_PLAN_SYSTEM_PROMPT,
     DRAFT_DISCLAIMER,
     BusinessPlanInputs,
@@ -111,13 +111,13 @@ def test_draft_generation_failure_is_returned_without_breaking_the_api() -> None
 
 
 def test_demo_exposes_the_business_plan_draft_endpoint() -> None:
-    from apps.api.app.ai.demo_web import app
+    from apps.api.app.ai.demo.web import app
 
     assert "/api/business-plan-draft" in {route.path for route in app.routes}
 
 
 def test_demo_page_connects_business_plan_form_to_endpoint() -> None:
-    from apps.api.app.ai.demo_web import PAGE_PATH
+    from apps.api.app.ai.demo.web import PAGE_PATH
 
     page = PAGE_PATH.read_text(encoding="utf-8")
 

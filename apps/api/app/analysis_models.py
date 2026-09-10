@@ -37,6 +37,7 @@ class QualificationAnalysisRun(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     target_chunk_ids: Mapped[list] = mapped_column(JSONB, default=list)
     diagnostics: Mapped[list] = mapped_column(JSONB, default=list)
+    dropped_requirements: Mapped[list] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

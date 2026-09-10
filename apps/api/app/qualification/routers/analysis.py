@@ -5,11 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from .ai.providers.openai import OpenAIStructuredExtractor
-from .analysis_schemas import QualificationAnalysisRunRead, QualificationAnalysisRunSummary
-from .database import get_db
-from .errors import ApiError
-from .qualification_analysis import (
+from ...ai.providers.openai import OpenAIStructuredExtractor
+from ...analysis_schemas import QualificationAnalysisRunRead, QualificationAnalysisRunSummary
+from ...database import get_db
+from ...errors import ApiError
+from ..analysis import (
     QualificationAnalysisError,
     analysis_run_response,
     list_qualification_analysis_runs,

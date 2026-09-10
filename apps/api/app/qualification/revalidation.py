@@ -8,14 +8,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .ai.contracts import Judgment
-from .ai.judgment import RULE_VERSION, derive_overall_status, judge_requirement
-from .ai.requirement_diff import RequirementChange, diff_requirements
-from .analysis_models import QualificationAnalysisRun
-from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .models import PreflightCase
-from .qualification_analysis import analysis_run_response
-from .qualification_judgment import (
+from ..ai.contracts import Judgment
+from ..ai.judgment import RULE_VERSION, derive_overall_status, judge_requirement
+from ..ai.requirement_diff import RequirementChange, diff_requirements
+from ..analysis_models import QualificationAnalysisRun
+from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
+from ..models import PreflightCase
+from .analysis import analysis_run_response
+from .judgment import (
     load_judgment_analysis,
     QualificationJudgmentError,
     _load_company,
@@ -24,8 +24,8 @@ from .qualification_judgment import (
     judgment_run_response,
     load_qualification_judgment_run,
 )
-from .revalidation_models import QualificationRevalidationRun
-from .revalidation_schemas import QualificationRevalidationCreate, QualificationRevalidationRead
+from ..revalidation_models import QualificationRevalidationRun
+from ..revalidation_schemas import QualificationRevalidationCreate, QualificationRevalidationRead
 
 
 def _load_case(db: Session, case_id: UUID) -> PreflightCase:

@@ -4,16 +4,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .ai.askability import build_semantic_question, classify_askability
-from .ai.contracts import Judgment
-from .ai.judgment import RULE_VERSION, derive_overall_status
-from .analysis_models import QualificationAnalysisRun
-from .models import PreflightCase
-from .ask_back_models import QualificationAnswer
-from .ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
-from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .qualification_analysis import analysis_run_response
-from .qualification_judgment import load_judgment_analysis, QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run, _load_company, _record_to_completeness, build_company_profile_snapshot
+from ..ai.askability import build_semantic_question, classify_askability
+from ..ai.contracts import Judgment
+from ..ai.judgment import RULE_VERSION, derive_overall_status
+from ..analysis_models import QualificationAnalysisRun
+from ..models import PreflightCase
+from ..ask_back_models import QualificationAnswer
+from ..ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
+from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
+from .analysis import analysis_run_response
+from .judgment import load_judgment_analysis, QualificationJudgmentError, judgment_run_response, load_qualification_judgment_run, _load_company, _record_to_completeness, build_company_profile_snapshot
 
 
 def list_questions(

@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from apps.api.app.models import BidNoticeVersion, NoticeDocument
-from apps.api.app.qualification_analysis import build_qualification_analysis_input
+from apps.api.app.qualification.analysis import build_qualification_analysis_input
 
 
 def test_analysis_input_uses_only_extracted_backend_blocks() -> None:

@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .ai.contracts import Judgment
-from .ai.judgment import (
+from ..ai.contracts import Judgment
+from ..ai.judgment import (
     RULE_VERSION,
     CompanyProfileSnapshot,
     ProfileCertificationFact,
@@ -20,11 +20,11 @@ from .ai.judgment import (
     ProfileStaffRoleFact,
     judge_requirements,
 )
-from .analysis_models import QualificationAnalysisRun
-from .judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
-from .judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
-from .models import Company, CompanyIndustry, CompanyPerformance, PreflightCase
-from .qualification_analysis import QualificationAnalysisError, analysis_run_response, load_qualification_analysis_run
+from ..analysis_models import QualificationAnalysisRun
+from ..judgment_models import CompanyQualificationProfileCompleteness, QualificationJudgmentRecord, QualificationJudgmentRun
+from ..judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
+from ..models import Company, CompanyIndustry, CompanyPerformance, PreflightCase
+from .analysis import QualificationAnalysisError, analysis_run_response, load_qualification_analysis_run
 
 
 class QualificationJudgmentError(ValueError):

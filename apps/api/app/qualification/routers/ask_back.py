@@ -1,11 +1,11 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from .database import get_db
-from .errors import ApiError
-from .ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
-from .qualification_ask_back import answer_and_rejudge, list_questions
-from .qualification_judgment import QualificationJudgmentError
+from ...database import get_db
+from ...errors import ApiError
+from ...ask_back_schemas import QualificationAnswerCreate, QualificationAnswerRead, QualificationQuestionRead
+from ..ask_back import answer_and_rejudge, list_questions
+from ..judgment import QualificationJudgmentError
 
 router=APIRouter(prefix="/api/v1",tags=["qualification ask-back"])
 def _err(e:QualificationJudgmentError)->ApiError: return ApiError(e.status_code,e.code,e.message)

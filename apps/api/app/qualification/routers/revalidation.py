@@ -5,11 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .database import get_db
-from .errors import ApiError
-from .qualification_judgment import QualificationJudgmentError
-from .qualification_revalidation import run_qualification_revalidation
-from .revalidation_schemas import QualificationRevalidationCreate, QualificationRevalidationRead
+from ...database import get_db
+from ...errors import ApiError
+from ..judgment import QualificationJudgmentError
+from ..revalidation import run_qualification_revalidation
+from ...revalidation_schemas import QualificationRevalidationCreate, QualificationRevalidationRead
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification revalidation"])

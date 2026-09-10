@@ -7,6 +7,7 @@ import { LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
+import type { EvidenceLocation } from '@/lib/qualification-api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { answerQualificationQuestion, type QualificationQuestion } from '@/lib/qualification-api';
@@ -35,12 +36,12 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
 
   const evidenceByRequirement = useMemo(() => {
     const analysis = workspace?.currentAnalysisDetail;
-    if (!analysis) return new Map<string, { label: string; quote: string }>();
-    const map = new Map<string, { label: string; quote: string }>();
+    if (!analysis) return new Map<string, { key: string; quote: string; location: EvidenceLocation }>();
+    const map = new Map<string, { key: string; quote: string; location: EvidenceLocation }>();
     for (const requirement of analysis.requirements) {
       const key = requirement.evidence_keys[0];
       const evidence = key ? analysis.evidence.find((item) => item.evidence_key === key) : null;
-      if (evidence) map.set(requirement.requirement_key, { label: key, quote: evidence.quote });
+      if (evidence) map.set(requirement.requirement_key, { key, quote: evidence.quote, location: evidence.location });
     }
     return map;
   }, [workspace]);
@@ -102,7 +103,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
                 <div className="flex items-center gap-2"><span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">답하면 판정됩니다</span><span className="text-[12.5px] text-[var(--product-muted)]">{question.requirement_type}</span></div>
                 <h3 className="mt-3 text-[19px] font-bold leading-8 tracking-[-0.03em] text-[var(--product-ink)]">{question.question}</h3>
                 <p className="mt-3 text-[13.5px] text-[var(--product-muted)]">회사 프로필에 비교할 값이 없고, 사용자 단일 사실로 안전하게 해결할 수 있는 조건입니다.</p>
-                {evidence && <div className="mt-4"><EvidenceQuote label={evidence.label} quote={evidence.quote} /></div>}
+                {evidence && <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>}
 
                 <div className="mt-5 space-y-2">
                   {[
@@ -128,7 +129,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
 
           {unaskable.map((question) => {
             const evidence = evidenceByRequirement.get(question.requirement_key);
-            return <section key={question.requirement_key} className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold">묻지 않습니다</span><span className="text-[12.5px] text-[var(--product-muted)]">{question.askability_reason_code}</span></div><h3 className="mt-3 text-[18px] font-bold">{question.raw_requirement}</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">{question.askability_reason}</p>{evidence && <div className="mt-4"><EvidenceQuote label={evidence.label} quote={evidence.quote} /></div>}<Link href={`${workspaceHref('/evidence', workspace.caseItem.id)}&evidence=${encodeURIComponent(evidence?.label ?? '')}`}><Button variant="outline" className="mt-4 rounded-full">근거 원문에서 확인</Button></Link></section>;
+            return <section key={question.requirement_key} className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold">묻지 않습니다</span></div><h3 className="mt-3 text-[18px] font-bold">{question.raw_requirement}</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">{question.askability_reason}</p>{evidence && <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>}<Link href={`${workspaceHref('/evidence', workspace.caseItem.id)}&evidence=${encodeURIComponent(evidence?.key ?? '')}`}><Button variant="outline" className="mt-4 rounded-full">근거 원문에서 확인</Button></Link></section>;
           })}
 
           {totalUnknown === 0 && <section className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-12 text-center"><h3 className="text-[19px] font-bold">{workspace.displayJudgment ? '지금 답하실 확인 필요 항목이 없습니다' : '현재 분석의 판정이 필요합니다'}</h3><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">판정 결과에서 사용자 확인이 필요한 항목이 생기면 이 화면에 표시됩니다.</p><Link href={workspaceHref('/qualification', workspace.caseItem.id)}><Button variant="outline" className="mt-5 rounded-full">참가자격 검토로 돌아가기</Button></Link></section>}

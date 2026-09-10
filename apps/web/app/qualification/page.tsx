@@ -9,6 +9,7 @@ import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
+import { ANALYSIS_STATUS_COPY, OVERALL_STATUS_COPY } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -64,9 +65,8 @@ function judgmentStatus(value: QualificationJudgment | null): QualificationRowSt
 }
 
 function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefined) {
-  if (status === 'eligible') return ['참가 가능', '현재 판정된 필수 항목에서 미달이 없습니다.'];
-  if (status === 'ineligible') return ['참가 불가', '미달 항목이 있어 현재 상태로는 참가 자격을 충족하지 못합니다.'];
-  if (status === 'insufficient_data') return ['확인 필요', '회사 정보가 부족하거나 근거가 불충분한 항목을 확인해야 합니다.'];
+  const copy = status ? OVERALL_STATUS_COPY[status] : null;
+  if (copy) return [copy.label, copy.description];
   return ['검토 전', '검토를 시작하면 공고 원문 분석과 회사 프로필 비교를 순서대로 실행합니다.'];
 }
 
@@ -330,6 +330,14 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             <CaseTabs caseId={activeCase.id} active="qualification" />
             <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} analysis={analysisDetail} />
 
+            {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
+            {currentAnalysis && currentAnalysis.status !== 'SUCCEEDED' && (
+              <section className="mt-6 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
+                <strong className="text-[14px] text-[var(--product-warn)]">{ANALYSIS_STATUS_COPY[currentAnalysis.status].label}</strong>
+                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{ANALYSIS_STATUS_COPY[currentAnalysis.status].description}</p>
+              </section>
+            )}
+
             {reviewProgress && <section className="mt-6 rounded-[18px] border border-[#d9def7] bg-[#f5f6ff] px-5 py-4"><div className="flex items-center gap-3">{busy === 'review' ? <LoaderCircle className="size-5 animate-spin text-[var(--product-accent)]" /> : <CheckCircle2 className="size-5 text-emerald-600" />}<div><strong className="text-[14px]">{reviewProgress}</strong>{busy === 'review' && <p className="mt-1 text-[12px] text-[var(--product-muted)]">완료되면 새로고침 없이 이 화면에 즉시 결과가 반영됩니다.</p>}</div></div></section>}
 
             <section className="mt-7 grid gap-4 lg:grid-cols-3">
@@ -343,16 +351,16 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             <section className="mt-9">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
-                <div className="hidden min-h-[45px] grid-cols-[122px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[12px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
+                <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[12px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
                 {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
-                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} condition={`${TYPE_LABELS[requirement.type] ?? requirement.type} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { window.location.href = askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref; } : undefined} />;
+                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${TYPE_LABELS[requirement.type] ?? requirement.type} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { window.location.href = askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref; } : undefined} />;
                 }) : <div className="px-6 py-14 text-center"><FileSearch className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 text-[14px] font-semibold">{analysisDetail ? '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.' : '아직 자격검토를 실행하지 않았습니다.'}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}
               </div>
             </section>
 
-            {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote label={selectedEvidence.evidence_key} quote={selectedEvidence.quote} note={`문서 ID ${selectedEvidence.document_id}`} /></section>}
+            {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{analysisDetail?.diagnostics.length ? <div className="mt-4 space-y-2">{analysisDetail.diagnostics.map((item) => <p key={`${item.code}-${item.message}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>

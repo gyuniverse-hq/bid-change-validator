@@ -12,7 +12,17 @@
   --product-line: #e4e7ed;
   --product-line-2: #eef0f4;
   --product-ok: #147a4a;
+  --product-ok-soft: #e4f3eb;
+  --product-ok-line: #b6ddc7;
   --product-warn: #8a5a00;
+  --product-warn-soft: #fbf1de;
+  --product-warn-line: #e8d3a4;
+  --product-bad: #b3261e;
+  --product-bad-soft: #fbeae9;
+  --product-bad-line: #eebcb8;
+  --product-neutral: #5a6069;
+  --product-neutral-soft: #f2f4f7;
+  --product-neutral-line: #dfe3ea;
   --product-card-radius: 20px;
   --product-panel-radius: 24px;
   --product-pill-radius: 999px;

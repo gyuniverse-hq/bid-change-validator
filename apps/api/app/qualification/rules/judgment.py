@@ -45,6 +45,7 @@ class ProfileIndustryFact(BaseModel):
 class ProfileStaffRoleFact(BaseModel):
     role_name: str
     headcount: int = Field(ge=0)
+    career_years: float | None = Field(default=None, ge=0)
     verified: bool = False
 
 
@@ -61,7 +62,8 @@ class ProfilePerformanceFact(BaseModel):
     client_institution_code: str | None = None
     amount: int = Field(ge=0)
     started_at: date | None = None
-    completed_at: date
+    completed_at: date | None = None
+    completed_year: int | None = Field(default=None, ge=1900, le=2100)
     fields: list[str] = Field(default_factory=list)
     verified: bool = False
 
@@ -69,6 +71,7 @@ class ProfilePerformanceFact(BaseModel):
 class ProfileCertificationFact(BaseModel):
     ref: str
     name: str
+    certification_code: str | None = None
     issuer_name: str | None = None
     issued_at: date | None = None
     expires_at: date | None = None
@@ -234,7 +237,7 @@ def _performance_candidates(
     profile: CompanyProfileSnapshot,
     requirement: QualificationRequirement,
     reference_date: date,
-) -> list[ProfilePerformanceFact]:
+) -> tuple[list[ProfilePerformanceFact], bool]:
     cutoff = (
         _subtract_months(reference_date, requirement.period_months)
         if requirement.period_months is not None
@@ -243,11 +246,8 @@ def _performance_candidates(
     client_requirement = str(requirement.scope.get("client_requirement") or "").strip()
 
     candidates: list[ProfilePerformanceFact] = []
+    has_ambiguous_date = False
     for item in profile.performances:
-        if item.completed_at > reference_date:
-            continue
-        if cutoff is not None and item.completed_at < cutoff:
-            continue
         field = requirement.scope.get("experience_field")
         if field and not any(_string_match(value, field) for value in [item.name, *item.fields]):
             continue
@@ -257,8 +257,24 @@ def _performance_candidates(
                 client_ok = bool(item.client_institution_code) or "공공" in _norm(item.client_name)
             if not client_ok:
                 continue
+        if item.completed_at is not None:
+            if item.completed_at > reference_date:
+                continue
+            if cutoff is not None and item.completed_at < cutoff:
+                continue
+        elif item.completed_year is not None:
+            earliest = date(item.completed_year, 1, 1)
+            latest = date(item.completed_year, 12, 31)
+            if earliest > reference_date or (cutoff is not None and latest < cutoff):
+                continue
+            if latest > reference_date or (cutoff is not None and earliest < cutoff):
+                has_ambiguous_date = True
+                continue
+        else:
+            has_ambiguous_date = True
+            continue
         candidates.append(item)
-    return candidates
+    return candidates, has_ambiguous_date
 
 
 def _judge_region(
@@ -290,7 +306,7 @@ def _judge_company_size(
     preflight_case_id: str,
 ) -> Judgment:
     observed = profile.company_size
-    if not observed:
+    if not observed or observed == "NONE":
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
@@ -424,9 +440,11 @@ def _judge_performance_amount(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     if not candidates:
-        if not profile.completeness.performances:
+        if has_ambiguous_date or not profile.completeness.performances:
             return _unknown(requirement, preflight_case_id)
         return _judgment(
             requirement=requirement,
@@ -452,6 +470,8 @@ def _judge_performance_amount(
     )
     if compared is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if not compared and has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if aggregation == "UNSPECIFIED" and len(candidates) > 1:
         summed = sum(item.amount for item in candidates)
         sum_compared = _compare_range(summed, requirement.scope) if requirement.operator == "RANGE" else _compare_number(summed, requirement.operator, requirement.value)
@@ -479,11 +499,15 @@ def _judge_performance_count(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     observed = len(candidates)
     compared = _compare_number(observed, requirement.operator, requirement.value)
     if compared is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if not compared and has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if not compared and not profile.completeness.performances:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -508,7 +532,9 @@ def _judge_experience_field(
 ) -> Judgment:
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     matched = next(
         (
             item
@@ -528,6 +554,8 @@ def _judge_experience_field(
             reason_code="RULE_MATCH",
             profile_refs=[_profile_ref("performance", "ref", matched.ref)],
         )
+    if has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if not profile.completeness.performances:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -553,6 +581,7 @@ def _judge_certification(
         item
         for item in profile.certifications
         if _string_match(item.name, requirement.value)
+        or _string_match(item.certification_code or "", requirement.value)
     ]
     valid_matches = [
         item
@@ -573,6 +602,11 @@ def _judge_certification(
             profile_refs=[
                 _profile_ref("certification", "ref", item.ref),
                 _profile_ref("certification", "name", item.name),
+                *(
+                    [_profile_ref("certification", "certification_code", item.certification_code)]
+                    if item.certification_code
+                    else []
+                ),
             ],
         )
 

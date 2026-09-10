@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -120,12 +120,16 @@ class CompanyStaff(Base):
 
 class CompanyStaffRole(Base):
     __tablename__ = "company_staff_roles"
+    __table_args__ = (
+        CheckConstraint("career_years IS NULL OR career_years >= 0"),
+    )
 
     company_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True
     )
     role_name: Mapped[str] = mapped_column(Text, primary_key=True)
     headcount: Mapped[int] = mapped_column(Integer)
+    career_years: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     verified: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -140,7 +144,12 @@ class CompanyStaffRole(Base):
 class CompanyPerformance(Base):
     __tablename__ = "company_performances"
     __table_args__ = (
-        CheckConstraint("started_at IS NULL OR started_at <= completed_at"),
+        CheckConstraint("(completed_at IS NOT NULL) <> (completed_year IS NOT NULL)"),
+        CheckConstraint("completed_year IS NULL OR completed_year BETWEEN 1900 AND 2100"),
+        CheckConstraint("started_at IS NULL OR completed_at IS NULL OR started_at <= completed_at"),
+        CheckConstraint(
+            "started_at IS NULL OR completed_year IS NULL OR EXTRACT(YEAR FROM started_at) <= completed_year"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -156,7 +165,8 @@ class CompanyPerformance(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 0))
     started_at: Mapped[date | None] = mapped_column(Date)
-    completed_at: Mapped[date] = mapped_column(Date)
+    completed_at: Mapped[date | None] = mapped_column(Date)
+    completed_year: Mapped[int | None] = mapped_column(SmallInteger)
     description: Mapped[str | None] = mapped_column(Text)
     verified: Mapped[bool] = mapped_column(
         Boolean,
@@ -196,6 +206,7 @@ class CompanyCertification(Base):
         PostgresUUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(Text)
+    certification_code: Mapped[str | None] = mapped_column(Text)
     certificate_number: Mapped[str | None] = mapped_column(Text)
     issuer_name: Mapped[str | None] = mapped_column(Text)
     issued_at: Mapped[date | None] = mapped_column(Date)

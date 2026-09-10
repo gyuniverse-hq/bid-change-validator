@@ -53,7 +53,12 @@ def test_company_profile_crud() -> None:
                     "total_count": 8,
                     "roles": [
                         {"role_name": "PM", "headcount": 3, "verified": True},
-                        {"role_name": "개발", "headcount": 5, "verified": False},
+                        {
+                            "role_name": "개발",
+                            "headcount": 5,
+                            "career_years": 4.5,
+                            "verified": False,
+                        },
                     ],
                 },
             },
@@ -62,6 +67,7 @@ def test_company_profile_crud() -> None:
         assert update_response.json()["name"] == "수정된 주식회사"
         assert update_response.json()["staff"]["total_count"] == 8
         assert len(update_response.json()["staff"]["roles"]) == 2
+        assert update_response.json()["staff"]["roles"][1]["career_years"] == 4.5
 
         performance_response = client.post(
             f"/api/v1/companies/{company_id}/performances",
@@ -70,7 +76,7 @@ def test_company_profile_crud() -> None:
                 "client_name": "테스트 발주처",
                 "amount": 500000000,
                 "started_at": "2025-01-01",
-                "completed_at": "2025-06-30",
+                "completed_year": 2025,
                 "fields": ["창업지원", "플랫폼"],
                 "verified": True,
             },
@@ -78,6 +84,8 @@ def test_company_profile_crud() -> None:
         assert performance_response.status_code == 201, performance_response.text
         performance = performance_response.json()
         assert performance["amount"] == 500000000
+        assert performance["completed_at"] is None
+        assert performance["completed_year"] == 2025
         assert performance["fields"] == ["창업지원", "플랫폼"]
 
         performance_update_response = client.patch(
@@ -91,6 +99,7 @@ def test_company_profile_crud() -> None:
             f"/api/v1/companies/{company_id}/certifications",
             json={
                 "name": "벤처기업확인서",
+                "certification_code": "venture",
                 "certificate_number": "TEST-001",
                 "issued_at": "2026-01-01",
                 "expires_at": "2028-01-01",
@@ -99,6 +108,7 @@ def test_company_profile_crud() -> None:
         )
         assert certification_response.status_code == 201, certification_response.text
         certification = certification_response.json()
+        assert certification["certification_code"] == "VENTURE"
 
         full_profile_response = client.get(f"/api/v1/companies/{company_id}")
         assert full_profile_response.status_code == 200
@@ -140,6 +150,18 @@ def test_unknown_industry_code_is_rejected() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_INDUSTRY_CODE"
+
+
+def test_performance_requires_exact_date_or_year_but_not_both() -> None:
+    payload = {
+        "name": "잘못된 완료일",
+        "amount": 1,
+        "completed_at": "2025-06-30",
+        "completed_year": 2025,
+    }
+    response = client.post(f"/api/v1/companies/{uuid4()}/performances", json=payload)
+
+    assert response.status_code == 422
 
 
 def test_duplicate_business_number_is_rejected() -> None:

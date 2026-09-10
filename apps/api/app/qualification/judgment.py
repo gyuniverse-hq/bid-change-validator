@@ -135,7 +135,7 @@ def build_company_profile_snapshot(company: Company, completeness: ProfileComple
         staff = ProfileStaffFact(
             total_count=company.staff.total_count,
             verified=company.staff.verified,
-            roles=[ProfileStaffRoleFact(role_name=item.role_name, headcount=item.headcount, verified=item.verified) for item in sorted(company.staff_roles, key=lambda x: x.role_name)],
+            roles=[ProfileStaffRoleFact(role_name=item.role_name, headcount=item.headcount, career_years=float(item.career_years) if item.career_years is not None else None, verified=item.verified) for item in sorted(company.staff_roles, key=lambda x: x.role_name)],
         )
     return CompanyProfileSnapshot(
         company_id=str(company.id),
@@ -149,12 +149,13 @@ def build_company_profile_snapshot(company: Company, completeness: ProfileComple
                 ref=str(item.id), name=item.name, client_name=item.client_name,
                 client_institution_code=item.client_institution_code, amount=int(item.amount),
                 started_at=item.started_at, completed_at=item.completed_at,
+                completed_year=item.completed_year,
                 fields=sorted(field.field_name for field in item.experience_fields), verified=item.verified,
             )
-            for item in sorted(company.performances, key=lambda x: (x.completed_at, str(x.id)), reverse=True)
+            for item in sorted(company.performances, key=lambda x: (x.completed_at or date(x.completed_year or 1900, 12, 31), str(x.id)), reverse=True)
         ],
         certifications=[
-            ProfileCertificationFact(ref=str(item.id), name=item.name, issuer_name=item.issuer_name, issued_at=item.issued_at, expires_at=item.expires_at, verified=item.verified)
+            ProfileCertificationFact(ref=str(item.id), name=item.name, certification_code=item.certification_code, issuer_name=item.issuer_name, issued_at=item.issued_at, expires_at=item.expires_at, verified=item.verified)
             for item in sorted(company.certifications, key=lambda x: (x.name, str(x.id)))
         ],
         completeness=completeness,

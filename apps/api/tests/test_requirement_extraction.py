@@ -302,7 +302,29 @@ def test_other_document_requirements_are_not_suppressed_by_section_anchor():
 
 
 def test_clause_reference_must_belong_to_the_grounded_chunk():
+    """근거조항은 근거 문장이 실제로 있던 청크의 라벨이어야 한다.
+
+    처리 방식이 바뀌었다. 예전에는 라벨이 어긋나면 슬롯 전체를 버렸는데, 그러면
+    잘못된 위치 하나 때문에 멀쩡한 요건까지 사라진다. 지금은 요건은 남기고
+    **위치 라벨만 지운다** — raw 자체는 이미 원문 대조를 통과한 상태다.
+
+    위치를 못 쓰게 만든다는 안전 성질은 그대로다. 화면이 엉뚱한 조항을 가리키는
+    일은 여전히 막는다.
+    """
     from apps.api.app.ai.requirement_extraction import validate_extracted_slot
-    chunks = [{"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"}, {"text": "9. 다른 문서", "clause_label": "9"}]
-    assert validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "2-1-1"}, chunks)[0]
-    assert not validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "9"}, chunks)[0]
+
+    chunks = [
+        {"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"},
+        {"text": "9. 다른 문서", "clause_label": "9"},
+    ]
+
+    # 근거 청크(라벨 2) 본문에 줄 머리로 있는 번호는 그 청크의 라벨로 인정한다.
+    grounded = {"raw": "서울 소재 업체", "근거조항": "2-1-1"}
+    assert validate_extracted_slot(grounded, chunks)[0]
+    assert grounded["근거조항"] == "2-1-1"
+
+    # "9" 는 다른 청크의 라벨이다. 요건은 살리되 위치는 못 쓰게 비운다.
+    misattributed = {"raw": "서울 소재 업체", "근거조항": "9"}
+    assert validate_extracted_slot(misattributed, chunks)[0]
+    assert misattributed["근거조항"] is None
+    assert misattributed["_reference_kind"] == "UNVERIFIED"

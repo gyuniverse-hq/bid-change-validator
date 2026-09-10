@@ -666,12 +666,15 @@ def judge_requirement(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-<<<<<<< Updated upstream
+    # 안전 가드가 가장 먼저다. 판정하기 위험한 조항(복합 조건·부정 조건 등)이면
+    # 확장 경로라고 예외일 이유가 없다. 순서를 뒤집으면 SW등급 요건이 가드를
+    # 우회해서, 하나로 줄일 수 없는 조건을 충족/미충족으로 단정하게 된다.
     if unsafe_clause_reason(requirement.raw):
         return _unknown(requirement, preflight_case_id, unsupported=True)
-=======
-    # Notice-specific requirements are judged here before their generic type.
-    # In particular, software grades must not also pass through `_judge_staff`.
+
+    # 공고별 확장 요건은 일반 유형보다 먼저 판정한다. 특히 SW기술자 등급은
+    # `_judge_staff` 로도 흘러가면 안 된다 — 같은 요건을 두 번 판정하게 되고,
+    # 역할 이름 매칭이라는 더 약한 기준이 결과를 뒤집을 수 있다.
     from .extensions import spec_for_requirement
 
     extension = spec_for_requirement(requirement)
@@ -695,7 +698,6 @@ def judge_requirement(
             ],
         )
 
->>>>>>> Stashed changes
     if requirement.type == "REGION":
         return _judge_region(requirement, profile, preflight_case_id)
     if requirement.type == "COMPANY_SIZE":

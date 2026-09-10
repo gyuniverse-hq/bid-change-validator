@@ -78,7 +78,7 @@ def test_any_of_group_does_not_make_one_failed_alternative_ineligible():
     assert result.overall_status == "eligible"
 
 
-<<<<<<< Updated upstream
+# ── develop 쪽 테스트 (업종 정확매칭 · 복합조항 보류 · 부분정책 · 실적) ──
 def test_industry_identifiers_require_exact_match():
     from apps.api.app.ai.judgment import ProfileIndustryFact
     profile = _profile().model_copy(update={"industries": [ProfileIndustryFact(code="11426", name="다른 업종")]})
@@ -104,7 +104,8 @@ def test_performance_amount_cannot_use_unrelated_field_or_future_work():
     future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
     profile = profile.model_copy(update={"performances": [future]})
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
-=======
+
+# ── 이번 작업 테스트 (인증 표기 흔들림 · 기업규모 배제 반전) ──
 def _certification_case(held_name: str, required_name: str):
     requirement = _requirement(
         "REQ-CERT",
@@ -190,4 +191,3 @@ def test_a_size_requirement_without_a_restriction_still_reads_as_who_may_bid() -
     )
 
     assert judgment.status == "SATISFIED"
->>>>>>> Stashed changes

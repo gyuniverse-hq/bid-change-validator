@@ -20,6 +20,9 @@ coverage/
 .env.*
 !.env.example
 
+# Generated RAG indexes
+data/rag/
+
 # Editors
 .vscode/
 .idea/
@@ -30,4 +33,3 @@ Thumbs.db
 
 # Logs
 *.log
-

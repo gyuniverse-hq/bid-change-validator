@@ -57,6 +57,9 @@ def score_case(spans, chunks, selected, result=None, budget=32_000):
                                    ("context_recall", "in_context")]}
     metrics["selection_precision"] = ratio(sum(any(has_span(c, s) for s in positives)
                                                 for c in selected), len(selected))
+    if not spans:
+        metrics["selection_precision"] = {"numerator": None, "denominator": None,
+                                          "value": None, "reason": "no ground truth labels"}
     metrics["trap_selection_rate"] = ratio(sum(any(has_span(c, s) for c in selected)
                                                for s in traps), len(traps))
     for field in ["canonical_match", "evidence_preserved"]:

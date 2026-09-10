@@ -32,7 +32,7 @@ import {
 } from '@/lib/qualification-api';
 import { loadCurrentJudgment } from '@/lib/case-workspace';
 import { productProfileCoverage } from '@/lib/product-profile';
-
+import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
 type StatusFilter = 'all' | OverallStatus;
 type CaseStatusMeta = { caseItem: PreflightCase; judgment: QualificationJudgmentSummary | null };
@@ -48,6 +48,7 @@ const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> =
 export default function NoticesPage() {
   const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
+  const [noticeTotal, setNoticeTotal] = useState(0);
   const [cases, setCases] = useState<PreflightCase[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [caseMeta, setCaseMeta] = useState<Record<string, CaseStatusMeta>>({});
@@ -86,6 +87,7 @@ export default function NoticesPage() {
         listCompanies(),
       ]);
       setNotices(noticeResult.items);
+      setNoticeTotal(noticeResult.total);
       setCases(caseResult.items);
       setCompany(companies[0] ?? null);
       await hydrateCaseMeta(caseResult.items, noticeResult.items, companies[0]?.id ?? '');
@@ -122,6 +124,7 @@ export default function NoticesPage() {
   const rejectedNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) === 'ineligible');
   const profile = productProfileCoverage(company);
   const missingProfile = profile.missing.map((area) => area.label);
+  const profileReady = Boolean(company) && missingProfile.length === 0;
 
   const counts = useMemo(() => {
     const result = { eligible: 0, insufficient_data: 0, ineligible: 0, unreviewed: 0 };
@@ -134,13 +137,14 @@ export default function NoticesPage() {
 
   const proposalDocumentCount = cases.reduce((sum, caseItem) => sum + caseItem.documents.length, 0);
   const unknownTotal = Object.values(caseMeta).reduce((sum, item) => sum + (item.judgment?.unknown_count ?? 0), 0);
+  const firstUnknownCase = Object.values(caseMeta).find((item) => (item.judgment?.unknown_count ?? 0) > 0)?.caseItem;
 
   const quickTiles: QuickTile[] = [
     { label: '응찰 가능', value: counts.eligible, icon: CheckCircle2, filter: 'eligible' },
     { label: '확인 필요', value: counts.insufficient_data, icon: CircleHelp, filter: 'insufficient_data' },
     { label: '자격 미달', value: counts.ineligible, icon: XCircle, filter: 'ineligible' },
     { label: '미검토', value: counts.unreviewed, icon: FileCheck2, filter: 'unreviewed' },
-    { label: '전체 공고', value: notices.length, icon: FileText, filter: 'all' },
+    { label: '검색된 공고', value: noticeTotal, icon: FileText, filter: 'all' },
     { label: '준비 문서', value: `${proposalDocumentCount}개`, icon: Building2, filter: 'all' },
   ];
 
@@ -187,10 +191,11 @@ export default function NoticesPage() {
       <section className="border-b border-[var(--product-line)] bg-[linear-gradient(120deg,#e6eeff_0%,#f0ebff_48%,#e8f4ff_100%)]">
         <div className="app-shell-container py-8 md:py-[34px]">
           <div className="inline-flex min-h-[50px] items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-3.5 py-2 shadow-sm backdrop-blur">
-            <span className="grid size-8 place-items-center rounded-full bg-emerald-50 text-emerald-700"><CheckCircle2 className="size-5" /></span>
+            <span className={`grid size-8 place-items-center rounded-full ${profileReady ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{profileReady ? <CheckCircle2 className="size-5" /> : <CircleHelp className="size-5" />}</span>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <strong>{company ? `${company.name} 프로필 ${profile.filled}/${profile.total} 영역 연결` : '회사 프로필이 필요합니다'}</strong>
-              <span className="text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.slice(0, 2).join(' · ')} 정보가 비어 있습니다` : '판정에 필요한 기본 정보가 준비됐습니다'}</span>
+              <span className="text-[var(--product-muted)]">{profileReady ? '판정에 필요한 기본 정보가 준비됐습니다' : `${missingProfile.slice(0, 2).join(' · ')}${missingProfile.length > 2 ? ` 외 ${missingProfile.length - 2}개` : ''} 비어 있음 · 채우면 걸러드립니다`}</span>
+              {!profileReady && <Link href="/company" className="font-semibold text-[var(--product-accent-deep)]">채우러 가기 →</Link>}
             </div>
           </div>
 
@@ -206,7 +211,7 @@ export default function NoticesPage() {
 
             <div className="relative overflow-hidden rounded-[24px] bg-[var(--product-accent-deep)] p-8 text-white shadow-[0_16px_48px_rgba(31,58,176,0.2)]">
               <div className="relative z-10 max-w-3xl">
-                <Badge className="border-white/20 bg-white/10 text-white">Evidence-first</Badge>
+                <Badge className="border-white/20 bg-white/10 text-white">근거 우선</Badge>
                 <h2 className="mt-4 text-[34px] font-extrabold leading-[1.3] tracking-[-0.035em]">근거가 붙은 공고만<br />판정으로 이어갑니다</h2>
                 <p className="mt-4 max-w-2xl text-[15px] leading-7 text-white/80">공고 원문에서 구조화된 자격조건과 회사 프로필을 비교합니다. 근거가 없거나 정보가 부족하면 억지로 결론 내리지 않고 확인 필요로 남깁니다.</p>
               </div>
@@ -234,7 +239,7 @@ export default function NoticesPage() {
         <section>
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
-              <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">NOTICE DISCOVERY</p>
+              <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">공고 조회</p>
               <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
               <p className="mt-2 text-[14px] text-[var(--product-muted)]">실제 API에서 조회된 공고입니다. 아직 자동 매칭 전이며, 저장된 판정이 있으면 최신 결과를 함께 표시합니다.</p>
             </div>
@@ -242,6 +247,8 @@ export default function NoticesPage() {
               {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
             </div>
           </div>
+
+          {!loading && activeNotices.length > 6 && <p className="mt-3 text-[13px] text-[var(--product-muted)]">조회된 {activeNotices.length}건 중 6건 표시 · 원하는 공고는 검색으로 좁혀보세요</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
             <div className="mt-7 grid gap-[18px] lg:grid-cols-3">
@@ -251,7 +258,7 @@ export default function NoticesPage() {
                 return <article key={notice.id} className="flex min-h-[286px] flex-col rounded-[20px] border border-[var(--product-line)] bg-white p-6 shadow-[0_10px_30px_rgba(35,50,90,0.06)] transition-transform hover:-translate-y-1">
                   <div className="flex items-center justify-between gap-3"><span className={`rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span><span className="text-[12px] text-[var(--product-faint)]">현재 v{notice.current_version}</span></div>
                   <h3 className="mt-5 line-clamp-3 text-[21px] font-bold leading-8 tracking-[-0.025em] text-[var(--product-ink)]">{notice.title}</h3>
-                  <p className="mt-3 text-[13px] leading-6 text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'} · {notice.business_type}</p>
+                  <p className="mt-3 text-[13px] leading-6 text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'} · {labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</p>
                   {meta?.judgment && <p className="mt-2 text-[13px] text-[var(--product-muted)]">판정 {meta.judgment.judgment_count}건 · 확인 필요 {meta.judgment.unknown_count}건 · 미달 {meta.judgment.unsatisfied_count}건</p>}
                   <div className="mt-auto flex items-end justify-between gap-3 pt-5"><div><span className="block text-[11px] text-[var(--product-faint)]">공고번호</span><strong className="mt-1 block text-[12px] font-semibold">{notice.bid_notice_no}</strong></div><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : meta ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
                 </article>;
@@ -269,9 +276,8 @@ export default function NoticesPage() {
         </section>
 
         <section className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1fr)_452px]">
-          <div className="rounded-[22px] border border-[var(--product-line)] bg-white p-7"><div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">공지사항</h2><Sparkles className="size-5 text-[var(--product-accent)]" /></div><div className="mt-5 divide-y divide-[var(--product-line-2)]">{[['Product Baseline', '공고·회사·판정 데이터를 실제 API 기준으로 연결하고 있습니다.'], ['Evidence', '판정 결과는 원문 근거와 연결되는 경우에만 제품 화면에 노출합니다.'], ['Changed Notice', '변경공고는 이전 차수를 덮어쓰지 않고 판정 영향과 함께 추적합니다.']].map(([title, text]) => <div key={title} className="grid gap-2 py-5 sm:grid-cols-[130px_minmax(0,1fr)]"><strong className="text-[13px] text-[var(--product-accent-deep)]">{title}</strong><span className="text-[14px]">{text}</span></div>)}</div></div>
-          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">ASK-BACK</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3"><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><CircleHelp className="size-4" /> 회사 정보가 비어 있음</span><p className="mt-2 text-[12px] leading-5 text-white/65">단일 사용자 사실로 안전하게 해결 가능한 경우에만 질문합니다.</p></div><div className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold"><ShieldCheck className="size-4" /> 근거 없는 판정 금지</span><p className="mt-2 text-[12px] leading-5 text-white/65">복합·법적·절차 조건은 사용자 답변으로 강제 판정하지 않습니다.</p></div></div><Link href="/qualification" className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 검토하기 <ArrowRight className="size-4" /></Link></aside>
-        </section>
+          <div className="rounded-[22px] border border-[var(--product-line)] bg-white p-7"><div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">공지사항</h2><Sparkles className="size-5 text-[var(--product-accent)]" /></div><div className="mt-5 divide-y divide-[var(--product-line-2)]">{[['데이터 연결', '공고·회사·판정 데이터를 실제 나라장터 수집 기준으로 연결합니다.'], ['근거 원칙', '판정 결과는 공고 원문 근거와 연결되는 경우에만 화면에 보여줍니다.'], ['변경공고', '변경공고는 이전 차수를 덮어쓰지 않고 판정 영향과 함께 추적합니다.']].map(([title, text]) => <div key={title} className="grid gap-2 py-5 sm:grid-cols-[130px_minmax(0,1fr)]"><strong className="text-[13px] text-[var(--product-accent-deep)]">{title}</strong><span className="text-[14px]">{text}</span></div>)}</div></div>
+          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[12px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요에 답하기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[13px] text-white/65">지금 답할 항목이 없습니다</p>}</aside>        </section>
 
         <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[14px] text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.join(' · ')} 영역이 아직 비어 있습니다.` : '현재 기본 프로필 영역이 모두 연결되어 있습니다.'}</p></div><div className="flex items-center gap-4"><span className="text-[13px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company"><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]">프로필 보완</Button></Link></div></section>
       </div>

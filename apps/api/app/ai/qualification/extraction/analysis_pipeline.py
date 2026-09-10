@@ -23,9 +23,9 @@ from pydantic import BaseModel, Field, model_validator
 
 from .analysis_result import RequirementAnalysisResult, build_requirement_analysis_result
 from .backend_blocks import canonical_source_blocks
-from .canonicalize import canonicalize_validated_slots
+from ..canonical.canonicalize import canonicalize_validated_slots
 from .chunking import chunk_source_blocks
-from .normalization import normalize_value as default_normalize_value
+from ...normalization import normalize_value as default_normalize_value
 from .requirement_extraction import StructuredExtractor, extract_legacy_slots
 
 ValueNormalizer = Callable[[str], dict[str, Any]]

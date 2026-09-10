@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from .contracts import Evidence, QualificationRequirement
+from ...contracts import Evidence, QualificationRequirement
 
 
 AnalysisStatus = Literal["SUCCEEDED", "PARTIAL", "FAILED"]

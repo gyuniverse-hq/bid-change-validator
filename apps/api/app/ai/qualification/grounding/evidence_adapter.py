@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .contracts import Evidence, EvidenceLocation
+from ...contracts import Evidence, EvidenceLocation
 
 
 def _first_non_null(values: list[Any]) -> Any | None:

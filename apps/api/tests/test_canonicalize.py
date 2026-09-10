@@ -1,4 +1,4 @@
-from apps.api.app.ai.canonicalize import canonicalize_validated_slot
+from apps.api.app.ai.qualification.canonical.canonicalize import canonicalize_validated_slot
 
 
 def test_validated_slot_becomes_atomic_requirements_with_shared_evidence() -> None:
@@ -125,7 +125,7 @@ def test_unmapped_slot_keeps_evidence_linked_to_diagnostic() -> None:
 
 
 def test_industry_and_registration_slots_use_the_same_explicit_code():
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
 
     for slot_type in ("업종요건", "등록요건"):
         requirements, diagnostics = adapt_legacy_slot(
@@ -139,7 +139,7 @@ def test_industry_and_registration_slots_use_the_same_explicit_code():
 
 
 def test_industry_mapping_does_not_guess_codes_or_collapse_multiple_conditions():
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
 
     for slot_type in ("업종요건", "등록요건"):
         for raw in (
@@ -165,7 +165,7 @@ def test_industry_mapping_does_not_guess_codes_or_collapse_multiple_conditions()
 
 
 def test_certification_is_not_replaced_by_an_industry_code():
-    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
 
     requirements, _ = adapt_legacy_slot(
         {"유형": "인증요건", "raw": "업종코드: 1468 업체는 ISO 27001 인증 보유",

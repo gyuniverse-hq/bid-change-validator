@@ -16,6 +16,18 @@ from .askability import unsafe_clause_reason
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 
+# "소프트웨어사업(컴퓨터관련서비스사업, 업종코드: 1468)" — 나라장터 업종코드는 4자리.
+_INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*(\d{4})")
+
+# Wording that turns a named company size from "who may bid" into "who may not".
+_SIZE_EXCLUSION_RE = re.compile(
+    r"참여\s*(?:제한|불가|배제|금지)"
+    r"|참가\s*(?:제한|불가|배제)"
+    r"|참여할\s*수\s*없"
+    r"|참여\s*(?:를)?\s*(?:제외|배제)"
+    r"|입찰\s*참가\s*자격\s*(?:을)?\s*제한"
+)
+
 
 def _op(word: str | None) -> RequirementOperator | None:
     return {"이상": ">=", "초과": ">", "이하": "<=", "미만": "<"}.get(word)  # type: ignore[return-value]
@@ -148,7 +160,15 @@ def adapt_legacy_slot(
 
     elif slot_type == "업종요건":
         industry = (slot.get("업종_raw") or "").strip()
-        if industry:
+        # Same reason as the registration branch: when the sentence states the
+        # 업종코드, that is the comparable form. The extractor classifies the same
+        # sentence as 업종요건 or 등록요건 from run to run, so both branches have to
+        # reach the code or the verdict changes with the classification.
+        code_match = _INDUSTRY_CODE_RE.search(f"{raw} {industry}")
+        if code_match:
+            scope = {"industry_name": industry} if industry else {}
+            add("INDUSTRY", "INDUSTRY", operator="MATCH", value=code_match.group(1), scope=scope)
+        elif industry:
             add("INDUSTRY", "INDUSTRY", operator="MATCH", value=industry)
         else:
             diagnostics.append({"code": "UNMAPPED_INDUSTRY", "raw": raw})
@@ -185,7 +205,25 @@ def adapt_legacy_slot(
             "면허요건": "LICENSE",
             "등록요건": "REGISTRATION",
         }[slot_type]
-        if name:
+
+        # A registration requirement that states its 업종코드 is checkable exactly:
+        # "소프트웨어사업(컴퓨터관련서비스사업, 업종코드: 1468)" is one condition
+        # written twice, once as a name and once as a code. Matching the name
+        # against a company's certification list is fuzzy and fails on wording
+        # ("소프트웨어사업자" vs "소프트웨어사업"), while the code either matches the
+        # company's registered industries or it does not. So the code wins, and the
+        # name is not emitted as a second requirement — judging one condition
+        # twice would let the weaker matcher decide the outcome.
+        code_match = _INDUSTRY_CODE_RE.search(f"{raw} {name}")
+        if code_match:
+            add(
+                "INDUSTRY",
+                "INDUSTRY",
+                operator="MATCH",
+                value=code_match.group(1),
+                scope={"kind": kind, "industry_name": name} if name else {"kind": kind},
+            )
+        elif name:
             scope: dict[str, Any] = {"kind": kind}
             if issuer:
                 scope["issuer"] = issuer
@@ -202,7 +240,19 @@ def adapt_legacy_slot(
     elif slot_type == "기업규모요건":
         company_size = (slot.get("기업규모_raw") or "").strip()
         if company_size:
-            add("COMPANY_SIZE", "COMPANY_SIZE", operator="MATCH", value=company_size)
+            # A size requirement points two opposite ways with the same words.
+            # "중소기업만 참여 가능" names who may bid; "대기업 및 중견기업 참여 제한"
+            # names who may not. Read the second one as the first and a 중소기업
+            # is told it is disqualified from a notice written to favour it.
+            add(
+                "COMPANY_SIZE",
+                "COMPANY_SIZE",
+                operator="MATCH",
+                value=company_size,
+                scope={"restriction": "EXCLUDE"}
+                if _SIZE_EXCLUSION_RE.search(raw)
+                else {},
+            )
         else:
             diagnostics.append({"code": "UNMAPPED_COMPANY_SIZE", "raw": raw})
 

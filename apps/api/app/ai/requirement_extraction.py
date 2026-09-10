@@ -109,7 +109,7 @@ SLOT_SCHEMA: dict[str, Any] = {
                         "발급기관_raw": _nullable_source_string("등록·면허·인증 발급기관 원문. 없으면 null"),
                         "기업규모_raw": _nullable_source_string("소상공인·소기업·중소기업·중견기업 등 기업규모 원문. 없으면 null"),
                         "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
-                        "근거조항": _nullable_source_string("제공된 텍스트에서 확인되는 조항 번호/라벨"),
+                        "근거조항": _nullable_source_string("이 요건이 적힌 **문서 자체의** 조항 번호/라벨(예: 2, 3.1, 제5조). 「국가계약법 시행령」제12조 같은 **인용된 법령 조문은 여기에 적지 마라**. 없으면 null"),
                     },
                     "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"],
                 },
@@ -130,7 +130,11 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 8. 인증·면허·등록 요건은 '특정 등록/면허/인증을 보유 또는 완료해야 한다'는 단일 사실일 때만 각각 인증요건/면허요건/등록요건으로 분류한다. 등록인증_raw에는 실제 명칭을 담는다.
 9. 소재지 제한은 유형=지역요건, 지역_raw에 원문 지역명을 담는다.
 10. 소상공인·소기업·중소기업·중견기업·대기업 등 규모 제한은 유형=기업규모요건, 기업규모_raw에 원문 표현을 담는다. Backend enum으로 변환하지 마라.
+<<<<<<< Updated upstream
 11. 근거조항에는 raw가 나온 문서의 실제 조항 번호/라벨을 그대로 복사한다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
+=======
+11. 근거조항에는 이 요건이 적힌 **문서 자체의** 조항 번호(예: 2, 3.1, 제5조)만 적는다. 요건 문장이 인용하는 법령 조문(「국가계약법 시행령」제12조 등)은 근거조항이 아니다 — 그건 raw 안에 이미 들어 있으므로 따로 옮기지 마라. 문서 조항 번호를 알 수 없으면 null 로 둔다.
+>>>>>>> Stashed changes
 12. 공동수급/공동계약 구성원·대표사 관계, 대표자 중복, 변경등록, 입찰무효, 법령상 예외, '아니어야 한다/하지 않아야 한다' 같은 부정 조건, 여러 조건이 '또는/다만/각 호'로 결합된 복합 절차 조건은 단순 등록·면허·인증 보유 요건으로 축약하지 마라. 닫힌 canonical 유형 하나로 안전하게 표현할 수 없으면 유형=기타요건으로 둔다.
 13. 원문에 여러 독립적인 원자 조건이 명시되어 있으면 한 문장을 임의 요약하지 말고 각각 별도 requirement로 추출한다. 단, 논리 관계를 잃게 되는 복합조건은 억지로 분해하지 말고 기타요건으로 둔다.
 14. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
@@ -194,6 +198,50 @@ def _normalize_reference(value: str) -> str:
     return re.sub(r"^(?:조항|제)\s*", "", value.strip()).rstrip(".)조항 ")
 
 
+# 근거조항에 여러 개가 들어오는 일이 흔하다: "제12조, 제14조", "3.1 및 3.2".
+_REFERENCE_SPLIT_RE = re.compile(r"[,、·]|\s+및\s+|\s+과\s+|\s+와\s+")
+
+
+def _reference_parts(reference: str) -> list[str]:
+    return [part.strip() for part in _REFERENCE_SPLIT_RE.split(reference) if part.strip()]
+
+
+def classify_clause_reference(
+    reference: str, chunks: list[dict[str, Any]], source_chunk: dict[str, Any] | None
+) -> str:
+    """근거조항이 무엇을 가리키는지 판별한다.
+
+    공고문은 자격요건을 거의 전부 법령 인용으로 쓴다 —
+    "「국가계약법 시행령」제12조 및 동법 시행규칙 제14조의 자격요건을 갖춘 자".
+    모델은 자연히 그 법령 조문을 근거조항에 넣는데, 이건 **이 문서의 조항 번호가
+    아니라 인용된 법령**이다. 둘을 구분하지 않으면 정상 추출을 환각으로 오인한다.
+
+    반환값:
+      DOCUMENT_CLAUSE — 이 문서의 조항 라벨. EvidenceLocation.clause_label 로 쓸 수 있다.
+      STATUTE         — 원문에 실제로 있는 인용(법령 조문 등). 위치 라벨로 쓰면 안 된다.
+      UNVERIFIED      — 원문에서 확인되지 않음. 버린다.
+    """
+    parts = _reference_parts(reference)
+    if not parts:
+        return "UNVERIFIED"
+
+    labels = {str(chunk["clause_label"]) for chunk in chunks if chunk.get("clause_label")}
+    if labels and all(
+        part in labels or _normalize_reference(part) in labels for part in parts
+    ):
+        return "DOCUMENT_CLAUSE"
+
+    # 라벨이 아니면 원문에 실제로 등장하는지만 본다. 등장하면 인용이고,
+    # 안 하면 지어낸 것이다. 판별 기준은 여기서도 "원문에 있는가" 하나다.
+    haystack = _squash(source_chunk.get("text") or "") if source_chunk else ""
+    if not haystack:
+        haystack = "".join(_squash(chunk.get("text") or "") for chunk in chunks)
+    if haystack and all(_squash(part) in haystack for part in parts):
+        return "STATUTE"
+
+    return "UNVERIFIED"
+
+
 def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any] | None:
     probe = _squash(raw)
     if not probe:
@@ -220,13 +268,33 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
         if detail and _squash(detail) not in source_text:
             return False, f"{field_name}가 본문에 존재하지 않음(과잉 추출 의심)", source_chunk
 
+    # 근거조항은 판정에 쓰이지 않는다 — EvidenceLocation.clause_label 로만 흘러가는
+    # 표시용 메타데이터다. 그래서 이게 어긋난다고 원문 대조를 통과한 요건을 통째로
+    # 버리지 않는다. 환각을 막는 장치는 위의 raw / *_raw 원문 대조이고, 여기서는
+    # 신뢰할 수 있는 참조만 남기고 나머지는 떼어낸다.
+    #
+    # 실측: 실제 공고 참가자격 8개 항목 중 5개가 이 검사 하나로 폐기됐고, 그 안에
+    # "대기업·중견기업 참여 제한"이 있어 대기업이 적격으로 판정됐다. 5개 모두 raw
+    # 원문 대조는 통과한 상태였다.
     reference = slot.get("근거조항")
     if reference:
+<<<<<<< Updated upstream
         normalized_reference = _normalize_reference(str(reference))
         source_label = _normalize_reference(str(source_chunk.get("clause_label") or ""))
         appears_in_source = re.search(r"(?m)^\s*" + re.escape(normalized_reference) + r"(?:[.)\s]|$)", source_chunk.get("text") or "")
         if normalized_reference != source_label and not appears_in_source:
             return False, f"근거조항 '{reference}'가 실제 조항 라벨과 불일치", source_chunk
+=======
+        kind = classify_clause_reference(str(reference), chunks, source_chunk)
+        slot["_reference_kind"] = kind
+        if kind == "STATUTE":
+            # 원문에 실제로 있는 인용이지만 이 문서의 조항 번호는 아니다.
+            # clause_label 로 쓰면 화면이 "제12조"를 문서 위치인 것처럼 보여준다.
+            slot["_statute_reference"] = str(reference)
+            slot["근거조항"] = None
+        elif kind == "UNVERIFIED":
+            slot["근거조항"] = None
+>>>>>>> Stashed changes
 
     return True, "", source_chunk
 

@@ -1,7 +1,7 @@
 from datetime import date
 
 from apps.api.app.ai.contracts import QualificationRequirement
-from apps.api.app.ai.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirements
+from apps.api.app.ai.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirement, judge_requirements
 
 REFERENCE_DATE = date(2026, 9, 7)
 
@@ -78,6 +78,7 @@ def test_any_of_group_does_not_make_one_failed_alternative_ineligible():
     assert result.overall_status == "eligible"
 
 
+<<<<<<< Updated upstream
 def test_industry_identifiers_require_exact_match():
     from apps.api.app.ai.judgment import ProfileIndustryFact
     profile = _profile().model_copy(update={"industries": [ProfileIndustryFact(code="11426", name="다른 업종")]})
@@ -103,3 +104,90 @@ def test_performance_amount_cannot_use_unrelated_field_or_future_work():
     future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
     profile = profile.model_copy(update={"performances": [future]})
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+=======
+def _certification_case(held_name: str, required_name: str):
+    requirement = _requirement(
+        "REQ-CERT",
+        "REGISTRATION_CERTIFICATION",
+        value=required_name,
+        scope={"kind": "CERTIFICATION"},
+    )
+    profile = _profile(
+        completeness=ProfileCompleteness(certifications=True),
+        certifications=[
+            ProfileCertificationFact(ref="certification-1", name=held_name, verified=True)
+        ],
+    )
+    evaluation = judge_requirements(
+        [requirement], profile, preflight_case_id="case-1", reference_date=REFERENCE_DATE
+    )
+    return evaluation.judgments[0]
+
+
+def test_a_certification_written_with_different_punctuation_still_matches():
+    # A notice writing "ISO/IEC 27001" must not disqualify a company that recorded
+    # the same certificate as "ISO27001".
+    assert _certification_case("ISO27001", "ISO/IEC 27001").status == "SATISFIED"
+    assert _certification_case("ISO 27001", "ISO/IEC 27001").status == "SATISFIED"
+
+
+def test_a_different_standard_number_is_still_unsatisfied():
+    # The number is the identity: 9001 is a quality standard, 27001 is security.
+    assert _certification_case("ISO 9001", "ISO/IEC 27001").status == "UNSATISFIED"
+
+
+def test_the_same_number_from_a_different_body_is_still_unsatisfied():
+    assert _certification_case("KS 27001", "ISO/IEC 27001").status == "UNSATISFIED"
+
+
+# ── 기업규모: "참여 제한"은 자격이 아니라 배제다 ──────────────────────────
+# 공고는 같은 낱말로 정반대를 가리킨다. "중소기업만 참여 가능"은 참여할 수 있는
+# 쪽을, "대기업 및 중견기업 참여 제한"은 참여할 수 없는 쪽을 이름한다. 뒤를 앞으로
+# 읽으면 그 공고가 우대하려던 중소기업이 부적격으로 나온다.
+def test_a_size_restriction_disqualifies_the_named_sizes_not_the_others() -> None:
+    requirement = QualificationRequirement(
+        requirement_key="REQ-SIZE",
+        notice_version_id="nv-1",
+        type="COMPANY_SIZE",
+        operator="MATCH",
+        value="대기업",
+        scope={"restriction": "EXCLUDE"},
+        raw="「소프트웨어진흥법」제48조에 따라 대기업 및 중견기업 참여 제한",
+    )
+
+    smaller = judge_requirement(
+        requirement,
+        CompanyProfileSnapshot(company_id="C1", company_size="MEDIUM"),
+        preflight_case_id="case-1",
+        reference_date=date(2026, 9, 9),
+    )
+    named = judge_requirement(
+        requirement,
+        CompanyProfileSnapshot(company_id="C2", company_size="LARGE"),
+        preflight_case_id="case-1",
+        reference_date=date(2026, 9, 9),
+    )
+
+    assert smaller.status == "SATISFIED"
+    assert named.status == "UNSATISFIED"
+
+
+def test_a_size_requirement_without_a_restriction_still_reads_as_who_may_bid() -> None:
+    requirement = QualificationRequirement(
+        requirement_key="REQ-SIZE",
+        notice_version_id="nv-1",
+        type="COMPANY_SIZE",
+        operator="MATCH",
+        value="중소기업",
+        raw="중소기업만 참여 가능",
+    )
+
+    judgment = judge_requirement(
+        requirement,
+        CompanyProfileSnapshot(company_id="C1", company_size="MEDIUM"),
+        preflight_case_id="case-1",
+        reference_date=date(2026, 9, 9),
+    )
+
+    assert judgment.status == "SATISFIED"
+>>>>>>> Stashed changes

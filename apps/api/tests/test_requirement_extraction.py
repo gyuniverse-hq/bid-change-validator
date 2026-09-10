@@ -160,21 +160,75 @@ def test_validate_slot_rejects_hallucinated_company_size_detail():
     assert source is not None
 
 
-def test_validate_slot_rejects_wrong_clause_reference():
-    ok, reason, source = validate_extracted_slot(
-        {
-            "유형": "실적요건",
-            "raw": "최근 3년 실적 5억원 이상",
-            "기간_raw": "최근 3년",
-            "금액_raw": "5억원 이상",
-            "근거조항": "9.9",
-        },
-        _chunks(),
-    )
+def test_an_unverifiable_clause_reference_is_dropped_not_fatal():
+    """근거조항이 어긋나도 원문 대조를 통과한 요건은 살린다.
 
-    assert ok is False
-    assert "실제 조항 라벨과 불일치" in reason
+    근거조항은 EvidenceLocation.clause_label 로만 가는 표시용 값이고 판정에는
+    쓰이지 않는다. 환각을 막는 장치는 raw / *_raw 원문 대조이며, 그건 이미 통과한
+    상태다. 참조 하나 때문에 근거가 확실한 요건을 버리면 잃는 쪽이 훨씬 크다.
+    """
+    slot = {
+        "유형": "실적요건",
+        "raw": "최근 3년 실적 5억원 이상",
+        "기간_raw": "최근 3년",
+        "금액_raw": "5억원 이상",
+        "근거조항": "9.9",
+    }
+    ok, reason, source = validate_extracted_slot(slot, _chunks())
+
+    assert ok is True
+    assert reason == ""
     assert source is not None
+    # 확인되지 않은 참조는 남기지 않는다 — 틀린 위치를 화면에 띄우는 것보다 낫다.
+    assert slot["근거조항"] is None
+    assert slot["_reference_kind"] == "UNVERIFIED"
+
+
+def test_a_statute_citation_is_kept_but_not_used_as_a_document_label():
+    """공고문은 자격요건을 거의 전부 법령 인용으로 쓴다.
+
+    모델이 그 법령 조문을 근거조항에 넣는 건 자연스러운 일이고, 그걸 문서 조항
+    번호로 오인해 요건을 버리면 안 된다. 다만 화면에 문서 위치인 것처럼 보여서도
+    안 되므로 clause_label 에서는 떼어내고 별도로 보존한다.
+    """
+    chunks = [
+        {
+            "chunk_id": "CHUNK-0001",
+            "clause_label": "2",
+            "text": (
+                "2. 입찰 참가자격\n"
+                "「국가계약법 시행령 제12조(경쟁입찰의 참가자격) 및 동법 시행규칙 "
+                "제14조(입찰참가 자격요건의 증명)의 자격요건을 갖춘 자"
+            ),
+            "source_blocks": [],
+        }
+    ]
+    slot = {
+        "유형": "기타요건",
+        "raw": "「국가계약법 시행령 제12조(경쟁입찰의 참가자격) 및 동법 시행규칙 제14조(입찰참가 자격요건의 증명)의 자격요건을 갖춘 자",
+        "근거조항": "제12조, 제14조",
+    }
+    ok, reason, source = validate_extracted_slot(slot, chunks)
+
+    assert ok is True
+    assert slot["_reference_kind"] == "STATUTE"
+    assert slot["_statute_reference"] == "제12조, 제14조"
+    assert slot["근거조항"] is None
+
+
+def test_a_real_document_label_is_kept():
+    slot = {
+        "유형": "실적요건",
+        "raw": "최근 3년 실적 5억원 이상",
+        "기간_raw": "최근 3년",
+        "금액_raw": "5억원 이상",
+        "근거조항": "3.1",
+    }
+    ok, _reason, _source = validate_extracted_slot(slot, _chunks())
+
+    assert ok is True
+    assert slot["_reference_kind"] == "DOCUMENT_CLAUSE"
+    assert slot["근거조항"] == "3.1"
 
 
 def test_extract_legacy_slots_keeps_source_provenance():

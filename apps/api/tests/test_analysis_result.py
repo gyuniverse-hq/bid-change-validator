@@ -59,7 +59,8 @@ def test_build_successful_analysis_result():
     assert result.evidence[0].extracted_text_sha256 == "text-sha"
 
 
-def test_canonicalization_diagnostic_makes_result_partial():
+def test_a_structuring_failure_makes_the_result_partial():
+    """유형은 알아봤는데 값을 구조화하지 못한 것 — 실제로 요건을 잃은 경우다."""
     result = build_requirement_analysis_result(
         notice_id="notice-1",
         notice_version_id="version-1",
@@ -67,13 +68,46 @@ def test_canonicalization_diagnostic_makes_result_partial():
         canonicalized={
             "requirements": [_requirement()],
             "evidence": [_evidence()],
-            "diagnostics": [{"code": "UNMAPPED_REQUIREMENT", "raw": "복합조건"}],
+            "diagnostics": [{"code": "UNMAPPED_STAFF", "raw": "인력 조건"}],
         },
     )
 
     assert result.status == "PARTIAL"
-    assert result.diagnostics[0].code == "UNMAPPED_REQUIREMENT"
+    assert result.diagnostics[0].kind == "PIPELINE"
+    assert result.diagnostics[0].severity == "WARNING"
     assert result.requirements
+
+
+def test_a_notice_fact_does_not_make_the_result_partial():
+    """공고에 그렇게 적혀 있어서 판정 대상이 아닌 것은 정상 결과다.
+
+    법령 상용구("부정당업체로 지정되지 않은 자") 한 줄 때문에 모든 공고가 PARTIAL 이
+    되면 이 값으로 실제 문제를 가려낼 수 없다.
+    """
+    result = build_requirement_analysis_result(
+        notice_id="notice-1",
+        notice_version_id="version-1",
+        document_ids=["doc-1"],
+        canonicalized={
+            "requirements": [_requirement()],
+            "evidence": [_evidence()],
+            "diagnostics": [
+                {
+                    "code": "UNMAPPED_REQUIREMENT",
+                    "raw": "부정당업체로 지정되지 않은 자",
+                    "evidence_keys": ["EV-1"],
+                }
+            ],
+        },
+    )
+
+    assert result.status == "SUCCEEDED"
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.kind == "NOTICE_FACT"
+    assert diagnostic.severity == "INFO"
+    # 근거를 달고 다녀야 사용자가 원문을 확인할 수 있다.
+    assert diagnostic.evidence_keys == ["EV-1"]
+    assert "판정하지 않고" in diagnostic.message
 
 
 def test_extraction_failure_without_results_is_failed_and_empty():

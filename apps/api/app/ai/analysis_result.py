@@ -20,11 +20,24 @@ AnalysisKind = Literal["QUALIFICATION_REQUIREMENTS"]
 DiagnosticSeverity = Literal["INFO", "WARNING", "ERROR"]
 
 
+# 진단에는 성격이 다른 두 가지가 섞여 있다. 파이프라인이 제 일을 못 한 것과,
+# 공고에 그렇게 적혀 있어서 판정 대상이 아닌 것은 사용자에게 완전히 다른 뜻이다.
+# 전자만 분석 품질 저하(PARTIAL)로 봐야 하고, 후자는 정상 결과다.
+DiagnosticKind = Literal[
+    "PIPELINE",      # 추출·구조화가 실패했다. 요건을 잃은 것이므로 PARTIAL.
+    "NOTICE_FACT",   # 공고에서 확인했으나 회사 프로필과 대조할 성질이 아니다.
+]
+
+
 class AnalysisDiagnostic(BaseModel):
     code: str
     severity: DiagnosticSeverity = "WARNING"
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+    kind: DiagnosticKind = "PIPELINE"
+    # NOTICE_FACT 는 원문 근거를 달고 다녀야 한다. 근거 없는 "확인했음"은
+    # 사용자가 검증할 수 없어서 "확인 안 했음"과 구별되지 않는다.
+    evidence_keys: list[str] = Field(default_factory=list)
 
 
 class RequirementAnalysisResult(BaseModel):
@@ -84,7 +97,7 @@ class RequirementAnalysisResult(BaseModel):
 
 
 _DIAGNOSTIC_MESSAGES = {
-    "UNMAPPED_REQUIREMENT": "닫힌 Canonical 자격요건 유형으로 안전하게 매핑하지 못했습니다.",
+    "UNMAPPED_REQUIREMENT": "공고에서 확인했으나 회사 프로필과 대조할 자격요건이 아닙니다 (법령 상용구·입찰 방식 제약 등). 판정하지 않고 근거와 함께 기록합니다.",
     "UNMAPPED_PERFORMANCE": "실적요건을 판정 가능한 원자 조건으로 구조화하지 못했습니다.",
     "UNMAPPED_EXPERIENCE_FIELD": "경험분야 요건의 비교값을 구조화하지 못했습니다.",
     "UNMAPPED_INDUSTRY": "업종 요건의 비교값을 구조화하지 못했습니다.",
@@ -92,17 +105,35 @@ _DIAGNOSTIC_MESSAGES = {
     "UNMAPPED_STAFF": "인력 요건의 인원 또는 역할을 구조화하지 못했습니다.",
     "UNMAPPED_REGISTRATION_CERTIFICATION": "등록·면허·인증 요건의 명칭을 구조화하지 못했습니다.",
     "UNMAPPED_COMPANY_SIZE": "기업규모 요건의 비교값을 구조화하지 못했습니다.",
-    "UNKNOWN_LEGACY_TYPE": "지원하지 않는 기존 LLM 슬롯 유형입니다.",
+    "UNKNOWN_LEGACY_TYPE": "지원하지 않는 슬롯 유형이라 판정하지 않고 근거와 함께 기록합니다.",
 }
+
+
+# 모델이 스스로 "닫힌 유형으로 표현할 수 없다"고 판단해 기타요건으로 보낸 것들이다
+# (SYSTEM_PROMPT 규칙 12가 부정 조건·공동수급·법령상 예외를 그쪽으로 보낸다).
+# 실제 공고에서 여기 걸리는 것은 「국가계약법 시행령」제12조 자격, 부정당업체 미지정,
+# 공동수급 불허 같은 것들로, 회사 프로필과 대조할 성질이 아니다. 판정하지 않는 것이
+# 정답이므로 분석 실패로 세지 않는다.
+#
+# 한계를 적어둔다: 규칙 12는 "여러 조건이 또는/다만/각 호로 결합된 복합 절차 조건"도
+# 기타요건으로 보낸다. 그건 진짜로 잃은 요건인데 지금 스키마로는 둘을 구분할 수 없다.
+# 그래서 이 진단들도 근거를 달고 결과에 남으며, 단계별 계측에서 다시 확인해야 한다.
+_NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
 
 
 def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
     code = str(raw.get("code") or "CANONICALIZATION_WARNING")
+    is_notice_fact = code in _NOTICE_FACT_CODES
+    details = {
+        key: value for key, value in raw.items() if key not in ("code", "evidence_keys")
+    }
     return AnalysisDiagnostic(
         code=code,
-        severity="WARNING",
+        severity="INFO" if is_notice_fact else "WARNING",
         message=_DIAGNOSTIC_MESSAGES.get(code, "Canonical 변환 과정에서 확인이 필요합니다."),
-        details={key: value for key, value in raw.items() if key != "code"},
+        details=details,
+        kind="NOTICE_FACT" if is_notice_fact else "PIPELINE",
+        evidence_keys=list(raw.get("evidence_keys") or []),
     )
 
 
@@ -138,7 +169,9 @@ def build_requirement_analysis_result(
             ),
         )
         status: AnalysisStatus = "PARTIAL" if requirements else "FAILED"
-    elif diagnostics:
+    elif any(item.kind == "PIPELINE" for item in diagnostics):
+        # NOTICE_FACT 는 정상 결과다. 법령 상용구 한 줄 때문에 모든 공고가 PARTIAL 이
+        # 되면 이 값으로 실제 문제를 가려낼 수 없게 된다.
         status = "PARTIAL"
     else:
         status = "SUCCEEDED"

@@ -94,7 +94,7 @@ def test_hwpx_evidence_keeps_section_and_paragraph_without_fake_page() -> None:
     assert evidence[0].extracted_text_sha256 == "text-sha-hwpx"
 
 
-def test_unmapped_slot_does_not_create_untraceable_evidence() -> None:
+def test_an_unmapped_slot_is_recorded_with_its_evidence() -> None:
     requirements, evidence, diagnostics = canonicalize_validated_slot(
         {
             "유형": "기타요건",
@@ -115,6 +115,88 @@ def test_unmapped_slot_does_not_create_untraceable_evidence() -> None:
         key_prefix="REQ-003",
     )
 
+    # 판정은 하지 않지만 기록은 남는다. 근거를 같이 버리면 사용자 입장에서
+    # "확인했는데 판정 대상이 아님" 과 "아예 못 봤음" 이 구분되지 않는다.
     assert requirements == []
-    assert evidence == []
+    assert len(evidence) == 1
+    assert evidence[0].document_id == "doc-1"
+    assert evidence[0].location.page == 15
+    assert evidence[0].quote == "자동 판정 범위 밖 조건"
+
+    # 진단이 그 근거를 참조하므로 떠 있는 근거가 아니다.
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"
+    assert diagnostics[0]["evidence_keys"] == [evidence[0].evidence_key]
+
+
+def test_a_registration_requirement_with_an_industry_code_maps_to_industry() -> None:
+    """The code is the checkable form of the condition, so it wins over the name.
+
+    Taken from a real notice: matching "소프트웨어사업(컴퓨터관련서비스사업)" against a
+    company's certification list fails on wording alone, while 1468 either is or
+    is not among its registered industries.
+    """
+    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "등록요건",
+            "raw": "나라장터(G2B)에 입찰참가자격을 등록한 자\n"
+            "- 소프트웨어사업(컴퓨터관련서비스사업, 업종코드: 1468)",
+            "등록인증_raw": "소프트웨어사업(컴퓨터관련서비스사업)",
+        },
+        notice_version_id="nv-1",
+        key_prefix="REQ-0001",
+    )
+
+    assert [item.type for item in requirements] == ["INDUSTRY"]
+    assert requirements[0].value == "1468"
+    assert requirements[0].scope["kind"] == "REGISTRATION"
+    assert requirements[0].scope["industry_name"] == "소프트웨어사업(컴퓨터관련서비스사업)"
+    # One condition, one requirement: emitting the name as well would judge it
+    # twice and let the fuzzier matcher decide.
+    assert diagnostics == []
+
+
+def test_a_certification_without_a_code_still_maps_to_registration() -> None:
+    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+
+    requirements, _ = adapt_legacy_slot(
+        {
+            "유형": "인증요건",
+            "raw": "ISO/IEC 27001 정보보호 관리체계 인증을 보유한 업체",
+            "등록인증_raw": "ISO/IEC 27001",
+        },
+        notice_version_id="nv-1",
+        key_prefix="REQ-0002",
+    )
+
+    assert [item.type for item in requirements] == ["REGISTRATION_CERTIFICATION"]
+    assert requirements[0].value == "ISO/IEC 27001"
+
+
+def test_the_industry_code_is_reached_from_either_slot_classification() -> None:
+    """The extractor labels this same sentence 업종요건 or 등록요건 from run to run.
+
+    If only one branch found the code, the verdict would change with the label
+    rather than with the notice, which is the sort of instability that makes a
+    judgment untrustworthy.
+    """
+    from apps.api.app.ai.legacy_slots import adapt_legacy_slot
+
+    raw = (
+        "나라장터(G2B)에 다음 분야의 입찰참가자격을 등록한 자\n"
+        "- 소프트웨어사업(컴퓨터관련서비스사업, 업종코드: 1468)"
+    )
+    for slot_type in ("업종요건", "등록요건"):
+        requirements, _ = adapt_legacy_slot(
+            {
+                "유형": slot_type,
+                "raw": raw,
+                "업종_raw": "소프트웨어사업(컴퓨터관련서비스사업, 업종코드: 1468)",
+                "등록인증_raw": "소프트웨어사업(컴퓨터관련서비스사업)",
+            },
+            notice_version_id="nv-1",
+            key_prefix="REQ-0001",
+        )
+        assert [item.type for item in requirements] == ["INDUSTRY"], slot_type
+        assert requirements[0].value == "1468", slot_type

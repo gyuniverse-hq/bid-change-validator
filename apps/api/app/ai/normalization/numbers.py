@@ -56,6 +56,9 @@ _PERCENT_BUNUI_RE = re.compile(
     r"(\d+(?:\.\d+)?|[일이삼사오육륙칠팔구십백천]+)\s*분의\s*"
     r"(\d+(?:\.\d+)?|[일이삼사오육륙칠팔구십백천]+)"
 )
+# Contract schedules commonly write rates as `1/1,000` instead of `1천분의 1`.
+# The numerator comes first in this notation.
+_PERCENT_SLASH_RE = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d[\d,]*(?:\.\d+)?)")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|퍼센트|프로|퍼)")
 _COUNT_RE = re.compile(r"(\d+|[일이삼사오육륙칠팔구십]+)\s*(?:명|인(?![근시])|인원)")
 
@@ -228,6 +231,15 @@ def normalize_percent(raw: str):
             end = match.end()
 
     if value is None:
+        slash_match = _PERCENT_SLASH_RE.search(text)
+        if slash_match:
+            numerator = float(slash_match.group(1))
+            denominator = float(slash_match.group(2).replace(",", ""))
+            if denominator:
+                value = numerator / denominator * 100
+                end = slash_match.end()
+
+    if value is None:
         percent_match = _PERCENT_RE.search(text)
         if percent_match:
             value = float(percent_match.group(1))
@@ -281,7 +293,11 @@ def normalize_value(raw: str):
         return _failed(raw, None, "빈 문자열")
 
     text = raw.strip()
-    if _PERCENT_BUNUI_RE.search(text) or _PERCENT_RE.search(text):
+    if (
+        _PERCENT_BUNUI_RE.search(text)
+        or _PERCENT_SLASH_RE.search(text)
+        or _PERCENT_RE.search(text)
+    ):
         return normalize_percent(text)
     if "원" in text and _AMOUNT_RE.search(re.sub(r"\([^)]*\)", " ", text)):
         return normalize_amount(text)
@@ -290,3 +306,62 @@ def normalize_value(raw: str):
     if _COUNT_RE.search(text):
         return normalize_count(text)
     return _failed(raw, None, "금액/기간/백분율/인원 어느 것에도 해당하지 않음")
+
+
+# NOTE(LLM/RAG 이식): clause_review(계약조항 검토)가 조항 텍스트에서 금액·기간·비율을
+# 한꺼번에 뽑아내야 해서 추가했습니다. normalize_value()는 '이 문자열 하나가 얼마인가'를
+# 답하지만, 조항 검토는 '이 문장에 어떤 수치들이 들어 있는가'라는 반대 질문이 필요합니다.
+# 기존 함수·동작은 건드리지 않았습니다.
+def extract_values(text: str | None) -> list[dict]:
+    """Find every amount, period and percentage expression in free text.
+
+    `normalize_value` answers "what is this one string worth"; clause review
+    needs the opposite question — "what numbers does this clause contain" —
+    because a clause states its own figure in the middle of a sentence.
+
+    Each result carries a `context` window so a caller can show where the number
+    came from. Expressions that fail to normalize are dropped rather than
+    reported with a guessed value.
+    """
+    results: list[dict] = []
+    if not text:
+        return results
+
+    def _context(start: int, end: int, before: int) -> str:
+        return text[max(0, start - before) : min(len(text), end + 10)]
+
+    # A trailing window is appended to each match so the comparator that follows
+    # the number ("이상", "이내") is still visible to the normalizer.
+    for match in _PERCENT_BUNUI_RE.finditer(text):
+        result = normalize_percent(match.group(0) + text[match.end() : match.end() + 6])
+        if result["parse_status"] == "success":
+            result["context"] = _context(match.start(), match.end(), 10)
+            results.append(result)
+
+    for match in _PERCENT_SLASH_RE.finditer(text):
+        result = normalize_percent(match.group(0) + text[match.end() : match.end() + 6])
+        if result["parse_status"] == "success":
+            result["context"] = _context(match.start(), match.end(), 10)
+            results.append(result)
+
+    for match in _PERCENT_RE.finditer(text):
+        result = normalize_percent(match.group(0) + text[match.end() : match.end() + 6])
+        if result["parse_status"] == "success":
+            result["context"] = _context(match.start(), match.end(), 10)
+            results.append(result)
+
+    # Parenthesised asides are blanked for amount detection only, so that a
+    # figure quoted inside brackets is not read as the clause's own amount.
+    for match in _AMOUNT_RE.finditer(re.sub(r"\([^)]*\)", " ", text)):
+        result = normalize_amount(match.group(0) + text[match.end() : match.end() + 6])
+        if result["parse_status"] == "success":
+            result["context"] = _context(match.start(), match.end(), 15)
+            results.append(result)
+
+    for match in _PERIOD_RE.finditer(text):
+        result = normalize_period(match.group(0) + text[match.end() : match.end() + 6])
+        if result["parse_status"] == "success":
+            result["context"] = _context(match.start(), match.end(), 15)
+            results.append(result)
+
+    return results

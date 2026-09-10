@@ -28,8 +28,6 @@ def canonicalize_validated_slot(
         notice_version_id=notice_version_id,
         key_prefix=key_prefix,
     )
-    if not requirements:
-        return [], [], diagnostics
 
     evidence_key = f"{key_prefix}-EVD"
     evidence = build_evidence_from_slot(
@@ -40,13 +38,31 @@ def canonicalize_validated_slot(
         case_id=case_id,
     )
 
+    if not requirements:
+        # 닫힌 유형으로 매핑되지 않았다고 근거까지 버리지 않는다. 예전에는 여기서
+        # 빈 목록을 돌려줘서 원문 위치가 통째로 사라졌고, 사용자 입장에서
+        # "확인했는데 판정 대상이 아님" 과 "아예 못 봤음" 이 구분되지 않았다.
+        #
+        # 실측: 실제 공고에서 「국가계약법 시행령」제12조 자격, 부정당업체 미지정,
+        # 계약사무규칙 제15조 제한사유, 공동수급·하도급 불허 4건이 이렇게 사라졌다.
+        # 넷 다 판정하지 않는 것이 맞지만, 기록이 없어지는 것은 맞지 않다.
+        return (
+            [],
+            [evidence],
+            [{**item, "evidence_keys": [evidence_key]} for item in diagnostics],
+        )
+
     linked_requirements: list[QualificationRequirement] = []
     for requirement in requirements:
         linked_requirements.append(
             requirement.model_copy(update={"evidence_keys": [evidence_key]})
         )
 
-    return linked_requirements, [evidence], diagnostics
+    return (
+        linked_requirements,
+        [evidence],
+        [{**item, "evidence_keys": [evidence_key]} for item in diagnostics],
+    )
 
 
 def canonicalize_validated_slots(

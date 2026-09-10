@@ -28,9 +28,6 @@ def canonicalize_validated_slot(
         notice_version_id=notice_version_id,
         key_prefix=key_prefix,
     )
-    if not requirements:
-        return [], [], diagnostics
-
     evidence_key = f"{key_prefix}-EVD"
     evidence = build_evidence_from_slot(
         slot,
@@ -46,7 +43,11 @@ def canonicalize_validated_slot(
             requirement.model_copy(update={"evidence_keys": [evidence_key]})
         )
 
-    return linked_requirements, [evidence], diagnostics
+    return (
+        linked_requirements,
+        [evidence],
+        [{**item, "evidence_keys": [evidence_key]} for item in diagnostics],
+    )
 
 
 def canonicalize_validated_slots(

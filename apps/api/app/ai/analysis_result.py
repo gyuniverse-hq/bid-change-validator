@@ -137,7 +137,7 @@ def build_requirement_analysis_result(
                 },
             ),
         )
-        status: AnalysisStatus = "PARTIAL" if requirements else "FAILED"
+        status: AnalysisStatus = "PARTIAL" if requirements or evidence else "FAILED"
     elif diagnostics:
         status = "PARTIAL"
     else:

@@ -160,20 +160,19 @@ def test_validate_slot_rejects_hallucinated_company_size_detail():
     assert source is not None
 
 
-def test_validate_slot_rejects_wrong_clause_reference():
-    ok, reason, source = validate_extracted_slot(
-        {
-            "유형": "실적요건",
-            "raw": "최근 3년 실적 5억원 이상",
-            "기간_raw": "최근 3년",
-            "금액_raw": "5억원 이상",
-            "근거조항": "9.9",
-        },
-        _chunks(),
-    )
+def test_validate_slot_clears_wrong_clause_reference_without_losing_requirement():
+    slot = {
+        "유형": "실적요건",
+        "raw": "최근 3년 실적 5억원 이상",
+        "기간_raw": "최근 3년",
+        "금액_raw": "5억원 이상",
+        "근거조항": "9.9",
+    }
+    ok, reason, source = validate_extracted_slot(slot, _chunks())
 
-    assert ok is False
-    assert "실제 조항 라벨과 불일치" in reason
+    assert ok is True
+    assert reason == ""
+    assert slot["근거조항"] is None
     assert source is not None
 
 
@@ -225,8 +224,9 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
     result = extract_legacy_slots(_chunks(), structured_extract=fake_extract, max_retry=1)
 
     assert calls["count"] == 2
-    assert result["status"] == "ok"
+    assert result["status"] == "partial"
     assert result["slots"] == []
+    assert "존재하지 않는 문장" in result["notes"]
 
 
 def test_quote_suffix_cannot_be_fabricated_after_matching_prefix():
@@ -251,4 +251,31 @@ def test_clause_reference_must_belong_to_the_grounded_chunk():
     from apps.api.app.ai.requirement_extraction import validate_extracted_slot
     chunks = [{"text": "안내문\n" * 40 + "2-1-1. 서울 소재 업체", "clause_label": "2"}, {"text": "9. 다른 문서", "clause_label": "9"}]
     assert validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "2-1-1"}, chunks)[0]
-    assert not validate_extracted_slot({"raw": "서울 소재 업체", "근거조항": "9"}, chunks)[0]
+    slot = {"raw": "서울 소재 업체", "근거조항": "9"}
+    assert validate_extracted_slot(slot, chunks)[0]
+    assert slot["근거조항"] is None
+
+
+def test_statute_citation_is_preserved_in_raw_not_document_location():
+    raw = "국가계약법 시행령 제12조 및 시행규칙 제14조의 자격요건을 갖춘 자"
+    slot = {"유형": "기타요건", "raw": raw, "근거조항": "제12조, 제14조"}
+    assert validate_extracted_slot(slot, [{"text": raw, "clause_label": "2"}])[0]
+    assert slot["raw"] == raw
+    assert slot["근거조항"] is None
+
+
+def test_valid_document_label_is_retained():
+    slot = {"raw": "최근 3년 실적 5억원 이상", "근거조항": "3.1"}
+    assert validate_extracted_slot(slot, _chunks())[0]
+    assert slot["근거조항"] == "3.1"
+
+
+def test_successful_retry_is_not_penalized_by_previous_rejection():
+    answers = iter([
+        {"requirements": [{"raw": "원문에 없는 요건"}]},
+        {"requirements": [{"raw": "서울 소재 업체", "유형": "지역요건", "지역_raw": "서울"}]},
+    ])
+    result = extract_legacy_slots(_chunks(), structured_extract=lambda *args: next(answers))
+    assert result["status"] == "ok"
+    assert len(result["slots"]) == 1
+    assert result["notes"] == ""

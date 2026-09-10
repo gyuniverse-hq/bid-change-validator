@@ -92,6 +92,24 @@ def test_extraction_failure_without_results_is_failed_and_empty():
     assert result.diagnostics[0].code == "EXTRACTION_FAILED"
 
 
+def test_partial_extraction_keeps_unmapped_evidence_and_warning():
+    result = build_requirement_analysis_result(
+        notice_id="notice-1", notice_version_id="version-1", document_ids=["doc-1"],
+        extraction_status="partial", extraction_notes="입력 길이 제한",
+        canonicalized={
+            "requirements": [], "evidence": [_evidence()],
+            "diagnostics": [{"code": "UNMAPPED_REQUIREMENT", "raw": "복합조건",
+                             "evidence_keys": ["REQ-001-EVD"]}],
+        },
+    )
+    assert result.status == "PARTIAL"
+    assert result.requirements == []
+    assert len(result.evidence) == 1
+    diagnostic = result.diagnostics[1]
+    assert diagnostic.severity == "WARNING"
+    assert diagnostic.details["evidence_keys"] == [result.evidence[0].evidence_key]
+
+
 def test_result_rejects_unresolved_evidence_reference():
     with pytest.raises(ValidationError):
         RequirementAnalysisResult(

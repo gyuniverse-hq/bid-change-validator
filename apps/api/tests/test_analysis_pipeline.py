@@ -258,3 +258,78 @@ def test_composite_registration_cannot_be_canonicalized_into_simple_fact():
     requirements, diagnostics = adapt_legacy_slot({"유형": "등록요건", "raw": "공동수급체 구성원 모두 정보통신공사업 등록업체이어야 한다.", "등록인증_raw": "정보통신공사업"}, notice_version_id="v", key_prefix="r")
     assert requirements == []
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"
+
+
+def test_pipeline_keeps_grounded_requirements_when_location_is_wrong():
+    def extract(*args):
+        result = _fake_extract(*args)
+        result["requirements"][0]["근거조항"] = "9.9"
+        return result
+
+    result = analyze_qualification_documents(_input(), structured_extract=extract)
+    assert result.status == "SUCCEEDED"
+    assert len(result.requirements) == 2
+    assert result.evidence[0].location.clause_label is None
+    assert result.evidence[0].location.page == 3
+
+
+def test_pipeline_keeps_unmapped_evidence_even_with_rejected_candidates():
+    def extract(*args):
+        return {"requirements": [
+            {"유형": "기타요건", "raw": "최근 3년 실적 2건 이상, 합계 4억원 이상"},
+            {"유형": "지역요건", "raw": "원문에 없는 부산 소재 업체"},
+        ]}
+
+    result = analyze_qualification_documents(_input(), structured_extract=extract)
+    assert result.status == "PARTIAL"
+    assert result.requirements == []
+    assert len(result.evidence) == 1
+    diagnostic = next(item for item in result.diagnostics if item.code == "UNMAPPED_REQUIREMENT")
+    assert diagnostic.severity == "WARNING"
+    assert diagnostic.details["evidence_keys"] == [result.evidence[0].evidence_key]
+
+
+def test_pipeline_does_not_report_empty_retry_as_success():
+    answers = iter([
+        {"requirements": [{"유형": "지역요건", "raw": "원문에 없는 부산 소재 업체"}]},
+        {"requirements": []},
+    ])
+    result = analyze_qualification_documents(_input(), structured_extract=lambda *args: next(answers))
+    assert result.status == "FAILED"
+    assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
+    assert "원문에 없는 부산" in result.diagnostics[0].details["notes"]
+
+
+def test_extracted_industry_code_reaches_existing_deterministic_judge():
+    from datetime import date
+    from apps.api.app.ai.judgment import CompanyProfileSnapshot, judge_requirement
+
+    raw = "소프트웨어사업(업종코드: 1468) 등록업체"
+    analysis_input = QualificationAnalysisInput(
+        notice_id="notice-1", notice_version_id="version-1",
+        documents=[QualificationDocumentInput(
+            document_id="doc-1", extracted_blocks=[{
+                "block_index": 0, "page": 1, "text": "2. 입찰 참가자격\n2.1 " + raw,
+            }],
+        )],
+    )
+    for slot_type in ("업종요건", "등록요건"):
+        result = analyze_qualification_documents(
+            analysis_input, structured_extract=lambda *args: {"requirements": [{
+                "유형": slot_type, "raw": raw, "업종_raw": "소프트웨어사업",
+                "등록인증_raw": "소프트웨어사업", "근거조항": "2.1",
+            }]},
+        )
+        assert result.status == "SUCCEEDED"
+        assert len(result.requirements) == 1
+        assert result.requirements[0].evidence_keys == [result.evidence[0].evidence_key]
+        for code, expected in (("1468", "SATISFIED"), ("0036", "UNSATISFIED")):
+            profile = CompanyProfileSnapshot(
+                company_id="company-1", industries=[{"code": code, "name": "등록 업종"}],
+                completeness={"industries": True},
+            )
+            judgment = judge_requirement(
+                result.requirements[0], profile, preflight_case_id="case-1",
+                reference_date=date(2026, 9, 10),
+            )
+            assert judgment.status == expected

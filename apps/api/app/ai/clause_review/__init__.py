@@ -18,6 +18,7 @@ from .contracts import (
     apply_overlapping_categories,
     overlapping_categories,
 )
+from .embedding_fallback import make_embedding_fallback
 from .pattern_match import detect_patterns
 from .standard_diff import (
     RULES,
@@ -41,5 +42,6 @@ __all__ = [
     "detect_standard_diff",
     "infer_contract_scope",
     "scope_for_notice",
+    "make_embedding_fallback",
     "RULES",
 ]

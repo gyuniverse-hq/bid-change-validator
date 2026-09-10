@@ -14,6 +14,7 @@ from .qualification.routers.ask_back import router as qualification_ask_back_rou
 from .qualification.routers.judgment import router as qualification_judgment_router
 from .qualification.routers.matching import router as qualification_matching_router
 from .qualification.routers.revalidation import router as qualification_revalidation_router
+from .qualification_briefing_router import router as qualification_briefing_router
 from .routers.companies import router as companies_router
 from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router
@@ -76,3 +77,4 @@ app.include_router(qualification_judgment_router)
 app.include_router(qualification_ask_back_router)
 app.include_router(qualification_revalidation_router)
 app.include_router(qualification_matching_router)
+app.include_router(qualification_briefing_router)

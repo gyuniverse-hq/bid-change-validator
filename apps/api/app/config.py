@@ -10,6 +10,7 @@ from .schemas import BusinessType
 class Settings(BaseSettings):
     app_name: str = "Bid Change Validator API"
     app_version: str = "0.1.0"
+    app_environment: str = "development"
     database_url: str = (
         "postgresql://bidjigi:bidjigi_local_password@localhost:5432/bidjigi"
     )
@@ -30,6 +31,10 @@ class Settings(BaseSettings):
     notice_poll_page_size: int = Field(default=100, ge=1, le=999)
     notice_poll_max_pages: int = Field(default=10, ge=1, le=100)
     notice_poll_business_types: str = "SERVICE,GOODS,CONSTRUCTION,FOREIGN"
+    auth_bootstrap_admin_username: str = "admin"
+    auth_bootstrap_admin_password: str = "admin"
+    auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
+    auth_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

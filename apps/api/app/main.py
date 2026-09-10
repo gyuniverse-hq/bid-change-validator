@@ -15,6 +15,7 @@ from .qualification.routers.judgment import router as qualification_judgment_rou
 from .qualification.routers.matching import router as qualification_matching_router
 from .qualification.routers.revalidation import router as qualification_revalidation_router
 from .routers.companies import router as companies_router
+from .routers.auth import router as auth_router
 from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router
 from .routers.preflight_cases import router as preflight_cases_router
@@ -68,6 +69,7 @@ def health(db: Session = Depends(get_db)) -> dict[str, str]:
 
 
 app.include_router(companies_router)
+app.include_router(auth_router)
 app.include_router(master_codes_router)
 app.include_router(notices_router)
 app.include_router(preflight_cases_router)

@@ -39,6 +39,11 @@ services:
       DOCUMENT_S3_PREFIX: ${DOCUMENT_S3_PREFIX:-notice-documents}
       AWS_REGION: ${AWS_REGION:-ap-northeast-2}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      AUTH_BOOTSTRAP_ADMIN_USERNAME: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-admin}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-12}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

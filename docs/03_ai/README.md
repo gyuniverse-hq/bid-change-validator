@@ -1,9 +1,18 @@
 # AI / RAG 문서 안내
 
 > **문서 상태: Current + Proposed 혼재**  
-> 기준 브랜치: `develop`
+> 기준 브랜치: `develop` · 역할 분리 합의: 2026-09-10
 
 이 폴더는 Product Integration Baseline 이후 AI 영역을 **Core Intelligence**와 **AI Copilot**으로 나누고, 병렬 개발 시 파일 소유권과 Contract 경계를 관리합니다.
+
+## 역할 상태
+
+역할 분리는 합의 완료 상태입니다.
+
+- **김재현 = LLM/RAG Core + Evaluation**
+- **이홍규 = AI Copilot + Integration**
+
+다만 역할 합의와 구현 완료는 구분합니다. `app/copilot/**`의 구체 폴더/Contract/API는 실제 구현과 테스트를 거쳐 Current로 승격합니다.
 
 ## 현재 AI 구조
 
@@ -20,12 +29,13 @@ app.ai
 ├─ Canonical Mapping / Normalization
 ├─ Evidence
 ├─ Askability Guardrail
+├─ Contract Risk Clause classification
 ├─ deterministic Judgment
 └─ Requirement Diff / Revalidation 기반
         ↓
 Backend Product API / DB
         ↓
-app.copilot (Proposed · 아직 미구현)
+app.copilot (Role Accepted · 구현 진행 대상)
 ├─ Intent
 ├─ Product Context
 ├─ Tool Adapter
@@ -51,13 +61,15 @@ Semantic Chunks
 
 이며 structured extraction 입력은 현재 최대 32,000 characters입니다.
 
+실제 공고 측정에서 Retrieval 자체뿐 아니라 **Evidence/Guardrail에서 Requirement가 탈락하는 원인**이 중요한 품질 이슈로 확인됐으므로, 고도화 순서는 측정 → Drop Diagnostic → Evidence/Guardrail → Retrieval 실험 순으로 둡니다.
+
 상세: [AI Retrieval · Current State / Upgrade Path](retrieval-current-state.md)
 
 ## 책임 경계
 
-### 김재현 — LLM/RAG Core · Evaluation
+### 김재현 — LLM/RAG Core · Evaluation · Current Owner
 
-> 공고문에서 자격요건과 근거를 얼마나 정확하고 안전하게 구조화할 수 있는가?
+> 공고문에서 자격요건·계약 위험조항과 근거를 얼마나 정확하고 안전하게 구조화할 수 있는가?
 
 주요 영역:
 
@@ -66,14 +78,15 @@ Semantic Chunks
 - Canonical Mapping
 - Evidence Grounding
 - UNKNOWN / Askability Guardrail
+- 계약 위험조항 9종 분류와 Evidence
 - Retrieval·Extraction Golden Set / Evaluation
-- 필요 시 변경공고 분석 Core 고도화
+- 변경공고 분석 Core / Revalidation 고도화
 
-### 이홍규 — AI Copilot · Integration
+### 이홍규 — AI Copilot · Integration · Current Owner
 
 > 이미 계산된 Product/Core 결과를 사용자가 자연어로 어떻게 안전하게 탐색하고 이어서 업무할 수 있는가?
 
-현재는 **역할/구조 Proposed 상태이며 Copilot 코드/API는 아직 Current 기능으로 간주하지 않습니다.**
+역할은 확정됐지만 Copilot 구현/API 자체는 아직 Current 기능으로 간주하지 않습니다.
 
 목표 영역:
 
@@ -84,6 +97,29 @@ Semantic Chunks
 - Grounded Response / Citation
 - Multi-turn Flow
 - Copilot Evaluation / Integration E2E
+
+## 계약 위험조항 · MVP Current
+
+위험조항은 MVP에 포함하며 현재 taxonomy는 9종입니다.
+
+`WARRANTY_PERIOD`, `LATE_PENALTY`, `LATE_PENALTY_RATE`, `COPYRIGHT_OWNERSHIP`, `ACCEPTANCE_CRITERIA`, `SCOPE_AMBIGUITY`, `TERMINATION_CONDITION`, `PAYMENT_TERMS`, `LIABILITY_SCOPE`
+
+경계:
+
+```text
+AI Core
+→ contract risk category 분류 + 근거
+→ Backend는 category를 재분류하지 않고 저장
+→ Frontend가 사용자용 Label로 표현
+```
+
+## 05 평가 대응 · Pending Frontend Design
+
+`/evaluation`의 최종 화면/사용자 흐름은 Frontend 구조안을 먼저 기준으로 잡습니다. 그 전에는 AI/Backend가 Evaluation Product Contract를 임의 확정하지 않습니다.
+
+- **점수 예측은 MVP 제외**
+- 평가기준 추출/근거 활용 범위는 Frontend 구조 확정 후 결정
+- 통합 전 Backend Prototype의 제안서 업로드·Parsing·누락검사 기능은 Reference로 보존하고 재사용 범위를 이후 결정
 
 ## 절대 원칙
 
@@ -108,8 +144,8 @@ Semantic Chunks
 
 ## 문서
 
-- [AI Core ↔ Copilot 병렬 개발 기준](parallel-boundary.md) — **Proposed**
-- [Core → Copilot Contract](core-copilot-contract.md) — **Proposed**
+- [AI Core ↔ Copilot 병렬 개발 기준](parallel-boundary.md) — **Ownership Accepted / 상세 구현 경계 Current화 중**
+- [Core → Copilot Contract](core-copilot-contract.md) — **Proposed Contract**
 - [AI Retrieval · Current State / Upgrade Path](retrieval-current-state.md) — **Current Baseline + Proposed Experiments**
 - [Requirement ↔ Test ↔ Golden/E2E](../08_qa_reports/requirement-test-traceability.md)
 
@@ -149,10 +185,10 @@ apps/api/app/ai/
 
 ## 다음 개발 순서
 
-1. 현재 section/keyword Retrieval baseline 측정
-2. Core ↔ Copilot Contract 최종 합의
-3. 재현 현재 작업물과 최신 `develop` Diff 최종 검산
-4. 최신 `develop`에서 Core / Copilot Branch 분기
-5. Core Golden/Evaluation 및 Copilot 독립 테스트
-6. `질문 → Product Tool → Judgment/Evidence → Grounded Answer` 첫 Copilot E2E
-7. Ask-back → Revalidation → Change 질의 순으로 확장
+1. 재현 현재 작업물과 최신 `develop` Diff 최종 검산
+2. Core/Copilot 공개 Contract 필수 필드 검산
+3. Core: 측정 Harness → Drop Diagnostic → Evidence/Guardrail 품질 개선
+4. Core: 위험조항 9종 + Golden/Evaluation 고도화
+5. Copilot: `질문 → Product Tool → Judgment/Evidence → Grounded Answer` 첫 Vertical Slice
+6. Ask-back → Revalidation → Change 질의 순으로 Copilot 확장
+7. 05 평가 대응은 Frontend 구조안 수신 후 별도 연결

@@ -8,6 +8,7 @@ import { LoaderCircle } from 'lucide-react';
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
 import type { EvidenceLocation } from '@/lib/qualification-api';
+import { REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { answerQualificationQuestion, type QualificationQuestion } from '@/lib/qualification-api';
@@ -65,7 +66,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
         evidence_held: false,
       });
       await reload();
-      setMessage('답변한 Requirement만 부분 재판정했습니다. 이 답은 이번 검토의 판정 근거로 저장됩니다.');
+      setMessage('답변한 항목만 다시 판정했습니다. 이 답은 이번 검토의 판정 근거로 저장됩니다.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '답변 저장에 실패했습니다.');
     } finally {
@@ -100,15 +101,15 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
             const selected = choice[question.requirement_key] ?? 'unknown';
             return (
               <section key={question.requirement_key} className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
-                <div className="flex items-center gap-2"><span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">답하면 판정됩니다</span><span className="text-[12.5px] text-[var(--product-muted)]">{question.requirement_type}</span></div>
+                <div className="flex items-center gap-2"><span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">답하면 판정됩니다</span><span className="text-[12.5px] text-[var(--product-muted)]">{labelOf(REQUIREMENT_TYPE_LABEL, question.requirement_type)}</span></div>
                 <h3 className="mt-3 text-[19px] font-bold leading-8 tracking-[-0.03em] text-[var(--product-ink)]">{question.question}</h3>
                 <p className="mt-3 text-[13.5px] text-[var(--product-muted)]">회사 프로필에 비교할 값이 없고, 사용자 단일 사실로 안전하게 해결할 수 있는 조건입니다.</p>
                 {evidence && <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>}
 
                 <div className="mt-5 space-y-2">
                   {[
-                    ['yes', '있습니다 / 충족합니다', '입력한 답으로 이 Requirement만 다시 판정합니다'],
-                    ['no', '없습니다 / 충족하지 않습니다', '이 Requirement는 미달로 재판정됩니다'],
+                    ['yes', '있습니다 / 충족합니다', '입력한 답으로 이 항목만 다시 판정합니다'],
+                    ['no', '없습니다 / 충족하지 않습니다', '이 항목은 미달로 재판정됩니다'],
                     ['unknown', '모르겠습니다', '답변을 저장하지 않고 확인 필요로 유지합니다'],
                   ].map(([value, label, help]) => (
                     <button key={value} type="button" onClick={() => setChoice((current) => ({ ...current, [question.requirement_key]: value as AnswerChoice }))} className={`flex w-full items-center gap-3 rounded-[20px] border px-[18px] py-[15px] text-left ${selected === value ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}>

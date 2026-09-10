@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { COMPANY_SIZE_LABEL } from '@/lib/status-copy';
 import {
   createCompany,
   listCompanies,
@@ -28,15 +29,6 @@ import {
 } from '@/lib/qualification-api';
 
 type Busy = 'load' | 'create' | null;
-
-const SIZE_LABEL: Record<CompanySize, string> = {
-  MICRO: '소기업',
-  SMALL: '중소기업',
-  MEDIUM: '중기업',
-  MID_SIZED: '중견기업',
-  LARGE: '대기업',
-  NONE: '미분류',
-};
 
 function companyRows(company: CompanyProfile) {
   const performanceTotal = company.performances.reduce((sum, item) => sum + item.amount, 0);
@@ -59,7 +51,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '기업 구분',
-      value: SIZE_LABEL[company.company_size],
+      value: COMPANY_SIZE_LABEL[company.company_size],
       source: '회사 입력',
       updated: company.updated_at,
       use: 'COMPANY_SIZE',

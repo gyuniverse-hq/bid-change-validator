@@ -8,6 +8,7 @@
  */
 
 import type {
+  CompanySize,
   EvidenceLocation,
   QualificationAnalysisSummary,
   QualificationJudgment,
@@ -107,6 +108,63 @@ export const ASK_BACK_REASON_COPY = {
 } as const;
 
 export type AskBackReason = keyof typeof ASK_BACK_REASON_COPY;
+
+/** 자격요건 유형. app/qualification/page.tsx의 TYPE_LABELS를 옮겨온 것. */
+export const REQUIREMENT_TYPE_LABEL: Record<string, string> = {
+  INDUSTRY: '업종',
+  REGION: '소재지',
+  COMPANY_SIZE: '기업 구분',
+  STAFF: '인력',
+  PERFORMANCE_COUNT: '수행실적 건수',
+  PERFORMANCE_AMOUNT: '수행실적 금액',
+  REGISTRATION_CERTIFICATION: '인증 · 등록',
+  EXPERIENCE_FIELD: '경험 분야',
+};
+
+/** 기업 구분. app/company/page.tsx의 SIZE_LABEL을 옮겨온 것. */
+export const COMPANY_SIZE_LABEL: Record<CompanySize, string> = {
+  MICRO: '소기업',
+  SMALL: '중소기업',
+  MEDIUM: '중기업',
+  MID_SIZED: '중견기업',
+  LARGE: '대기업',
+  NONE: '미분류',
+};
+
+/** 나라장터 사업유형. SERVICE 외에는 실제 값 확인 필요. */
+export const BUSINESS_TYPE_LABEL: Record<string, string> = {
+  SERVICE: '용역',
+  GOODS: '물품',
+  CONSTRUCTION: '공사',
+  FOREIGN: '외자',
+};
+
+/** 첨부 뷰어 타입. PDF · RHWP만 실제로 확인된 값. */
+export const VIEWER_TYPE_LABEL: Record<string, string> = {
+  PDF: 'PDF',
+  RHWP: '한글',
+  HWP: '한글',
+  HWPX: '한글',
+  TEXT: '텍스트',
+};
+
+/** 첨부 텍스트 추출 상태. */
+export const EXTRACTION_STATUS_LABEL: Record<string, string> = {
+  PENDING: '추출 대기',
+  EXTRACTED: '텍스트 추출됨',
+  EMPTY: '텍스트 없음',
+  UNSUPPORTED: '추출 미지원',
+  FAILED: '추출 실패',
+};
+
+/**
+ * 코드값을 한글 라벨로. 목록에 없는 코드는 코드값을 그대로 돌려준다.
+ * 화면이 빈칸이 되는 것보다 낫고, 못 넣은 값이 있으면 눈에 띄어서 잡을 수 있다.
+ */
+export function labelOf(map: Record<string, string>, code: string | null | undefined): string {
+  if (!code) return '-';
+  return map[code] ?? code;
+}
 
 /** 판정 배지에 쓸 문구. 답변 기준 판정은 근거를 라벨에 붙인다 (NFR-5). */
 export function judgmentBadgeLabel(

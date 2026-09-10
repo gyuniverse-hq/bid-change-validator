@@ -1,0 +1,139 @@
+/**
+ * 화면에 나가는 상태 문구를 한 곳에 모은다.
+ *
+ * 규칙 (07 요구사항명세서)
+ *  - NFR-10 · 색은 판정에만 쓴다. 정보성 배지에 판정 색을 쓰지 않는다.
+ *  - 영어 enum(SATISFIED / USER_ANSWER / PARTIAL …)은 사용자 화면에 그대로 나가지 않는다.
+ *  - 문구를 바꿀 일이 생기면 컴포넌트가 아니라 이 파일을 고친다.
+ */
+
+import type {
+  EvidenceLocation,
+  QualificationAnalysisSummary,
+  QualificationJudgment,
+  QualificationJudgmentRun,
+} from '@/lib/qualification-api';
+
+type JudgmentStatus = QualificationJudgment['status'];
+type BasisType = QualificationJudgment['basis_type'];
+type ReasonCode = QualificationJudgment['reason_code'];
+type AnalysisStatus = QualificationAnalysisSummary['status'];
+type OverallStatus = QualificationJudgmentRun['overall_status'];
+
+/** 판정 3상태 + 아직 판정 안 된 행 */
+export const JUDGMENT_STATUS_LABEL: Record<JudgmentStatus | 'UNJUDGED', string> = {
+  SATISFIED: '충족',
+  UNSATISFIED: '미달',
+  UNKNOWN: '확인 필요',
+  UNJUDGED: '미판정',
+};
+
+/** 무엇에 근거해 판정했는가 (NFR-5) */
+export const BASIS_TYPE_LABEL: Record<BasisType, string> = {
+  PROFILE: '회사 프로필 기준',
+  USER_ANSWER: '귀사 답변 기준',
+  NONE: '근거 없음',
+};
+
+/** 왜 그렇게 판정했는가 — 짧은 사유. 판정 근거 문장(진환님 API)이 나오면 그걸 우선한다. */
+export const REASON_CODE_LABEL: Record<ReasonCode, string> = {
+  RULE_MATCH: '요건을 충족했습니다',
+  RULE_MISMATCH: '요건에 미치지 못했습니다',
+  INSUFFICIENT_DATA: '회사 정보가 없어 판정하지 않았습니다',
+  NEEDS_REVIEW: '자동으로 판정하기 어려워 확인이 필요합니다',
+  UNSUPPORTED_REQUIREMENT: '아직 판정할 수 없는 형태의 요건입니다',
+};
+
+/**
+ * 공고 첨부 분석이 어디까지 됐는가.
+ * PARTIAL을 SUCCEEDED처럼 그리면 "못 읽은 조건"이 사용자에게 안 보인다 (S-9).
+ */
+export const ANALYSIS_STATUS_COPY: Record<AnalysisStatus, { label: string; description: string }> = {
+  SUCCEEDED: {
+    label: '분석 완료',
+    description: '공고 첨부를 읽고 참가자격을 추출했습니다.',
+  },
+  PARTIAL: {
+    label: '일부만 읽었습니다',
+    description: '첨부 일부를 읽지 못했습니다. 아래 판정에 빠진 조건이 있을 수 있으니 원문을 함께 확인해 주세요.',
+  },
+  FAILED: {
+    label: '첨부를 읽지 못했습니다',
+    description: '이 공고는 첨부를 읽지 못해 판정하지 않았습니다. 원문을 직접 확인해 주세요.',
+  },
+};
+
+/** 공고 전체 결론 */
+export const OVERALL_STATUS_COPY: Record<OverallStatus, { label: string; description: string }> = {
+  eligible: {
+    label: '참가 가능',
+    description: '현재 판정된 필수 항목에서 미달이 없습니다.',
+  },
+  ineligible: {
+    label: '참가 불가',
+    description: '미달 항목이 있어 현재 상태로는 참가 자격을 충족하지 못합니다.',
+  },
+  insufficient_data: {
+    label: '확인 필요',
+    description: '회사 정보가 부족하거나 근거가 불충분한 항목을 확인해야 합니다.',
+  },
+};
+
+/**
+ * 되묻기 이유 3종 (03 확인 필요 화면).
+ * 이유마다 사용자가 할 수 있는 일이 다르므로 화면도 달라야 한다.
+ *  - answerable  : 답하면 그 항목만 다시 판정된다
+ *  - read_failed : 공고 문구를 못 읽어서 묻지 않는다
+ *  - no_evidence : 값은 있으나 근거 조항을 못 찾아 판정하지 않았다
+ *
+ * TODO 재현님 확인 — 이 3종을 API의 어떤 필드로 가르는지 확정되면 매핑 함수를 여기에 붙인다.
+ */
+export const ASK_BACK_REASON_COPY = {
+  answerable: {
+    label: '답하시면 이 줄만 다시 판정합니다',
+    description: '회사 프로필에 이 값이 없어서 판정하지 못했습니다.',
+    canAnswer: true,
+  },
+  read_failed: {
+    label: '정확히 읽지 못해 묻지 않습니다',
+    description: '공고 문구를 정확히 읽지 못했습니다. 원문을 직접 확인해 주세요.',
+    canAnswer: false,
+  },
+  no_evidence: {
+    label: '근거를 찾지 못해 판정하지 않았습니다',
+    description: '값은 있으나 공고에서 근거 조항을 찾지 못했습니다.',
+    canAnswer: false,
+  },
+} as const;
+
+export type AskBackReason = keyof typeof ASK_BACK_REASON_COPY;
+
+/** 판정 배지에 쓸 문구. 답변 기준 판정은 근거를 라벨에 붙인다 (NFR-5). */
+export function judgmentBadgeLabel(
+  status: JudgmentStatus | 'UNJUDGED',
+  basisType: BasisType = 'PROFILE',
+): string {
+  const base = JUDGMENT_STATUS_LABEL[status];
+  if (basisType === 'USER_ANSWER' && (status === 'SATISFIED' || status === 'UNSATISFIED')) {
+    return `${base} · ${BASIS_TYPE_LABEL.USER_ANSWER}`;
+  }
+  return base;
+}
+
+/**
+ * 근거 위치 문구 (P0-3).
+ *
+ * 백엔드가 display를 주면 **그대로** 쓴다. 화면이 "3.2항 p.4"를 조립하면
+ * 페이지가 없는 HWP/HWPX 첨부에서 "3.2항 p.null" 같은 문구가 나간다.
+ * display가 없을 때만 있는 값으로 최소한만 만들고, 그것도 없으면 null을 돌려
+ * 호출한 쪽이 아예 표시하지 않도록 한다.
+ */
+export function evidenceLocationText(location?: EvidenceLocation | null): string | null {
+  if (!location) return null;
+  if (location.display && location.display.trim()) return location.display.trim();
+
+  const parts: string[] = [];
+  if (location.clause_label && location.clause_label.trim()) parts.push(location.clause_label.trim());
+  if (typeof location.page === 'number') parts.push(`p.${location.page}`);
+  return parts.length ? parts.join(' · ') : null;
+}

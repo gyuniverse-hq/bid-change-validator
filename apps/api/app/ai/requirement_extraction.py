@@ -109,7 +109,7 @@ SLOT_SCHEMA: dict[str, Any] = {
                         "발급기관_raw": _nullable_source_string("등록·면허·인증 발급기관 원문. 없으면 null"),
                         "기업규모_raw": _nullable_source_string("소상공인·소기업·중소기업·중견기업 등 기업규모 원문. 없으면 null"),
                         "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
-                        "근거조항": _nullable_source_string("제공된 텍스트에서 확인되는 조항 번호/라벨"),
+                        "근거조항": _nullable_source_string("요건이 적힌 문서 자체의 조항 번호/라벨. 인용된 법령 조문은 제외. 없으면 null"),
                     },
                     "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"],
                 },
@@ -130,7 +130,7 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 8. 인증·면허·등록 요건은 '특정 등록/면허/인증을 보유 또는 완료해야 한다'는 단일 사실일 때만 각각 인증요건/면허요건/등록요건으로 분류한다. 등록인증_raw에는 실제 명칭을 담는다.
 9. 소재지 제한은 유형=지역요건, 지역_raw에 원문 지역명을 담는다.
 10. 소상공인·소기업·중소기업·중견기업·대기업 등 규모 제한은 유형=기업규모요건, 기업규모_raw에 원문 표현을 담는다. Backend enum으로 변환하지 마라.
-11. 근거조항에는 raw가 나온 문서의 실제 조항 번호/라벨을 그대로 복사한다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
+11. 근거조항에는 raw가 나온 문서 자체의 실제 조항 번호/라벨만 복사한다. 인용된 법령 조문은 문서 위치가 아니므로 적지 않는다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
 12. 공동수급/공동계약 구성원·대표사 관계, 대표자 중복, 변경등록, 입찰무효, 법령상 예외, '아니어야 한다/하지 않아야 한다' 같은 부정 조건, 여러 조건이 '또는/다만/각 호'로 결합된 복합 절차 조건은 단순 등록·면허·인증 보유 요건으로 축약하지 마라. 닫힌 canonical 유형 하나로 안전하게 표현할 수 없으면 유형=기타요건으로 둔다.
 13. 원문에 여러 독립적인 원자 조건이 명시되어 있으면 한 문장을 임의 요약하지 말고 각각 별도 requirement로 추출한다. 단, 논리 관계를 잃게 되는 복합조건은 억지로 분해하지 말고 기타요건으로 둔다.
 14. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
@@ -205,7 +205,7 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
 
 
 def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) -> tuple[bool, str, dict[str, Any] | None]:
-    """Reject unsupported raw text, detail fields, or clause references."""
+    """Reject unsupported source text; clear unverified document locations."""
     raw = (slot.get("raw") or "").strip()
     if not raw:
         return False, "raw 비어 있음", None
@@ -226,7 +226,9 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
         source_label = _normalize_reference(str(source_chunk.get("clause_label") or ""))
         appears_in_source = re.search(r"(?m)^\s*" + re.escape(normalized_reference) + r"(?:[.)\s]|$)", source_chunk.get("text") or "")
         if normalized_reference != source_label and not appears_in_source:
-            return False, f"근거조항 '{reference}'가 실제 조항 라벨과 불일치", source_chunk
+            # A wrong location must not discard an otherwise grounded requirement.
+            # Statute citations remain in raw, not in the document's clause label.
+            slot["근거조항"] = None
 
     return True, "", source_chunk
 
@@ -271,9 +273,11 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
         if accepted or not requirements:
             truncated = len(full_body) > len(body)
             notes = ([f"검증 탈락 {len(rejected)}건: {rejected}"] if rejected else [])
+            if not requirements and last_notes:
+                notes.append(last_notes)
             if truncated:
                 notes.append("입력 길이 제한으로 선택된 원문 일부를 분석하지 못했습니다.")
-            return {"slots": accepted, "status": "partial" if rejected or truncated else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+            return {"slots": accepted, "status": "partial" if notes else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
 
         last_notes = f"전 슬롯 검증 탈락(시도 {attempt + 1}): {rejected}"
 

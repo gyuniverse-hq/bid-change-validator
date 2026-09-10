@@ -15,6 +15,7 @@ from .contracts import QualificationRequirement, RequirementOperator, Requiremen
 from .askability import unsafe_clause_reason
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
+_INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")
 
 
 def _op(word: str | None) -> RequirementOperator | None:
@@ -49,6 +50,15 @@ def adapt_legacy_slot(
     diagnostics: list[dict[str, Any]] = []
     requirements: list[QualificationRequirement] = []
     group_key = f"{key_prefix}-GROUP"
+
+    # Only a single explicit code can replace an industry/registration name.
+    # Multiple codes need their AND/OR relationship resolved before mapping.
+    industry_codes = {
+        code for group in _INDUSTRY_CODE_RE.findall(raw)
+        for code in re.findall(r"[0-9]{4}", group)
+    }
+    if slot_type in {"업종요건", "등록요건"} and len(industry_codes) > 1:
+        return [], [{"code": "UNMAPPED_INDUSTRY", "raw": raw, "reason": "복수 업종코드의 관계를 확인해야 합니다."}]
 
     def add(
         suffix: str,
@@ -148,7 +158,9 @@ def adapt_legacy_slot(
 
     elif slot_type == "업종요건":
         industry = (slot.get("업종_raw") or "").strip()
-        if industry:
+        if industry_codes:
+            add("INDUSTRY", "INDUSTRY", operator="MATCH", value=next(iter(industry_codes)), scope={"industry_name": industry} if industry else {})
+        elif industry:
             add("INDUSTRY", "INDUSTRY", operator="MATCH", value=industry)
         else:
             diagnostics.append({"code": "UNMAPPED_INDUSTRY", "raw": raw})
@@ -185,7 +197,9 @@ def adapt_legacy_slot(
             "면허요건": "LICENSE",
             "등록요건": "REGISTRATION",
         }[slot_type]
-        if name:
+        if slot_type == "등록요건" and industry_codes:
+            add("INDUSTRY", "INDUSTRY", operator="MATCH", value=next(iter(industry_codes)), scope={"kind": kind, "industry_name": name})
+        elif name:
             scope: dict[str, Any] = {"kind": kind}
             if issuer:
                 scope["issuer"] = issuer

@@ -8,12 +8,12 @@ judgment service. This module only retrieves source text for grounded answers.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from ..ai.providers.embeddings import OpenAIEmbedder
 from ..ai.qualification.extraction.chunking import chunk_source_blocks
 
 
@@ -24,11 +24,48 @@ DEFAULT_MAX_CHARS = 1800
 
 
 class EmbeddingsLike(Protocol):
-    """Small subset shared by LangChain embeddings and deterministic test doubles."""
+    """Small subset shared by production embeddings and deterministic test doubles."""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
 
     def embed_query(self, text: str) -> list[float]: ...
+
+
+class ExistingOpenAIEmbeddings:
+    """Adapt the project's OpenAI 3.x embedding provider to the RAG store contract.
+
+    We intentionally reuse ``app.ai.providers.embeddings.OpenAIEmbedder`` instead
+    of adding ``langchain-openai`` because the project already pins OpenAI SDK 3.x.
+    LangChain is used by the grounded prompt/orchestration layer while the shared
+    provider remains the single OpenAI embedding boundary.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.model = model or DEFAULT_EMBEDDING_MODEL
+        self._embedder = OpenAIEmbedder(api_key=api_key, model=self.model)
+
+    @property
+    def available(self) -> bool:
+        return self._embedder.available
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self._embedder(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embedder([text])[0]
+
+
+def create_openai_embeddings(
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> ExistingOpenAIEmbeddings:
+    return ExistingOpenAIEmbeddings(api_key=api_key, model=model)
 
 
 class DocumentChunkMetadata(BaseModel):
@@ -63,26 +100,6 @@ class DocumentChunkHit(BaseModel):
     text: str
     score: float
     metadata: DocumentChunkMetadata
-
-
-def create_openai_embeddings(
-    *,
-    api_key: str | None = None,
-    model: str | None = None,
-) -> EmbeddingsLike:
-    """Create the maintained LangChain OpenAI embedding integration lazily."""
-
-    try:
-        from langchain_openai import OpenAIEmbeddings
-    except ImportError as error:  # pragma: no cover - runtime dependency guard
-        raise RuntimeError(
-            "Document RAG requires the `langchain-openai` package"
-        ) from error
-
-    return OpenAIEmbeddings(
-        api_key=api_key or os.getenv("OPENAI_API_KEY"),
-        model=model or os.getenv("OPENAI_EMBED_MODEL") or DEFAULT_EMBEDDING_MODEL,
-    )
 
 
 def _int_values(source_blocks: list[dict[str, Any]], key: str) -> list[int]:

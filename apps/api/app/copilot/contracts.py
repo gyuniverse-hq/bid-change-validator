@@ -1,9 +1,9 @@
 """Product results preserve backend decisions and their provenance."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from ..ai.contracts import Evidence, Judgment, JudgmentStatus, QualificationRequirement, RequirementType
 from ..ask_back_schemas import QualificationQuestionRead
@@ -54,3 +54,62 @@ class JudgmentProfileResult(BaseModel):
     provenance: ProductProvenance
     profile_snapshot: dict[str, Any]
     profile_completeness: ProfileCompleteness
+
+
+class ActionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    satisfies_requirement: StrictBool
+    normalized_value: str | None = Field(default=None, max_length=2000)
+    evidence_held: StrictBool = False
+    apply_to_profile: Literal[False] = False
+
+
+class VersionState(BaseModel):
+    notice_version_id: UUID
+    version_number: int
+    analysis_run_id: UUID
+    analysis_status: Literal["SUCCEEDED", "PARTIAL"]
+    judgment_run_id: UUID | None
+
+
+class RevalidationProvenance(BaseModel):
+    case_id: UUID
+    notice_id: UUID
+    company_id: UUID
+    baseline: VersionState
+    current: VersionState
+    rule_version: str
+
+
+class AnswerProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_type: Literal["ANSWER_REQUIREMENT"] = "ANSWER_REQUIREMENT"
+    expected: ProductProvenance
+    requirement_key: str = Field(min_length=1, max_length=200)
+    user_input: ActionInput
+    title: str = "요건 답변 적용"
+    consequences: str = "선택한 요건의 사용자 답변으로 새 판정을 저장합니다. 회사 프로필은 변경하지 않습니다."
+
+
+class RevalidationProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_type: Literal["REVALIDATE"] = "REVALIDATE"
+    expected: RevalidationProvenance
+    title: str = "변경공고 재검증"
+    consequences: str = "기준 판정에서 변경된 요건을 재검증하여 현재 버전의 새 판정을 저장합니다."
+
+
+ActionProposal = Annotated[AnswerProposal | RevalidationProposal, Field(discriminator="action_type")]
+
+
+class ConfirmAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed: Literal[True]
+    action: ActionProposal
+
+    @field_validator("confirmed", mode="before")
+    @classmethod
+    def require_explicit_true(cls, value):
+        if value is not True:
+            raise ValueError("confirmed must be the boolean true")
+        return value

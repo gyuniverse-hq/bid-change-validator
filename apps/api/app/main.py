@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .copilot.router import router as copilot_router
 from .database import get_db
 from .errors import ApiError
 from .qualification.routers.analysis import router as qualification_analysis_router
@@ -76,3 +77,4 @@ app.include_router(qualification_judgment_router)
 app.include_router(qualification_ask_back_router)
 app.include_router(qualification_revalidation_router)
 app.include_router(qualification_matching_router)
+app.include_router(copilot_router)

@@ -1,6 +1,7 @@
 from datetime import date
 
 from apps.api.app.ai.contracts import QualificationRequirement
+from apps.api.app.ai.contracts import Judgment
 from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirements
 
 REFERENCE_DATE = date(2026, 9, 7)
@@ -176,3 +177,16 @@ def test_performance_amount_cannot_use_unrelated_field_or_future_work():
     future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
     profile = profile.model_copy(update={"performances": [future]})
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+
+
+def test_judgment_exposes_human_readable_reason() -> None:
+    judgment = Judgment(
+        judgment_key="JUDG:CASE:REQ",
+        preflight_case_id="CASE",
+        notice_version_id="VERSION",
+        requirement_key="REQ",
+        status="UNKNOWN",
+        basis_type="NONE",
+        reason_code="INSUFFICIENT_DATA",
+    )
+    assert judgment.reason == "판정에 필요한 회사 정보가 부족합니다."

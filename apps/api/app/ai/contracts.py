@@ -35,6 +35,14 @@ JudgmentValueSource = Literal["stored_profile", "askback", "none"]
 EvidenceStatus = Literal["none", "declared", "uploaded"]
 UnknownReason = Literal["profile_missing", "requirement_uncertain", "evidence_missing"]
 
+_REASON_MESSAGES: dict[ReasonCode, str] = {
+    "RULE_MATCH": "회사 프로필이 공고 조건을 충족합니다.",
+    "RULE_MISMATCH": "회사 프로필이 공고 조건을 충족하지 못합니다.",
+    "INSUFFICIENT_DATA": "판정에 필요한 회사 정보가 부족합니다.",
+    "NEEDS_REVIEW": "조건이 복합적이거나 근거가 불명확하여 직접 확인이 필요합니다.",
+    "UNSUPPORTED_REQUIREMENT": "현재 자동 판정을 지원하지 않는 조건입니다.",
+}
+
 
 class EvidenceLocation(BaseModel):
     # Backend extracted_blocks are the source-of-truth locator. The range fields
@@ -115,6 +123,7 @@ class Judgment(BaseModel):
     evidence_status: EvidenceStatus | None = None
     reason_code: ReasonCode
     unknown_reason: UnknownReason | None = None
+    reason: str | None = None
     requires_evidence: bool = False
     profile_refs: list[dict[str, str]] = Field(default_factory=list)
     requirement_evidence_keys: list[str] = Field(default_factory=list)
@@ -138,4 +147,6 @@ class Judgment(BaseModel):
             )
         if self.status != "UNKNOWN" and self.unknown_reason is not None:
             raise ValueError("unknown_reason is only valid for UNKNOWN judgments")
+        if self.reason is None:
+            self.reason = _REASON_MESSAGES[self.reason_code]
         return self

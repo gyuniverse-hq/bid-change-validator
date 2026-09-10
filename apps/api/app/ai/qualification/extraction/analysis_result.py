@@ -18,6 +18,12 @@ from ...contracts import Evidence, QualificationRequirement
 AnalysisStatus = Literal["SUCCEEDED", "PARTIAL", "FAILED"]
 AnalysisKind = Literal["QUALIFICATION_REQUIREMENTS"]
 DiagnosticSeverity = Literal["INFO", "WARNING", "ERROR"]
+DroppedReasonCode = Literal[
+    "MISSING_RAW",
+    "RAW_NOT_FOUND_IN_SOURCE",
+    "DETAIL_NOT_FOUND_IN_SOURCE",
+    "SOURCE_VALIDATION_FAILED",
+]
 
 
 class AnalysisDiagnostic(BaseModel):
@@ -25,6 +31,13 @@ class AnalysisDiagnostic(BaseModel):
     severity: DiagnosticSeverity = "WARNING"
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class DroppedRequirement(BaseModel):
+    """Source-validation-rejected candidate exposed for operator review."""
+
+    raw: str
+    reason_code: DroppedReasonCode
 
 
 class RequirementAnalysisResult(BaseModel):
@@ -40,6 +53,7 @@ class RequirementAnalysisResult(BaseModel):
     requirements: list[QualificationRequirement] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)
+    dropped_requirements: list[DroppedRequirement] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_internal_links(self) -> "RequirementAnalysisResult":
@@ -114,6 +128,7 @@ def build_requirement_analysis_result(
     canonicalized: dict[str, Any],
     extraction_status: str = "ok",
     extraction_notes: str = "",
+    extraction_dropped_requirements: list[dict[str, str]] | None = None,
     target_chunk_ids: list[str] | None = None,
 ) -> RequirementAnalysisResult:
     """Build the stable Backend-facing payload from current pipeline outputs."""
@@ -166,4 +181,5 @@ def build_requirement_analysis_result(
         requirements=requirements,
         evidence=evidence,
         diagnostics=diagnostics,
+        dropped_requirements=list(extraction_dropped_requirements or []),
     )

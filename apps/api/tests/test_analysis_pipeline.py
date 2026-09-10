@@ -251,6 +251,8 @@ def test_rejected_slot_preserves_partial_analysis_status():
     assert result.status == "PARTIAL"
     assert result.requirements
     assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
+    assert result.dropped_requirements[0].raw == "원문에 없는 부산 소재 업체"
+    assert result.dropped_requirements[0].reason_code == "RAW_NOT_FOUND_IN_SOURCE"
 
 
 def test_composite_registration_cannot_be_canonicalized_into_simple_fact():
@@ -297,7 +299,8 @@ def test_pipeline_does_not_report_empty_retry_as_success():
     result = analyze_qualification_documents(_input(), structured_extract=lambda *args: next(answers))
     assert result.status == "FAILED"
     assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
-    assert "원문에 없는 부산" in result.diagnostics[0].details["notes"]
+    assert result.dropped_requirements[0].raw == "원문에 없는 부산 소재 업체"
+    assert result.dropped_requirements[0].reason_code == "RAW_NOT_FOUND_IN_SOURCE"
 
 
 def test_extracted_industry_code_reaches_existing_deterministic_judge():

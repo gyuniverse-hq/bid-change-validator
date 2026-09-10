@@ -207,10 +207,9 @@
 {
   "risk_type": "LATE_PENALTY_RATE",   // 9종. 목록 밖이면 null
   "category": "지체상금 요율",         // 단일 결과의 화면 표시용 분류명
-  "risk_types": [                      // 같은 원문 조항에 겹친 모든 유형
-    "LATE_PENALTY", "LATE_PENALTY_RATE"
+  "categories": [                     // JSONB. 원인이 하나여도 길이 1
+    "지체상금 요율", "지체상금 상한"
   ],
-  "categories": ["지체상금 상한", "지체상금 요율"],
   "label": "지체상금 요율 과다",
   "rule_id": "penalty_rate",
   "verdict": "NEEDS_REVIEW",          // NEEDS_REVIEW|COMPLIANT|UNDETERMINED
@@ -226,6 +225,14 @@
   "drift": null                       // 예규 개정 감지 시 {recorded, extracted}
 }
 ```
+
+`category` 대표값은 같은 원문 조항에 걸린 결과 중 다음 순서로 정한다.
+
+1. 판정 조치 필요도: `NEEDS_REVIEW` → `UNDETERMINED` → `COMPLIANT`
+2. 같은 판정이면 §4.2의 확정 위험유형 9종 순서
+
+따라서 탐지기 실행 순서가 바뀌어도 대표 분류는 변하지 않으며, 정상 판정이 확인 필요
+판정보다 먼저 그룹 대표가 되는 일도 없다. `categories[0]`은 항상 `category`와 같다.
 
 ### 3.4 나머지 엔드포인트
 

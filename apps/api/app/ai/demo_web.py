@@ -96,13 +96,12 @@ def _finding_json(
     risk_types, categories = overlapping_categories(finding, findings or [finding])
     standard = finding.standard
     return {
-        "risk_type": finding.risk_type_code,
+        "risk_type": risk_types[0] if risk_types else None,
         "category": categories[0] if categories else None,
-        # A clause can carry more than one risk. Keep the scalar fields above for
-        # existing consumers and expose the complete, lossless classification too.
-        "risk_types": risk_types,
+        # `category` remains the stable grouping value; JSONB `categories` keeps
+        # every cause, including the one-element case.
         "categories": categories,
-        "label": finding.risk_type,
+        "label": finding.label,
         "rule_id": finding.rule_id,
         "verdict": finding.verdict,
         "verdict_label": finding.verdict_label,

@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from .analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
 from .clause_review.contracts import VERDICT_LABELS as CLAUSE_VERDICT_LABELS
-from .clause_review.contracts import ClauseFinding
+from .clause_review.contracts import ClauseFinding, apply_overlapping_categories
 from .contracts import Evidence, Judgment, QualificationRequirement
 from .notice_digest import NoticeDigest
 from .summary import Narrator, NoticeSummary, narrate_report
@@ -216,7 +216,7 @@ def build_briefing(
         overall_label=OVERALL_LABELS.get(overall_status or "", overall_status),
         judgments=briefs,
         notice_facts=facts,
-        clause_findings=list(clause_findings or []),
+        clause_findings=apply_overlapping_categories(list(clause_findings or [])),
         digest=digest,
     )
 
@@ -304,7 +304,7 @@ def render_briefing_text(briefing: NoticeBriefing) -> str:
         for finding in flagged:
             label = f"{finding.clause_label}항 " if finding.clause_label else ""
             lines.append(
-                f"  · {label}{finding.risk_type}"
+                f"  · {label}{finding.label}"
                 f"({CLAUSE_VERDICT_LABELS[finding.verdict]}): {finding.reason}"
             )
             if finding.matched_text:

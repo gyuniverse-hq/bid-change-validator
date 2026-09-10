@@ -28,7 +28,14 @@ from typing import Any
 
 from ..normalization import extract_values
 from ..providers.embeddings import Embedder, similarity_matrix
-from .contracts import VERDICT_PRIORITY, ClauseFinding, ClauseVerdict, StandardReference, excerpt
+from .contracts import (
+    RISK_TYPE_BY_RULE,
+    VERDICT_PRIORITY,
+    ClauseFinding,
+    ClauseVerdict,
+    StandardReference,
+    excerpt,
+)
 from .lexicon import (
     AUTHORITY_RE,
     BEAR_VERB_RE,
@@ -320,7 +327,8 @@ def _finding(
 ) -> ClauseFinding:
     return ClauseFinding(
         rule_id=rule["id"],
-        risk_type=rule["name"],
+        risk_type=RISK_TYPE_BY_RULE.get(rule["id"]),
+        label=rule["name"],
         detection_method="STANDARD_DIFF",
         matched_via=matched_via,  # type: ignore[arg-type]
         verdict=verdict,

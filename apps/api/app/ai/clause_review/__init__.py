@@ -24,6 +24,7 @@ from .contracts import (
     ClauseVerdict,
     RiskType,
     StandardReference,
+    apply_overlapping_categories,
     overlapping_categories,
 )
 from .embedding_fallback import make_embedding_fallback
@@ -42,6 +43,7 @@ __all__ = [
     "RISK_TYPE_BY_RULE",
     "RISK_TYPE_LABELS",
     "StandardReference",
+    "apply_overlapping_categories",
     "overlapping_categories",
     "VERDICT_LABELS",
     "VERDICT_PRIORITY",

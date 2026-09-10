@@ -70,6 +70,17 @@ RISK_TYPE_LABELS: dict[RiskType, str] = {
     "LIABILITY_SCOPE": "손해배상",
 }
 
+# Stable tie-breaker for a source clause with several causes. This is the team's
+# agreed nine-type order, not the detector's execution order.
+RISK_TYPE_PRIORITY: dict[RiskType, int] = {
+    risk_type: index for index, risk_type in enumerate(RISK_TYPE_LABELS)
+}
+CATEGORY_VERDICT_PRIORITY: dict[ClauseVerdict, int] = {
+    "NEEDS_REVIEW": 0,
+    "UNDETERMINED": 1,
+    "COMPLIANT": 2,
+}
+
 MatchedVia = Literal[
     "REGEX",  # found by the lexicon patterns, no model involved
     "EMBEDDING_LLM",  # found by embedding search with model-quoted source text
@@ -112,7 +123,10 @@ class ClauseFinding(BaseModel):
     """One reviewed clause: what was found, where, and what it was measured against."""
 
     rule_id: str
-    risk_type: str
+    risk_type: RiskType | None
+    category: str | None = None
+    categories: list[str] = Field(default_factory=list)
+    label: str
     detection_method: DetectionMethod
     matched_via: MatchedVia = "REGEX"
     verdict: ClauseVerdict
@@ -173,14 +187,50 @@ def overlapping_categories(
         # evidence available.  Never merge location-less synthetic findings.
         return bool(finding.chunk_id and finding.chunk_id == other.chunk_id)
 
-    # The scalar `risk_type`/`category` pair must describe this finding, so keep
-    # its code first even when callers pass the full result list in another order.
+    source_items = [item for item in findings if same_source(item)]
+    candidates = [item for item in source_items if item.risk_type_code]
+    candidates.sort(
+        key=lambda item: (
+            CATEGORY_VERDICT_PRIORITY[item.verdict],
+            RISK_TYPE_PRIORITY[item.risk_type_code],  # type: ignore[index]
+        )
+    )
     risk_types: list[RiskType] = []
-    for item in [finding, *(item for item in findings if item is not finding)]:
+    for item in candidates:
         code = item.risk_type_code
-        if code is not None and same_source(item) and code not in risk_types:
+        if code is not None and code not in risk_types:
             risk_types.append(code)
-    return risk_types, [RISK_TYPE_LABELS[code] for code in risk_types]
+    if not risk_types:
+        # Internal checks outside the agreed nine types are still auditable. They
+        # keep risk_type=NULL but must satisfy the non-empty categories contract.
+        labels = list(dict.fromkeys(item.label for item in source_items))
+        return [], labels or [finding.label]
+    labels = [RISK_TYPE_LABELS[code] for code in risk_types]
+    labels.extend(
+        item.label
+        for item in source_items
+        if item.risk_type_code is None and item.label not in labels
+    )
+    return risk_types, labels
+
+
+def apply_overlapping_categories(
+    findings: list[ClauseFinding],
+) -> list[ClauseFinding]:
+    """Attach the persistence/UI classification contract to every finding."""
+    classified: list[ClauseFinding] = []
+    for finding in findings:
+        risk_types, categories = overlapping_categories(finding, findings)
+        classified.append(
+            finding.model_copy(
+                update={
+                    "risk_type": risk_types[0] if risk_types else None,
+                    "category": categories[0] if categories else None,
+                    "categories": categories,
+                }
+            )
+        )
+    return classified
 
 
 def excerpt(text: str | None, limit: int = 200) -> str | None:

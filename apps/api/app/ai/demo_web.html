@@ -462,10 +462,10 @@ function renderNotice(d){
 
 function findingHtml(f){
   const std=f.standard||{};
-  const codes=f.risk_types?.length?f.risk_types:(f.risk_type?[f.risk_type]:[]);
   const names=f.categories?.length?f.categories:(f.category?[f.category]:[]);
-  const categoryHtml=codes.length?`<div class="risk-cats">${codes.map((code,i)=>
-    `<span class="risk-cat" title="${esc(code)}">${esc(names[i]||code)}</span>`).join("")}</div>`:"";
+  const categoryHtml=names.length?`<div class="risk-cats">${names.map((name,i)=>
+    `<span class="risk-cat">${esc(name)}</span>`).join("")}`+
+    (names.length>1?`<span class="status">${names.length}종에 걸림</span>`:"")+"</div>":"";
   const out=[`<div class="item ${f.verdict}">`,
     `<h3><span class="code">${esc(f.risk_type||"—")}</span><span>${esc(f.label)}</span>`,
     `<span class="badge">${esc(f.verdict_label)}</span></h3>`,

@@ -101,6 +101,27 @@ CI는 DB가 있으니 동작이 같고, 로컬에서 AI 계층 테스트가 3초
 
 우선순위: 중간. 기능은 동작하나 사용자에게 도달하지 못합니다.
 
+**2026-09-10 갱신 — 저장 페이로드 확정.** 탐지기는 이제 아래 값을 직접 냅니다.
+
+```json
+{
+  "risk_type": "LATE_PENALTY_RATE",
+  "category": "지체상금 요율",
+  "categories": ["지체상금 요율", "지체상금 상한"]
+}
+```
+
+- `risk_type`: 대표 분류 코드
+- `category`: 기존 프론트 그룹핑/DB 컬럼에 넣을 대표 한글 라벨
+- `categories`: 새 JSONB 컬럼에 그대로 넣을 전체 한글 라벨 배열. 단일 원인도 길이 1
+- 대표 선정: `NEEDS_REVIEW → UNDETERMINED → COMPLIANT`, 동률이면 확정 9종 순서
+- 불변식: `categories`는 비어 있지 않고 `categories[0] == category`
+
+현재 브랜치에는 `category` 기존 컬럼을 가진 위험조항 테이블이 아직 없습니다. 해당 DB
+브랜치가 병합되면 `categories jsonb`를 추가하고 기존 행은
+`jsonb_build_array(category)`로 백필한 뒤 `NOT NULL`과 배열/비어 있지 않음 CHECK를
+거는 순서가 안전합니다. 새 테이블을 이 브랜치에서 중복 생성하지 않습니다.
+
 ---
 
 ## A-6. 확장항목(`extensions.py`)을 판정기에 연결 — LLM/RAG 내부 + 계약

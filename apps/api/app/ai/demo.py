@@ -190,7 +190,7 @@ def _chunks_from(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ── rendering ────────────────────────────────────────────────────────────
 def _print_finding(finding: ClauseFinding) -> None:
     code = finding.risk_type_code or "(값 없음)"
-    _out(f"  [{code}]  {finding.risk_type}")
+    _out(f"  [{code}]  {finding.label}")
     _out(f"      사유     {_clip(finding.reason, 66)}")
 
     if finding.notice_value is not None and finding.standard:

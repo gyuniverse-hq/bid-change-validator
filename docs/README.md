@@ -30,43 +30,84 @@
 ## 먼저 읽을 문서
 
 1. [프로젝트 README](../README.md)
-2. [AI / RAG 문서 안내](03_ai/README.md)
-3. [Product Integration Baseline Snapshot](mvp-baseline/README.md)
-4. [Backend ↔ LLM/RAG 계약](contracts/backend-llm.md)
-5. [Frontend ↔ Backend 계약](contracts/frontend-backend.md)
-6. [초기 병렬 개발 가이드](parallel-development.md)
+2. [Product 기준선](01_product/README.md)
+3. [Architecture 기준선](02_architecture/README.md)
+4. [AI / RAG 문서 안내](03_ai/README.md)
+5. [Backend / API 기준선](04_contracts/backend-api.md)
+6. [Data / DB 기준선](04_contracts/data-and-db.md)
+7. [Frontend / UI·UX 기준선](05_ui_ux/README.md)
+8. [현재 Ownership / Handoff](07_handoff/current-ownership.md)
+9. [Local Run / Operations Runbook](07_handoff/runbook.md)
+10. [QA / E2E 기준](08_qa_reports/README.md)
+11. [Post-Baseline Roadmap](09_roadmap/README.md)
+12. [Product Integration Baseline Snapshot](mvp-baseline/README.md)
 
 ## 현재 폴더 안내
 
 | 경로 | 상태 | 역할 |
 | --- | --- | --- |
+| `01_product/` | Current | 제품 목표, 사용자 흐름, 화면 기준 |
+| `02_architecture/` | Current | 전체 시스템 구조, 레이어, 의존 방향 |
 | `03_ai/` | Current + Proposed | AI Core, Copilot, 병렬 경계, Contract |
-| `contracts/` | Current/Legacy 혼재 | 파트 간 API·데이터 계약 |
+| `04_contracts/` | Current | Backend/API, Data/DB 및 파트 간 계약 |
+| `05_ui_ux/` | Current | Frontend Route, Figma, UI 상태 기준 |
+| `06_decisions/` | Current Guide | Notion Decision → ADR 승격 기준 |
+| `07_handoff/` | Current + Proposed | Ownership, 인수인계, 로컬 실행/운영 |
+| `08_qa_reports/` | Current + Proposed | Unit/Integration/E2E/Golden/Evaluation 기준 |
+| `09_roadmap/` | Proposed | Baseline 이후 고도화 방향 |
 | `mvp-baseline/` | **Baseline Snapshot** | Product Integration Baseline 설계·Audit·Golden·Handoff 기록 |
+| `contracts/` | Legacy/Current 혼재 | 초기 파트 간 계약 문서. 점진적으로 `04_contracts/`와 정합성 검토 |
 | `parallel-development.md` | Historical | 초기 분리 Repository 기반 병렬 개발 운영 기록 |
 
-## 목표 문서 체계
-
-현재 문서를 한 번에 대규모 이동하지 않습니다. 기존 링크와 이력을 보존하면서 필요할 때 아래 목적별 구조로 점진적으로 승격합니다.
+## 현재 문서 체계
 
 ```text
 docs/
 ├─ README.md
 ├─ 01_product/
+│  └─ README.md
 ├─ 02_architecture/
+│  └─ README.md
 ├─ 03_ai/
+│  ├─ README.md
+│  ├─ parallel-boundary.md
+│  └─ core-copilot-contract.md
 ├─ 04_contracts/
+│  ├─ backend-api.md
+│  └─ data-and-db.md
 ├─ 05_ui_ux/
+│  └─ README.md
 ├─ 06_decisions/
+│  └─ README.md
 ├─ 07_handoff/
+│  ├─ current-ownership.md
+│  └─ runbook.md
 ├─ 08_qa_reports/
+│  └─ README.md
 ├─ 09_roadmap/
-├─ troubleshooting/
-├─ assets/
-└─ mvp-baseline/          # 기존 Snapshot 보존
+│  └─ README.md
+├─ mvp-baseline/          # 기존 Snapshot 보존
+├─ contracts/             # 초기 계약 문서 보존
+└─ parallel-development.md
 ```
 
-아직 생성되지 않은 폴더는 **목표 구조**이며, 문서가 실제로 승격될 때 생성합니다.
+`troubleshooting/`, `assets/` 등은 실제 문서가 생길 때 추가합니다. 빈 폴더를 미리 만들기보다 현재 코드와 연결되는 문서부터 유지합니다.
+
+## 파트별 문서 사용법
+
+각 담당자는 기능을 고도화할 때 해당 영역 문서를 먼저 보고 아래 항목을 갱신합니다.
+
+```text
+Current Baseline
+→ Entry Point / Contract
+→ Known Gaps
+→ 구현/실험
+→ Test / Evaluation
+→ Decision 필요 여부
+→ 문서 Current 상태 갱신
+```
+
+즉 문서 작성은 프로젝트 마지막 작업이 아니라 개발 루프의 일부로 사용합니다.
 
 ## Product Integration Baseline 이후
 
@@ -79,6 +120,7 @@ PR #74에서 판정·Evidence·Case 일관성 안전성 보강을 수행했고, 
 - 실제 Extraction 품질 평가 및 Golden Set 확장
 - meaningful 변경공고 시나리오 확보 및 Revalidation 검증
 - 01~07 Human Click E2E 및 UI/접근성 검증
+- Backend/API·DB·Frontend·Infra의 현재 문서를 실제 고도화 결과와 함께 지속 갱신
 
 ## 문서 갱신 규칙
 
@@ -87,3 +129,4 @@ PR #74에서 판정·Evidence·Case 일관성 안전성 보강을 수행했고, 
 - `mvp-baseline/`은 당시 통합 기준선의 Snapshot으로 보존하며 후속 상태를 소급해 다시 쓰지 않습니다.
 - README는 상세 구현을 복제하지 않고 현재 상태와 탐색 경로를 제공합니다.
 - 문서 하나는 가능한 한 하나의 책임만 갖게 유지합니다.
+- 실제 Task 일정/담당/Status를 docs에 중복 관리하지 않고 GitHub Projects/Issue를 사용합니다.

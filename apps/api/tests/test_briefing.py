@@ -162,7 +162,8 @@ def test_counts_and_flagged_clauses_are_derived_not_stored() -> None:
         clause_findings=[
             ClauseFinding(
                 rule_id="warranty_period",
-                risk_type="WARRANTY_PERIOD",
+                risk_type="하자보수 기간 과다",
+                category="WARRANTY_PERIOD",
                 label="하자보수 기간 과다",
                 detection_method="STANDARD_DIFF",
                 verdict="NEEDS_REVIEW",
@@ -171,7 +172,8 @@ def test_counts_and_flagged_clauses_are_derived_not_stored() -> None:
             ),
             ClauseFinding(
                 rule_id="penalty_cap",
-                risk_type="LATE_PENALTY",
+                risk_type="지체상금 상한",
+                category="LATE_PENALTY",
                 label="지체상금 상한",
                 detection_method="STANDARD_DIFF",
                 verdict="COMPLIANT",
@@ -199,7 +201,8 @@ def test_a_flagged_clause_is_rendered_with_the_standard_it_was_measured_against(
         clause_findings=[
             ClauseFinding(
                 rule_id="warranty_period",
-                risk_type="WARRANTY_PERIOD",
+                risk_type="하자보수 기간 과다",
+                category="WARRANTY_PERIOD",
                 label="하자보수 기간 과다",
                 detection_method="STANDARD_DIFF",
                 verdict="NEEDS_REVIEW",

@@ -28,7 +28,7 @@
 
 ## 2026-09-10 — `risk_types` 복구 및 구조화 탈락 원문 전달
 
-- 위험조항 저장/API 계약에 대표 코드 `risk_type`과 함께 전체 코드 배열 `risk_types`를 복구했습니다. 단일 원인도 원소 1개짜리 배열이며 `risk_types[0] == risk_type`입니다.
+- 당시 위험조항 저장/API 계약을 `risk_type=코드`로 잘못 적용했습니다. 이 기록은 아래 2026-09-11 필드 의미 정정으로 대체됩니다.
 - 추출 검증에서 탈락한 후보를 30자로 잘라 `notes`에 넣던 로직을 제거했습니다. `RequirementAnalysisResult.dropped_requirements`에 `{raw, reason_code}`로 원문 전체를 보존합니다.
 - 탈락 사유를 `MISSING_RAW`, `RAW_NOT_FOUND_IN_SOURCE`, `DETAIL_NOT_FOUND_IN_SOURCE`, `SOURCE_VALIDATION_FAILED` 코드로 고정했습니다.
 - `qualification_analysis_runs.dropped_requirements` JSONB 컬럼 마이그레이션, ORM 저장·조회, API 스키마, 프론트 타입과 참가자격 화면 표시까지 연결했습니다.
@@ -41,8 +41,8 @@
 
 ## 2026-09-10 — 위험조항 9종 분류의 중첩 전달
 
-- 기존 개별 검출 결과의 단일 `risk_type`은 이미 있었지만, 한 원문 조항에 여러 룰이 동시에 걸릴 때 전체 분류를 전달하는 필드는 없음을 확인했습니다.
-- 기존 호환 필드 `risk_type`과 표시명 `category`를 유지하고, 같은 원문에 겹친 모든 값을 `risk_types`와 `categories` 배열로 API 응답에 추가했습니다.
+- 한 원문 조항에 여러 룰이 동시에 걸릴 때 전체 분류를 전달하는 복수 필드가 없음을 확인했습니다.
+- 당시 필드 의미를 반대로 적용했으며, 아래 2026-09-11 정정 작업에서 `risk_type=한글 라벨`, `category=오류 코드`로 바로잡았습니다.
 - 중첩 판정은 같은 공고 버전·청크·조항에서 원문 발췌가 동일하거나 서로 포함되는 경우에만 묶습니다. 같은 청크에 있을 뿐 원문 문장이 다른 결과는 합치지 않습니다.
 - `/api/review-text`와 `/api/notice` 모두 응답 최상위에 검출된 `risk_types` 목록을 포함하고, 각 finding에는 해당 원문에 겹친 분류 목록을 포함합니다.
 - 데모 프론트는 각 finding의 `categories`를 분류 칩으로 모두 표시합니다. 지체상금 한 문장에 상한·요율이 함께 있으면 두 칩이 표시됩니다.
@@ -50,11 +50,11 @@
 
 ### 팀 설계 변경 반영
 
-- 저장 계약을 `risk_type`(대표 코드), `category`(대표 한글 라벨), `categories`(전체 한글 라벨 JSON 배열)로 정리하고 finding의 중복 `risk_types` 배열은 제거했습니다.
-- 원인이 하나뿐이어도 `categories`는 반드시 원소 1개짜리 배열이며, `categories[0] == category` 불변식을 지킵니다.
+- 이 시점의 저장 계약 정리는 필드 의미를 반대로 이해한 기록입니다. 최종 계약은 아래 2026-09-11 정정을 따릅니다.
+- 원인이 하나뿐이어도 복수 배열은 원소 1개이며, 각 배열의 첫 원소가 대응 단수 대표값과 같습니다.
 - 대표값은 `NEEDS_REVIEW → UNDETERMINED → COMPLIANT` 순으로 먼저 고르고, 동률이면 팀 확정 9종 순서를 적용합니다. 탐지 순서에 의존하지 않습니다.
 - 데모 상세 화면은 `categories` 전부를 표시하고 복수이면 `N종에 걸림`을 함께 보여줍니다.
-- `ClauseFinding` 자체도 `risk_type` 코드, `category`, `categories`, 별도 `label`을 갖도록 바꿔 데모 전용 직렬화가 아닌 브리핑 백엔드 응답에서도 같은 계약이 유지됩니다.
+- `ClauseFinding`의 최초 복수 필드 구현은 방향이 뒤집혀 있었고, 아래 정정 작업에서 바로잡았습니다.
 - 원격을 갱신해 확인했으나 현재 브랜치와 `origin/develop` 어디에도 팀원이 언급한 기존 `category` DB 컬럼/위험조항 저장 테이블은 아직 없습니다. 중복 마이그레이션은 만들지 않고 `02-integration-requests.md`에 안전한 JSONB 추가·백필 순서를 남겼습니다.
 - 검증: DB 의존 테스트를 제외한 API 테스트 183건이 통과했습니다.
 
@@ -159,9 +159,9 @@
 
 ### 위험조항 목록 및 실제 구조화 샘플 팀 공유
 
-- `apps/api/app/ai/clause_review/contracts.py`의 `RiskType`과 `RISK_TYPE_BY_RULE`을 다시 대조해 최종 공유 위험유형이 9종임을 확인했습니다.
+- 당시 `RiskType`과 `RISK_TYPE_BY_RULE`로 불리던 9종 코드 목록을 확인했습니다. 최종 정정 후 명칭은 `CategoryCode`와 `CATEGORY_BY_RULE`입니다.
 - 기존 8종에서 지체상금 상한(`LATE_PENALTY`)과 일별 요율(`LATE_PENALTY_RATE`)을 서로 다른 근거로 판정하기 위해 분리한 것이 9종이 된 이유입니다.
-- 내부 검사 `warranty_bond_rate`는 합의 유형에 매핑되지 않아 `risk_type=null`이며 9종 목록에는 포함하지 않습니다.
+- 내부 검사 `warranty_bond_rate`는 개별 한글 `risk_type`을 유지하고 `category=WARRANTY_PERIOD`로 그룹핑합니다.
 - 캐시된 실제 공사 공고 `R26BK01716363`의 `LATE_PENALTY_RATE` 구조화 결과를 재생성했습니다. 공고 `1/1,000` → `0.1%`, 시행규칙 기준 `1천분의 0.5` → `0.05%`, 판정 `NEEDS_REVIEW`를 확인했습니다.
 - 팀 전달 문서: `docs/llm-rag/06-risk-types-and-structured-sample.md`
 
@@ -199,7 +199,16 @@
 - 백엔드 OpenAPI에서 `dropped_requirements`, 브리핑, 공고 요약, 챗봇, 사업계획서 초안 엔드포인트 및 `risk_type/risk_types/category/categories` 응답 스키마가 노출되는 것을 확인했습니다.
 - 제품 프론트 `apps/web`에는 새 응답 타입과 호출·표시 로직이 아직 연결되지 않아, 기존 화면은 빌드되지만 신규 LLM/RAG 기능은 제품 화면에서 보이지 않습니다.
 - 프론트 lint는 이번 변경과 무관한 기존 접근성·React compiler·타입 규칙 오류가 남아 있어 통과하지 않습니다.
-- `develop`의 011 DB 마이그레이션은 런타임 계약과 달리 `category=코드`, `risk_type=표시문구`이고 `risk_types/categories` JSONB 컬럼이 없습니다. 합의 계약(`risk_type=대표 코드`, `category=대표 한글`, 복수 배열 JSONB)에 맞추려면 후속 마이그레이션과 저장 계층 연결이 필요합니다.
+- `develop`의 011 DB 마이그레이션에 있는 `category=코드`, `risk_type=표시문구`가 올바른 계약입니다. 런타임과 문서를 반대로 구현·기록한 오류를 확인했으며 복수 JSONB 컬럼만 후속 추가가 필요합니다.
+
+### 위험조항 필드 의미 최종 정정
+
+- 팀 기준을 `risk_type=대표 한글 라벨`, `risk_types=전체 한글 라벨`, `category=대표 오류 코드`, `categories=전체 오류 코드 JSONB`로 고정했습니다.
+- 탐지기 생성 모델, 겹침 분류, 브리핑 응답, 데모 API와 화면, 테스트 및 연동 문서를 같은 의미로 수정했습니다.
+- `CATEGORY_BY_RULE`, `CATEGORY_LABELS`, `CategoryCode`로 내부 명칭도 변경해 코드값을 `risk_type`으로 오인하지 않도록 했습니다.
+- 마이그레이션 014에서 복수 JSONB 컬럼을 기존 단수값으로 백필하고 배열·비어 있지 않음·대표값 일치·9종 코드 제약을 추가했습니다.
+- 위험조항·브리핑·분석 통합 회귀 테스트 `128 passed`와 Alembic 단일 헤드/오프라인 upgrade SQL 생성을 확인했습니다.
+- 실제 데모 `POST /api/review-text` 응답에서도 `risk_type`은 한글 라벨, `category`는 오류 코드이고 각 복수 배열의 첫 원소가 대표값과 일치하는 것을 확인했습니다.
 
 ### PR #104 품질평가 상태 회귀 수정
 

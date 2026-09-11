@@ -205,13 +205,13 @@
 
 ```jsonc
 {
-  "risk_type": "LATE_PENALTY_RATE",   // 9종. 목록 밖이면 null
-  "risk_types": [                     // 같은 원문에 걸린 전체 코드. 단일 원인도 길이 1
-    "LATE_PENALTY_RATE", "LATE_PENALTY"
+  "risk_type": "지체상금 요율 과다",   // 대표 한글 라벨
+  "risk_types": [                     // 같은 원문에 걸린 전체 한글 라벨
+    "지체상금 요율 과다", "지체상금 상한 초과"
   ],
-  "category": "지체상금 요율",         // 단일 결과의 화면 표시용 분류명
-  "categories": [                     // JSONB. 원인이 하나여도 길이 1
-    "지체상금 요율", "지체상금 상한"
+  "category": "LATE_PENALTY_RATE",    // 대표 오류 코드
+  "categories": [                     // 전체 오류 코드 JSONB. 단일 원인도 길이 1
+    "LATE_PENALTY_RATE", "LATE_PENALTY"
   ],
   "label": "지체상금 요율 과다",
   "rule_id": "penalty_rate",
@@ -229,7 +229,8 @@
 }
 ```
 
-`category` 대표값은 같은 원문 조항에 걸린 결과 중 다음 순서로 정한다.
+대표 `category`와 이에 대응하는 `risk_type`은 같은 원문 조항에 걸린 결과 중 다음
+순서로 정한다.
 
 1. 판정 조치 필요도: `NEEDS_REVIEW` → `UNDETERMINED` → `COMPLIANT`
 2. 같은 판정이면 §4.2의 확정 위험유형 9종 순서

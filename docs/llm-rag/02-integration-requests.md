@@ -105,22 +105,24 @@ CI는 DB가 있으니 동작이 같고, 로컬에서 AI 계층 테스트가 3초
 
 ```json
 {
-  "risk_type": "LATE_PENALTY_RATE",
-  "category": "지체상금 요율",
-  "categories": ["지체상금 요율", "지체상금 상한"]
+  "risk_type": "지체상금 요율 과다",
+  "risk_types": ["지체상금 요율 과다", "지체상금 상한 초과"],
+  "category": "LATE_PENALTY_RATE",
+  "categories": ["LATE_PENALTY_RATE", "LATE_PENALTY"]
 }
 ```
 
-- `risk_type`: 대표 분류 코드
-- `category`: 기존 프론트 그룹핑/DB 컬럼에 넣을 대표 한글 라벨
-- `categories`: 새 JSONB 컬럼에 그대로 넣을 전체 한글 라벨 배열. 단일 원인도 길이 1
+- `risk_type`: 대표 한글 라벨
+- `risk_types`: 전체 한글 라벨 배열. 단일 원인도 길이 1
+- `category`: 기존 프론트 그룹핑/DB 컬럼에 넣을 대표 오류 코드
+- `categories`: 새 JSONB 컬럼에 그대로 넣을 전체 오류 코드 배열. 단일 원인도 길이 1
 - 대표 선정: `NEEDS_REVIEW → UNDETERMINED → COMPLIANT`, 동률이면 확정 9종 순서
-- 불변식: `categories`는 비어 있지 않고 `categories[0] == category`
+- 불변식: 두 배열은 비어 있지 않고 `categories[0] == category`,
+  `risk_types[0] == risk_type`
 
-현재 브랜치에는 `category` 기존 컬럼을 가진 위험조항 테이블이 아직 없습니다. 해당 DB
-브랜치가 병합되면 `categories jsonb`를 추가하고 기존 행은
-`jsonb_build_array(category)`로 백필한 뒤 `NOT NULL`과 배열/비어 있지 않음 CHECK를
-거는 순서가 안전합니다. 새 테이블을 이 브랜치에서 중복 생성하지 않습니다.
+현재 통합 브랜치에는 위험조항 테이블과 `category`, `risk_type` 단수 컬럼이 있습니다.
+마이그레이션 014가 `categories`, `risk_types` JSONB를 추가하고 기존 단수값으로 백필한
+뒤 `NOT NULL`, 배열, 대표값 일치 제약을 적용합니다.
 
 ---
 

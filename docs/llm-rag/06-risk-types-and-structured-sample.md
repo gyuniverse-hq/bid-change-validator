@@ -21,8 +21,8 @@
 일별 요율은 국가계약법 시행규칙 제75조의 계약 종류별 요율과 비교하므로 근거와 판정이
 독립적입니다.
 
-참고로 내부 검사 `warranty_bond_rate`는 아직 팀 합의 위험유형에 매핑되지 않아
-`risk_type=null`로 유지됩니다. 따라서 최종 9종 목록에는 포함하지 않습니다.
+내부 검사 `warranty_bond_rate`의 한글 `risk_type`은 별도로 유지하고, 그룹핑 오류 코드는
+`category=WARRANTY_PERIOD`를 사용합니다. 따라서 오류 코드 목록은 최종 9종을 유지합니다.
 
 ## 실제 구조화 결과 샘플
 
@@ -32,7 +32,10 @@
 
 ```json
 {
-  "risk_type": "LATE_PENALTY_RATE",
+  "risk_type": "지체상금 요율 과다",
+  "risk_types": ["지체상금 요율 과다"],
+  "category": "LATE_PENALTY_RATE",
+  "categories": ["LATE_PENALTY_RATE"],
   "label": "지체상금 요율 과다",
   "rule_id": "penalty_rate",
   "verdict": "NEEDS_REVIEW",
@@ -54,5 +57,5 @@
 }
 ```
 
-코드 기준 원본은 `apps/api/app/ai/clause_review/contracts.py`의 `RiskType`과
-`RISK_TYPE_BY_RULE`입니다.
+코드 기준 원본은 `apps/api/app/ai/clause_review/contracts.py`의 `CategoryCode`와
+`CATEGORY_BY_RULE`입니다.

@@ -185,7 +185,7 @@ PAYMENT_TERMS          대금지급
 LIABILITY_SCOPE        손해배상
 ```
 
-`rule_id → risk_type` 매핑은 `clause_review/contracts.py`의 `RISK_TYPE_BY_RULE`에 있습니다.
+`rule_id → category` 매핑은 `clause_review/contracts.py`의 `CATEGORY_BY_RULE`에 있습니다.
 DB에 넣을 때는 **PostgreSQL enum이 아니라 CHECK 제약**입니다 — 이 프로젝트는 enum 타입을
 하나도 쓰지 않습니다.
 

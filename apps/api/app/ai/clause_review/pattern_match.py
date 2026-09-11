@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .contracts import RISK_TYPE_BY_RULE, ClauseFinding, excerpt
+from .contracts import CATEGORY_BY_RULE, ClauseFinding, excerpt
 from .lexicon import (
     ANCILLARY_RE,
     AUTHORITY_RE,
@@ -122,7 +122,8 @@ def detect_patterns(
             findings.append(
                 ClauseFinding(
                     rule_id=RULE_ID,
-                    risk_type=RISK_TYPE_BY_RULE["open_ended_scope"],
+                    risk_type=RISK_TYPE,
+                    category=CATEGORY_BY_RULE["open_ended_scope"],
                     label=RISK_TYPE,
                     detection_method="PATTERN_MATCH",
                     matched_via="REGEX",

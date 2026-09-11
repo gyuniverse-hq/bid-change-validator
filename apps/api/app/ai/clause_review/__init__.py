@@ -7,13 +7,13 @@ package boundary is stabilized in Baseline v2.
 """
 
 from .contracts import (
-    RISK_TYPE_BY_RULE,
-    RISK_TYPE_LABELS,
+    CATEGORY_BY_RULE,
+    CATEGORY_LABELS,
     VERDICT_LABELS,
     VERDICT_PRIORITY,
     ClauseFinding,
     ClauseVerdict,
-    RiskType,
+    CategoryCode,
     StandardReference,
     apply_overlapping_categories,
     overlapping_categories,
@@ -30,9 +30,9 @@ from .standard_diff import (
 __all__ = [
     "ClauseFinding",
     "ClauseVerdict",
-    "RiskType",
-    "RISK_TYPE_BY_RULE",
-    "RISK_TYPE_LABELS",
+    "CategoryCode",
+    "CATEGORY_BY_RULE",
+    "CATEGORY_LABELS",
     "StandardReference",
     "apply_overlapping_categories",
     "overlapping_categories",

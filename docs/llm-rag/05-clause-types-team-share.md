@@ -115,10 +115,10 @@
   clause_review_findings
     id                   uuid        pk default gen_random_uuid()
     run_id               uuid        not null  fk -> clause_review_runs(id) on delete cascade
-    risk_type            text                  -- 확정 9개 값. 목록 밖이면 NULL
-    risk_types           jsonb       not null  -- 전체 코드. 단일 원인도 배열
-    category             text                  -- 대표 한글 라벨 (기존 그룹핑 컬럼)
-    categories           jsonb       not null  -- 전체 한글 라벨. 단일 원인도 배열
+    risk_type            text        not null  -- 대표 한글 라벨
+    risk_types           jsonb       not null  -- 전체 한글 라벨. 단일 원인도 배열
+    category             text        not null  -- 대표 오류 코드 (기존 그룹핑 컬럼)
+    categories           jsonb       not null  -- 전체 오류 코드. 단일 원인도 배열
     rule_id              text        not null  -- 내부 룰 식별자
     detection_method     text        not null
     matched_via          text        not null default 'REGEX'
@@ -139,19 +139,21 @@
     details              jsonb       not null default '{}'::jsonb
     created_at           timestamptz not null default now()
 
-    CHECK (risk_type IS NULL OR risk_type IN (
+    CHECK (category IN (
       'WARRANTY_PERIOD','LATE_PENALTY','LATE_PENALTY_RATE','COPYRIGHT_OWNERSHIP',
       'ACCEPTANCE_CRITERIA','SCOPE_AMBIGUITY','TERMINATION_CONDITION',
       'PAYMENT_TERMS','LIABILITY_SCOPE'))
-    CHECK (jsonb_typeof(risk_types) = 'array' AND jsonb_array_length(risk_types) >= 1)
-    CHECK (jsonb_typeof(categories) = 'array' AND jsonb_array_length(categories) >= 1)
+    CHECK (jsonb_typeof(risk_types) = 'array' AND jsonb_array_length(risk_types) >= 1
+           AND risk_types ->> 0 = risk_type)
+    CHECK (jsonb_typeof(categories) = 'array' AND jsonb_array_length(categories) >= 1
+           AND categories ->> 0 = category)
     CHECK (detection_method IN ('STANDARD_DIFF','PATTERN_MATCH'))
     CHECK (matched_via IN ('REGEX','EMBEDDING_LLM','STANDARD_UNRESOLVED'))
     CHECK (verdict IN ('NEEDS_REVIEW','COMPLIANT','UNDETERMINED'))
     UNIQUE (run_id, rule_id)
     index on (run_id, verdict)
 
-■ rule_id → risk_type 매핑 (제가 넘겨드릴 값)
+■ rule_id → category 매핑 (제가 넘겨드릴 값)
 
     warranty_period        →  WARRANTY_PERIOD
     penalty_cap            →  LATE_PENALTY
@@ -162,15 +164,14 @@
     termination_threshold  →  TERMINATION_CONDITION
     payment_period         →  PAYMENT_TERMS
     liability_scope        →  LIABILITY_SCOPE
-    warranty_bond_rate     →  NULL   (목록 밖. 아래 참고)
+    warranty_bond_rate     →  WARRANTY_PERIOD
 
 ■ 설계 의도 세 가지
 
-  (1) risk_type 을 nullable 로 둔 이유
-      목록에 넣지 않기로 한 「하자보수보증금율」 룰이 코드에는 남아 있습니다.
-      (근거는 확실합니다 — 제59조제1항 "하자보수보증금율(100분의 2, …)")
-      나중에 값으로 추가하실 수 있게 결과는 버리지 않고 유형만 비워둡니다.
-      화면에는 risk_type IS NOT NULL 만 쓰시면 됩니다.
+  (1) category와 risk_type을 분리한 이유
+      category는 9종 오류 코드로 그룹핑하고, risk_type은 사람이 읽는 개별 탐지 라벨을
+      보존합니다. 「하자보수보증금율」은 risk_type 라벨을 그대로 두고 상위 그룹인
+      WARRANTY_PERIOD category로 분류합니다.
 
   (2) standard_* 를 jsonb 가 아니라 컬럼으로 편 이유
       "어느 조문 기준으로 판정했는지"를 조회·집계할 수 있어야 합니다.

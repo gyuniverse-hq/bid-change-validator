@@ -93,14 +93,14 @@ def _providers() -> tuple[Any, Any]:
 def _finding_json(
     finding: ClauseFinding, findings: list[ClauseFinding] | None = None
 ) -> dict[str, Any]:
-    risk_types, categories = overlapping_categories(finding, findings or [finding])
+    categories, risk_types = overlapping_categories(finding, findings or [finding])
     standard = finding.standard
     return {
-        "risk_type": risk_types[0] if risk_types else None,
+        "risk_type": risk_types[0],
         "risk_types": risk_types,
-        "category": categories[0] if categories else None,
-        # `category` remains the stable grouping value; JSONB `categories` keeps
-        # every cause, including the one-element case.
+        "category": categories[0],
+        # `category` is the stable error code used for grouping; JSONB
+        # `categories` keeps every code, including the one-element case.
         "categories": categories,
         "label": finding.label,
         "rule_id": finding.rule_id,
@@ -178,12 +178,13 @@ def review_text(payload: TextRequest) -> dict[str, Any]:
         "contract_scope": scope,
         "scope_label": SCOPE_LABELS[scope],
         "counts": counts,
-        "risk_types": list(
+        "categories": list(
             dict.fromkeys(
-                finding.risk_type_code
-                for finding in findings
-                if finding.risk_type_code is not None
+                finding.category_code for finding in findings
             )
+        ),
+        "risk_types": list(
+            dict.fromkeys(finding.risk_type for finding in findings)
         ),
         "findings": [_finding_json(finding, findings) for finding in findings],
     }
@@ -378,12 +379,13 @@ def _context_json(context: dict[str, Any]) -> dict[str, Any]:
         "contract_scope": context["scope"],
         "scope_label": SCOPE_LABELS[context["scope"]],
         "counts": counts,
-        "risk_types": list(
+        "categories": list(
             dict.fromkeys(
-                finding.risk_type_code
-                for finding in findings
-                if finding.risk_type_code is not None
+                finding.category_code for finding in findings
             )
+        ),
+        "risk_types": list(
+            dict.fromkeys(finding.risk_type for finding in findings)
         ),
         "findings": [_finding_json(finding, findings) for finding in findings],
         "requirement_count": len(requirements),

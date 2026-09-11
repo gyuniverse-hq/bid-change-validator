@@ -100,10 +100,10 @@ type JudgmentBrief = {
 
 ```ts
 type ClauseFinding = {
-  risk_type: string | null;       // 대표 코드
-  risk_types: string[];           // 전체 코드, 단일 원인도 길이 1
-  category: string | null;        // 대표 한글 라벨
-  categories: string[];           // 전체 한글 라벨, 단일 원인도 길이 1
+  risk_type: string;              // 대표 한글 라벨
+  risk_types: string[];           // 전체 한글 라벨, 단일 원인도 길이 1
+  category: string;               // 대표 오류 코드
+  categories: string[];           // 전체 오류 코드, 단일 원인도 길이 1
   label: string;
   verdict: 'NEEDS_REVIEW' | 'COMPLIANT' | 'UNDETERMINED';
   reason: string;

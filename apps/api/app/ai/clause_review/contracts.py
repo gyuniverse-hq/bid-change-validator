@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 ClauseVerdict = Literal[
@@ -31,7 +31,7 @@ DetectionMethod = Literal["STANDARD_DIFF", "PATTERN_MATCH"]
 # The vocabulary the team shares — DB column, UI filter, and this pipeline all
 # name a risk the same way. `rule_id` stays internal: it says which check ran,
 # and several checks can answer to one type.
-RiskType = Literal[
+CategoryCode = Literal[
     "WARRANTY_PERIOD",  # 하자담보 기간
     "LATE_PENALTY",  # 지체상금 상한
     "LATE_PENALTY_RATE",  # 지체상금 요율 — 근거 법령이 상한과 다르다
@@ -43,9 +43,7 @@ RiskType = Literal[
     "LIABILITY_SCOPE",  # 손해배상
 ]
 
-# None means the check runs but has no agreed type yet, so its finding is kept
-# with the type left empty rather than being dropped.
-RISK_TYPE_BY_RULE: dict[str, RiskType | None] = {
+CATEGORY_BY_RULE: dict[str, CategoryCode] = {
     "warranty_period": "WARRANTY_PERIOD",
     "penalty_cap": "LATE_PENALTY",
     "penalty_rate": "LATE_PENALTY_RATE",
@@ -55,10 +53,10 @@ RISK_TYPE_BY_RULE: dict[str, RiskType | None] = {
     "termination_threshold": "TERMINATION_CONDITION",
     "payment_period": "PAYMENT_TERMS",
     "liability_scope": "LIABILITY_SCOPE",
-    "warranty_bond_rate": None,
+    "warranty_bond_rate": "WARRANTY_PERIOD",
 }
 
-RISK_TYPE_LABELS: dict[RiskType, str] = {
+CATEGORY_LABELS: dict[CategoryCode, str] = {
     "WARRANTY_PERIOD": "하자담보 기간",
     "LATE_PENALTY": "지체상금 상한",
     "LATE_PENALTY_RATE": "지체상금 요율",
@@ -72,8 +70,8 @@ RISK_TYPE_LABELS: dict[RiskType, str] = {
 
 # Stable tie-breaker for a source clause with several causes. This is the team's
 # agreed nine-type order, not the detector's execution order.
-RISK_TYPE_PRIORITY: dict[RiskType, int] = {
-    risk_type: index for index, risk_type in enumerate(RISK_TYPE_LABELS)
+CATEGORY_PRIORITY: dict[CategoryCode, int] = {
+    category: index for index, category in enumerate(CATEGORY_LABELS)
 }
 CATEGORY_VERDICT_PRIORITY: dict[ClauseVerdict, int] = {
     "NEEDS_REVIEW": 0,
@@ -123,10 +121,10 @@ class ClauseFinding(BaseModel):
     """One reviewed clause: what was found, where, and what it was measured against."""
 
     rule_id: str
-    risk_type: RiskType | None
-    risk_types: list[RiskType] = Field(default_factory=list)
-    category: str | None = None
-    categories: list[str] = Field(default_factory=list)
+    risk_type: str
+    risk_types: list[str] = Field(default_factory=list)
+    category: CategoryCode
+    categories: list[CategoryCode] = Field(default_factory=list)
     label: str
     detection_method: DetectionMethod
     matched_via: MatchedVia = "REGEX"
@@ -149,20 +147,32 @@ class ClauseFinding(BaseModel):
     standard: StandardReference | None = None
     details: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_classification_fields(self) -> "ClauseFinding":
+        if not self.risk_types:
+            self.risk_types = [self.risk_type]
+        if not self.categories:
+            self.categories = [self.category]
+        if self.risk_types[0] != self.risk_type:
+            raise ValueError("risk_types[0] must equal risk_type")
+        if self.categories[0] != self.category:
+            raise ValueError("categories[0] must equal category")
+        return self
+
     @property
     def verdict_label(self) -> str:
         return VERDICT_LABELS[self.verdict]
 
     @property
-    def risk_type_code(self) -> RiskType | None:
-        """The shared vocabulary value for this finding, or None when it has none."""
-        return RISK_TYPE_BY_RULE.get(self.rule_id)
+    def category_code(self) -> CategoryCode:
+        """The shared error code used to group this finding."""
+        return self.category
 
 
 def overlapping_categories(
     finding: ClauseFinding, findings: list[ClauseFinding]
-) -> tuple[list[RiskType], list[str]]:
-    """Return every agreed risk type detected in the same source clause.
+) -> tuple[list[CategoryCode], list[str]]:
+    """Return every category code and Korean risk label for one source clause.
 
     One sentence can legitimately produce several findings.  The usual example is
     a late-penalty sentence containing both a daily rate and a total cap.  Findings
@@ -189,30 +199,22 @@ def overlapping_categories(
         return bool(finding.chunk_id and finding.chunk_id == other.chunk_id)
 
     source_items = [item for item in findings if same_source(item)]
-    candidates = [item for item in source_items if item.risk_type_code]
+    candidates = list(source_items)
     candidates.sort(
         key=lambda item: (
             CATEGORY_VERDICT_PRIORITY[item.verdict],
-            RISK_TYPE_PRIORITY[item.risk_type_code],  # type: ignore[index]
+            CATEGORY_PRIORITY[item.category_code],
         )
     )
-    risk_types: list[RiskType] = []
+    categories: list[CategoryCode] = []
+    risk_types: list[str] = []
     for item in candidates:
-        code = item.risk_type_code
-        if code is not None and code not in risk_types:
-            risk_types.append(code)
-    if not risk_types:
-        # Internal checks outside the agreed nine types are still auditable. They
-        # keep risk_type=NULL but must satisfy the non-empty categories contract.
-        labels = list(dict.fromkeys(item.label for item in source_items))
-        return [], labels or [finding.label]
-    labels = [RISK_TYPE_LABELS[code] for code in risk_types]
-    labels.extend(
-        item.label
-        for item in source_items
-        if item.risk_type_code is None and item.label not in labels
-    )
-    return risk_types, labels
+        code = item.category_code
+        if code not in categories:
+            categories.append(code)
+        if item.risk_type not in risk_types:
+            risk_types.append(item.risk_type)
+    return categories, risk_types
 
 
 def apply_overlapping_categories(
@@ -221,13 +223,13 @@ def apply_overlapping_categories(
     """Attach the persistence/UI classification contract to every finding."""
     classified: list[ClauseFinding] = []
     for finding in findings:
-        risk_types, categories = overlapping_categories(finding, findings)
+        categories, risk_types = overlapping_categories(finding, findings)
         classified.append(
             finding.model_copy(
                 update={
-                    "risk_type": risk_types[0] if risk_types else None,
+                    "risk_type": risk_types[0],
                     "risk_types": risk_types,
-                    "category": categories[0] if categories else None,
+                    "category": categories[0],
                     "categories": categories,
                 }
             )

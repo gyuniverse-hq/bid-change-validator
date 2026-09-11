@@ -157,6 +157,17 @@ export const VIEWER_TYPE_LABEL: Record<string, string> = {
   TEXT: '텍스트',
 };
 
+/**
+ * 구조화 검증에서 제외된 요건의 사유 (P0-5).
+ * 재현님 docs/llm-rag/08-frontend-integration-guide.md의 권장 문구를 그대로 쓴다.
+ */
+export const DROPPED_REASON_LABEL: Record<string, string> = {
+  MISSING_RAW: '추출 결과에 원문이 없습니다.',
+  RAW_NOT_FOUND_IN_SOURCE: '추출된 문장이 공고 원문에서 확인되지 않습니다.',
+  DETAIL_NOT_FOUND_IN_SOURCE: '세부 조건이 해당 공고 원문에서 확인되지 않습니다.',
+  SOURCE_VALIDATION_FAILED: '공고 원문 대조를 통과하지 못했습니다.',
+};
+
 /** 첨부 텍스트 추출 상태. */
 export const EXTRACTION_STATUS_LABEL: Record<string, string> = {
   PENDING: '추출 대기',

@@ -4,8 +4,8 @@ on:
   push:
     branches: [feature/ai-copilot-v1]
 
-# Temporary, narrowly scoped publication bridge. The approved final tree replaces
-# this workflow with read-only validation and removes all transport files.
+# Temporary feature-only publisher. The verified final tree replaces this with
+# read-only validation and removes all transport files.
 permissions:
   contents: write
 
@@ -25,7 +25,7 @@ jobs:
           POSTGRES_DB: copilot_ci
           POSTGRES_USER: copilot_ci
           POSTGRES_PASSWORD: isolated_ci_only
-        ports: ['5432:5432']
+        ports: ['127.0.0.1:5432:5432']
         options: >-
           --health-cmd "pg_isready -U copilot_ci -d copilot_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
@@ -62,11 +62,12 @@ jobs:
               assert entry['mode'] in ('100644', '100755') and re.fullmatch('[0-9a-f]{40}', entry['sha'])
               subprocess.run(['git', 'update-index', '--add', '--cacheinfo', entry['mode'], entry['sha'], entry['path']], check=True)
           assert git('write-tree') == data['initial_tree'], 'Source object identity mismatch'
-          subprocess.run(['git', 'checkout-index', '-a', '-f'], check=True)
           patch = data['patch'].encode('utf-8')
-          subprocess.run(['git', 'apply', '--check', '--index'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '--index'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--check', '--cached'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--cached'], input=patch, check=True)
           assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
+          subprocess.run(['git', 'checkout-index', '--all', '--force', '--index'], check=True)
+          subprocess.run(['git', 'diff', '--exit-code'], check=True)
           subprocess.run(['git', 'diff', '--cached', '--check', data['base']], check=True)
           pathlib.Path('.ci-results').mkdir(exist_ok=True)
           pathlib.Path('.ci-results/approved-tree.txt').write_text(os.environ['APPROVED_TREE'] + '\n')

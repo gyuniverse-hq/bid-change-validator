@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.analysis_models import QualificationAnalysisRun, QualificationRequirementRecord
@@ -16,6 +17,9 @@ from apps.api.app.models import (
     CompanyStaffRole,
     PreflightCase,
 )
+
+
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 
 
 client = TestClient(app)

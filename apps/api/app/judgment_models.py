@@ -108,6 +108,24 @@ class QualificationJudgmentRecord(Base):
             "'NEEDS_REVIEW', 'UNSUPPORTED_REQUIREMENT')",
             name="qualification_judgments_reason_code_valid",
         ),
+        CheckConstraint(
+            "value_source IN ('stored_profile', 'askback', 'none')",
+            name="qualification_judgments_value_source_valid",
+        ),
+        CheckConstraint(
+            "evidence_status IN ('none', 'declared', 'uploaded')",
+            name="qualification_judgments_evidence_status_valid",
+        ),
+        CheckConstraint(
+            "unknown_reason IS NULL OR unknown_reason IN "
+            "('profile_missing', 'requirement_uncertain', 'evidence_missing')",
+            name="qualification_judgments_unknown_reason_valid",
+        ),
+        CheckConstraint(
+            "(status = 'UNKNOWN' AND unknown_reason IS NOT NULL) OR "
+            "(status <> 'UNKNOWN' AND unknown_reason IS NULL)",
+            name="qualification_judgments_unknown_reason_consistent",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -123,7 +141,10 @@ class QualificationJudgmentRecord(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     basis_type: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_held: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    value_source: Mapped[str] = mapped_column(Text, default="none", nullable=False)
+    evidence_status: Mapped[str] = mapped_column(Text, default="none", nullable=False)
     reason_code: Mapped[str] = mapped_column(Text, nullable=False)
+    unknown_reason: Mapped[str | None] = mapped_column(Text)
     requires_evidence: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     profile_refs: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     requirement_evidence_keys: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)

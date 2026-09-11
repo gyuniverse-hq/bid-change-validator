@@ -183,6 +183,61 @@ def _extract_hwp(source: BinaryIO) -> ExtractionResult:
     return _finish("HWP5_BODYTEXT", blocks)
 
 
+def _hwpml_character_text(element: ElementTree.Element) -> str:
+    parts = [element.text or ""]
+    for child in element:
+        child_name = _local_name(child.tag).upper()
+        if child_name == "LINEBREAK":
+            parts.append("\n")
+        elif child_name == "TAB":
+            parts.append("\t")
+        elif child_name == "HYPEN":
+            parts.append("-")
+        elif child_name in {"NBSPACE", "FWSPACE"}:
+            parts.append(" ")
+        else:
+            parts.append(_hwpml_character_text(child))
+        parts.append(child.tail or "")
+    return "".join(parts)
+
+
+def _extract_hwpml(source: BinaryIO) -> ExtractionResult:
+    source.seek(0)
+    root = ElementTree.parse(source).getroot()
+    if _local_name(root.tag).upper() != "HWPML":
+        raise UnsupportedDocumentError("XML document is not HWPML")
+
+    sections = [
+        element
+        for element in root.iter()
+        if _local_name(element.tag).upper() == "SECTION"
+    ]
+    if not sections:
+        sections = [root]
+
+    blocks: list[dict[str, Any]] = []
+    for section_index, section in enumerate(sections):
+        paragraph_index = 0
+        for paragraph in section.iter():
+            if _local_name(paragraph.tag).upper() != "P":
+                continue
+            text = "".join(
+                _hwpml_character_text(character)
+                for character in paragraph.iter()
+                if _local_name(character.tag).upper() == "CHAR"
+            )
+            blocks.append(
+                {
+                    "section_index": section_index,
+                    "paragraph_index": paragraph_index,
+                    "location": f"section {section_index + 1} · paragraph {paragraph_index + 1}",
+                    "text": text,
+                }
+            )
+            paragraph_index += 1
+    return _finish("HWPML_XML", blocks)
+
+
 def _extract_pdf(source: BinaryIO) -> ExtractionResult:
     source.seek(0)
     reader = PdfReader(source)
@@ -223,8 +278,14 @@ def extract_document(
     suffix = Path(filename).suffix.lower()
     if signature.startswith(b"%PDF") or suffix == ".pdf":
         return _extract_pdf(source)
-    if signature.startswith(b"\xd0\xcf\x11\xe0") or suffix == ".hwp":
+    if signature.startswith(b"\xd0\xcf\x11\xe0"):
         return _extract_hwp(source)
+    if suffix in {".hwp", ".hml"}:
+        try:
+            return _extract_hwpml(source)
+        except ElementTree.ParseError:
+            source.seek(0)
+            return _extract_hwp(source)
     if signature.startswith(b"PK") or suffix in {".hwpx", ".docx"}:
         try:
             with ZipFile(source) as archive:

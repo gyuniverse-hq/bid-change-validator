@@ -1,6 +1,7 @@
 from datetime import date
 
 from apps.api.app.ai.contracts import QualificationRequirement
+from apps.api.app.ai.contracts import Judgment
 from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot, ProfileCertificationFact, ProfileCompleteness, ProfilePerformanceFact, ProfileStaffFact, ProfileStaffRoleFact, judge_requirements
 
 REFERENCE_DATE = date(2026, 9, 7)
@@ -54,6 +55,21 @@ def test_changed_performance_threshold_stays_unknown_when_profile_is_incomplete(
     assert result.overall_status == "insufficient_data"
 
 
+def test_none_company_size_means_unknown_not_large_company_mismatch():
+    requirement = _requirement("REQ-SIZE", "COMPANY_SIZE", value="중소기업")
+    profile = _profile().model_copy(update={"company_size": "NONE"})
+
+    result = judge_requirements(
+        [requirement],
+        profile,
+        preflight_case_id="case-1",
+        reference_date=REFERENCE_DATE,
+    )
+
+    assert result.judgments[0].status == "UNKNOWN"
+    assert result.overall_status == "insufficient_data"
+
+
 def test_complete_missing_certification_is_unsatisfied():
     requirement = _requirement("REQ-CERT", "REGISTRATION_CERTIFICATION", value="정보통신공사업")
     result = judge_requirements([requirement], _profile(completeness=ProfileCompleteness(certifications=True)), preflight_case_id="case-1", reference_date=REFERENCE_DATE)
@@ -67,6 +83,64 @@ def test_present_valid_certification_is_satisfied_even_before_collection_is_comp
     result = judge_requirements([requirement], profile, preflight_case_id="case-1", reference_date=REFERENCE_DATE)
     assert result.judgments[0].status == "SATISFIED"
     assert result.judgments[0].evidence_held is True
+
+
+def test_certification_code_can_match_canonical_requirement_value():
+    requirement = _requirement(
+        "REQ-CERT-CODE", "REGISTRATION_CERTIFICATION", value="ISO27001"
+    )
+    profile = _profile(
+        certifications=[
+            ProfileCertificationFact(
+                ref="cert-iso",
+                name="정보보호 경영시스템 인증",
+                certification_code="ISO27001",
+                verified=True,
+            )
+        ]
+    )
+
+    result = judge_requirements(
+        [requirement],
+        profile,
+        preflight_case_id="case-1",
+        reference_date=REFERENCE_DATE,
+    )
+
+    assert result.judgments[0].status == "SATISFIED"
+
+
+def test_year_only_performance_near_period_boundary_returns_unknown():
+    requirement = _requirement(
+        "REQ-PERFORMANCE-YEAR",
+        "PERFORMANCE_AMOUNT",
+        operator=">=",
+        value=400_000_000,
+        period_months=12,
+    )
+    profile = _profile(completeness=ProfileCompleteness(performances=True))
+    profile = profile.model_copy(
+        update={
+            "performances": [
+                ProfilePerformanceFact(
+                    ref="performance-year",
+                    name="연도만 확인된 실적",
+                    amount=500_000_000,
+                    completed_year=2025,
+                    verified=True,
+                )
+            ]
+        }
+    )
+
+    result = judge_requirements(
+        [requirement],
+        profile,
+        preflight_case_id="case-1",
+        reference_date=REFERENCE_DATE,
+    )
+
+    assert result.judgments[0].status == "UNKNOWN"
 
 
 def test_any_of_group_does_not_make_one_failed_alternative_ineligible():
@@ -103,3 +177,16 @@ def test_performance_amount_cannot_use_unrelated_field_or_future_work():
     future = profile.performances[0].model_copy(update={"completed_at": date(2027, 1, 1), "fields": ["해외진출"]})
     profile = profile.model_copy(update={"performances": [future]})
     assert judge_requirements([req], profile, preflight_case_id="c", reference_date=REFERENCE_DATE).overall_status == "ineligible"
+
+
+def test_judgment_exposes_human_readable_reason() -> None:
+    judgment = Judgment(
+        judgment_key="JUDG:CASE:REQ",
+        preflight_case_id="CASE",
+        notice_version_id="VERSION",
+        requirement_key="REQ",
+        status="UNKNOWN",
+        basis_type="NONE",
+        reason_code="INSUFFICIENT_DATA",
+    )
+    assert judgment.reason == "판정에 필요한 회사 정보가 부족합니다."

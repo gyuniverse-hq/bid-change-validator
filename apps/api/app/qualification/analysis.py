@@ -108,6 +108,8 @@ def _persist_result(
                     else None
                 ),
                 scope=dict(requirement.scope),
+                requirement_role=requirement.requirement_role,
+                condition_complexity=requirement.condition_complexity,
                 required=requirement.required,
                 raw=requirement.raw,
                 confidence=(
@@ -191,6 +193,8 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
             unit=item.unit,
             period_months=float(item.period_months) if item.period_months is not None else None,
             scope=dict(item.scope or {}),
+            requirement_role=item.requirement_role,
+            condition_complexity=item.condition_complexity,
             required=item.required,
             raw=item.raw,
             confidence=float(item.confidence) if item.confidence is not None else None,

@@ -192,3 +192,11 @@
 - `.claude/`는 사용자 로컬 파일로 판단해 추적하거나 수정하지 않았습니다.
 - Alembic 단일 헤드(`013_merge_develop_llm`)와 전체 오프라인 upgrade SQL 생성을 확인했습니다.
 - LLM/RAG 핵심 회귀 테스트는 `59 passed`입니다. API 전체 테스트는 기존 환경 의존 문제(외부 DB 접근, Windows 임시 폴더 권한·CP949, 골든셋 해시 불일치)만 재현됐습니다.
+
+### develop 반영 전 프론트 연동 점검
+
+- 제품 프론트 빌드와 기존 Case 상태 단위 테스트 3건은 통과했습니다.
+- 백엔드 OpenAPI에서 `dropped_requirements`, 브리핑, 공고 요약, 챗봇, 사업계획서 초안 엔드포인트 및 `risk_type/risk_types/category/categories` 응답 스키마가 노출되는 것을 확인했습니다.
+- 제품 프론트 `apps/web`에는 새 응답 타입과 호출·표시 로직이 아직 연결되지 않아, 기존 화면은 빌드되지만 신규 LLM/RAG 기능은 제품 화면에서 보이지 않습니다.
+- 프론트 lint는 이번 변경과 무관한 기존 접근성·React compiler·타입 규칙 오류가 남아 있어 통과하지 않습니다.
+- `develop`의 011 DB 마이그레이션은 런타임 계약과 달리 `category=코드`, `risk_type=표시문구`이고 `risk_types/categories` JSONB 컬럼이 없습니다. 합의 계약(`risk_type=대표 코드`, `category=대표 한글`, 복수 배열 JSONB)에 맞추려면 후속 마이그레이션과 저장 계층 연결이 필요합니다.

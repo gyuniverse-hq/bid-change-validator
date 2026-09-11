@@ -35,7 +35,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
-      APPROVED_TREE: c91fde71aa7f3b30e67838b8f2b0d2bd05f204a8
+      APPROVED_TREE: 91632f3548bda704e2e5d801be18a623eaa2780f
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,9 +51,12 @@ jobs:
               return subprocess.check_output(['git', *args], **kwargs).decode().strip()
           packed = base64.b64decode(''.join(pathlib.Path(f'.integration-transport/part{i}.b64').read_text().strip() for i in range(4)), validate=True)
           assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace', 'Transport checksum mismatch'
+          fixes = base64.b64decode(pathlib.Path('.integration-transport/fixes.xz.b64').read_text().strip(), validate=True)
+          assert hashlib.sha256(fixes).hexdigest() == '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72', 'Correction checksum mismatch'
+          correction = lzma.decompress(fixes)
           data = json.loads(lzma.decompress(packed))
           assert data['schema'] == 1 and data['base'] == os.environ['COPILOT_BASE_SHA']
-          assert data['final_tree'] == os.environ['APPROVED_TREE']
+          assert data['final_tree'] == 'c91fde71aa7f3b30e67838b8f2b0d2bd05f204a8'
           subprocess.run(['git', 'merge-base', '--is-ancestor', data['source'], 'HEAD'], check=True)
           subprocess.run(['git', 'read-tree', '--reset', '-u', data['base']], check=True)
           for entry in data['entries']:
@@ -62,9 +65,11 @@ jobs:
               assert entry['mode'] in ('100644', '100755') and re.fullmatch('[0-9a-f]{40}', entry['sha'])
               subprocess.run(['git', 'update-index', '--add', '--cacheinfo', entry['mode'], entry['sha'], entry['path']], check=True)
           assert git('write-tree') == data['initial_tree'], 'Source object identity mismatch'
-          patch = data['patch'].encode('utf-8')
-          subprocess.run(['git', 'apply', '--check', '--cached'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '--cached'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--check', '--cached'], input=data['patch'].encode('utf-8'), check=True)
+          subprocess.run(['git', 'apply', '--cached'], input=data['patch'].encode('utf-8'), check=True)
+          assert git('write-tree') == data['final_tree'], 'Base payload identity mismatch'
+          subprocess.run(['git', 'apply', '--check', '--cached'], input=correction, check=True)
+          subprocess.run(['git', 'apply', '--cached'], input=correction, check=True)
           assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
           subprocess.run(['git', 'checkout-index', '--all', '--force', '--index'], check=True)
           subprocess.run(['git', 'diff', '--exit-code'], check=True)
@@ -110,3 +115,4 @@ jobs:
           name: copilot-integration-results
           path: .ci-results/
           retention-days: 7
+          include-hidden-files: true

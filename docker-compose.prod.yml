@@ -1,0 +1,78 @@
+services:
+  migrate:
+    build:
+      context: ./apps/api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      APP_ENVIRONMENT: production
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      APP_ENVIRONMENT: production
+      G2B_SERVICE_KEY: ${G2B_SERVICE_KEY:?G2B_SERVICE_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL_DEFAULT: ${OPENAI_MODEL_DEFAULT:-gpt-5.6-luna}
+      DOCUMENT_STORAGE_BACKEND: ${DOCUMENT_STORAGE_BACKEND:-S3}
+      DOCUMENT_STORAGE_PATH: /data/notice-documents
+      DOCUMENT_S3_BUCKET: ${DOCUMENT_S3_BUCKET:-}
+      DOCUMENT_S3_PREFIX: ${DOCUMENT_S3_PREFIX:-notice-documents}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      AUTH_BOOTSTRAP_ADMIN_USERNAME: ${AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:?AUTH_BOOTSTRAP_ADMIN_PASSWORD is required}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-12}
+      AUTH_COOKIE_SECURE: "true"
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    volumes:
+      - notice_documents_data:/data/notice-documents
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notice-poller:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      APP_ENVIRONMENT: production
+      G2B_SERVICE_KEY: ${G2B_SERVICE_KEY:?G2B_SERVICE_KEY is required}
+      DOCUMENT_STORAGE_BACKEND: ${DOCUMENT_STORAGE_BACKEND:-S3}
+      DOCUMENT_STORAGE_PATH: /data/notice-documents
+      DOCUMENT_S3_BUCKET: ${DOCUMENT_S3_BUCKET:-}
+      DOCUMENT_S3_PREFIX: ${DOCUMENT_S3_PREFIX:-notice-documents}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      NOTICE_POLL_INTERVAL_SECONDS: ${NOTICE_POLL_INTERVAL_SECONDS:-300}
+      NOTICE_POLL_LOOKBACK_MINUTES: ${NOTICE_POLL_LOOKBACK_MINUTES:-60}
+      NOTICE_POLL_OVERLAP_MINUTES: ${NOTICE_POLL_OVERLAP_MINUTES:-5}
+      NOTICE_POLL_PAGE_SIZE: ${NOTICE_POLL_PAGE_SIZE:-100}
+      NOTICE_POLL_MAX_PAGES: ${NOTICE_POLL_MAX_PAGES:-10}
+      NOTICE_POLL_BUSINESS_TYPES: ${NOTICE_POLL_BUSINESS_TYPES:-SERVICE,GOODS,CONSTRUCTION,FOREIGN}
+    volumes:
+      - notice_documents_data:/data/notice-documents
+    command: ["python", "-m", "app.workers.notice_polling"]
+
+volumes:
+  notice_documents_data:

@@ -68,8 +68,10 @@ class ContractClauseFindingRecord(Base):
         nullable=False,
     )
     category: Mapped[str] = mapped_column(Text, nullable=False)
+    categories: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     rule_id: Mapped[str | None] = mapped_column(Text)
     risk_type: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_types: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     detection_method: Mapped[str] = mapped_column(Text, nullable=False)
     matched_via: Mapped[str | None] = mapped_column(Text)
     verdict: Mapped[str] = mapped_column(Text, nullable=False)

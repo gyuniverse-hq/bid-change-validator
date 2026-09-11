@@ -20,8 +20,10 @@ class ContractClauseFindingRead(BaseModel):
     id: UUID
     review_run_id: UUID
     category: str
+    categories: list[str] = Field(default_factory=list)
     rule_id: str | None
     risk_type: str
+    risk_types: list[str] = Field(default_factory=list)
     detection_method: str
     matched_via: str | None
     verdict: str

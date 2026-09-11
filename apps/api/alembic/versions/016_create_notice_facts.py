@@ -5,8 +5,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "014_notice_facts"
-down_revision = "013_notice_relations"
+revision = "016_notice_facts"
+down_revision = "015_notice_relations"
 branch_labels = None
 depends_on = None
 

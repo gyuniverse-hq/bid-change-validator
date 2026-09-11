@@ -50,7 +50,8 @@ def test_contract_clause_review_can_be_saved_and_read() -> None:
                 "findings": [
                     {
                         "rule_id": "open_ended_scope",
-                        "risk_type": "SCOPE_AMBIGUITY",
+                        "risk_type": "과업범위 모호",
+                        "category": "SCOPE_AMBIGUITY",
                         "label": "과업범위 모호(포괄조항)",
                         "detection_method": "PATTERN_MATCH",
                         "matched_via": "REGEX",
@@ -71,6 +72,8 @@ def test_contract_clause_review_can_be_saved_and_read() -> None:
         assert body["notice_version_id"] == str(version.id)
         assert body["findings"][0]["category"] == "SCOPE_AMBIGUITY"
         assert body["findings"][0]["risk_type"] == "과업범위 모호"
+        assert body["findings"][0]["categories"] == ["SCOPE_AMBIGUITY"]
+        assert body["findings"][0]["risk_types"] == ["과업범위 모호"]
         assert body["findings"][0]["verdict"] == "확인 필요"
 
         listed = client.get(
@@ -111,7 +114,8 @@ def test_contract_clause_review_rejects_mismatched_version() -> None:
                 "findings": [
                     {
                         "rule_id": "open_ended_scope",
-                        "risk_type": "SCOPE_AMBIGUITY",
+                        "risk_type": "과업범위 모호",
+                        "category": "SCOPE_AMBIGUITY",
                         "label": "과업범위 모호",
                         "detection_method": "PATTERN_MATCH",
                         "verdict": "NEEDS_REVIEW",
@@ -123,6 +127,79 @@ def test_contract_clause_review_rejects_mismatched_version() -> None:
         )
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "CLAUSE_FINDING_VERSION_MISMATCH"
+    finally:
+        if notice_id is not None:
+            persisted = db.get(BidNotice, notice_id)
+            if persisted is not None:
+                db.delete(persisted)
+                db.commit()
+        db.close()
+
+
+def test_contract_clause_review_preserves_overlapping_classifications() -> None:
+    db = SessionLocal()
+    notice_id = None
+    try:
+        _, notice, version = save_notice_snapshot(
+            db,
+            item=_notice_item(f"TEST-CLAUSE-OVERLAP-{uuid4()}"),
+            business_type=BusinessType.SERVICE,
+            source_endpoint="getBidPblancListInfoServc",
+        )
+        db.commit()
+        notice_id = notice.id
+        excerpt = "지체상금은 계약금액의 일 0.1%로 하며 총액은 10%를 넘지 않습니다."
+
+        response = client.post(
+            f"/api/v1/notices/{notice.id}/versions/1/contract-clause-reviews",
+            json={
+                "findings": [
+                    {
+                        "rule_id": "penalty_cap",
+                        "risk_type": "지체상금 상한",
+                        "category": "LATE_PENALTY",
+                        "label": "지체상금 상한",
+                        "detection_method": "STANDARD_DIFF",
+                        "matched_via": "REGEX",
+                        "verdict": "NEEDS_REVIEW",
+                        "reason": "지체상금 총액 상한을 확인해야 합니다.",
+                        "matched_text": excerpt,
+                        "notice_version_id": str(version.id),
+                        "chunk_id": "chunk-penalty",
+                        "excerpt": excerpt,
+                    },
+                    {
+                        "rule_id": "penalty_rate",
+                        "risk_type": "지체상금 요율",
+                        "category": "LATE_PENALTY_RATE",
+                        "label": "지체상금 요율",
+                        "detection_method": "STANDARD_DIFF",
+                        "matched_via": "REGEX",
+                        "verdict": "NEEDS_REVIEW",
+                        "reason": "일별 지체상금 요율을 확인해야 합니다.",
+                        "matched_text": excerpt,
+                        "notice_version_id": str(version.id),
+                        "chunk_id": "chunk-penalty",
+                        "excerpt": excerpt,
+                    },
+                ]
+            },
+        )
+
+        assert response.status_code == 201, response.text
+        findings = {item["category"]: item for item in response.json()["findings"]}
+        cap = findings["LATE_PENALTY"]
+        rate = findings["LATE_PENALTY_RATE"]
+        assert cap["risk_type"] == "지체상금 상한"
+        assert cap["categories"] == ["LATE_PENALTY", "LATE_PENALTY_RATE"]
+        assert cap["risk_types"] == ["지체상금 상한", "지체상금 요율"]
+        assert rate["risk_type"] == "지체상금 요율"
+        assert rate["categories"] == ["LATE_PENALTY_RATE", "LATE_PENALTY"]
+        assert rate["risk_types"] == ["지체상금 요율", "지체상금 상한"]
+        assert cap["reason"] == "지체상금 총액 상한을 확인해야 합니다."
+        assert rate["reason"] == "일별 지체상금 요율을 확인해야 합니다."
+        assert cap["rfp_excerpt"] == excerpt
+        assert rate["rfp_chunk_id"] == "chunk-penalty"
     finally:
         if notice_id is not None:
             persisted = db.get(BidNotice, notice_id)

@@ -6,11 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..ai.clause_review.contracts import (
-    RISK_TYPE_BY_RULE,
-    RISK_TYPE_LABELS,
-    VERDICT_LABELS,
     ClauseFinding,
-    RiskType,
+    finding_to_payload,
 )
 from ..clause_review_models import ContractClauseFindingRecord, ContractClauseReviewRun
 from ..clause_review_schemas import (
@@ -30,11 +27,6 @@ class ContractClauseReviewError(ValueError):
         super().__init__(message)
 
 
-_FALLBACK_RISK_TYPE_BY_RULE: dict[str, RiskType] = {
-    "warranty_bond_rate": "WARRANTY_PERIOD",
-}
-
-
 def _load_version(db: Session, *, notice_id: UUID, version_number: int) -> BidNoticeVersion:
     version = db.scalar(
         select(BidNoticeVersion).where(
@@ -49,18 +41,6 @@ def _load_version(db: Session, *, notice_id: UUID, version_number: int) -> BidNo
             status_code=404,
         )
     return version
-
-
-def _risk_type_code(finding: ClauseFinding) -> RiskType:
-    code = finding.risk_type or RISK_TYPE_BY_RULE.get(finding.rule_id)
-    if code is None:
-        code = _FALLBACK_RISK_TYPE_BY_RULE.get(finding.rule_id)
-    if code is None:
-        raise ContractClauseReviewError(
-            "UNSUPPORTED_RISK_TYPE",
-            f"합의된 위험조항 9종으로 분류되지 않은 결과입니다. ({finding.rule_id})",
-        )
-    return code
 
 
 def create_contract_clause_review(
@@ -81,7 +61,7 @@ def create_contract_clause_review(
                 "CLAUSE_FINDING_VERSION_MISMATCH",
                 "계약조항 결과의 공고 버전이 저장 대상과 일치하지 않습니다.",
             )
-        code = _risk_type_code(finding)
+        finding_payload = finding_to_payload(finding, payload.findings)
         rfp_value = None
         if any(
             value is not None
@@ -99,17 +79,19 @@ def create_contract_clause_review(
         db.add(
             ContractClauseFindingRecord(
                 review_run_id=run.id,
-                category=code,
+                category=finding_payload["category"],
+                categories=finding_payload["categories"],
                 rule_id=finding.rule_id,
-                risk_type=RISK_TYPE_LABELS[code],
+                risk_type=finding_payload["risk_type"],
+                risk_types=finding_payload["risk_types"],
                 detection_method=finding.detection_method.lower(),
                 matched_via=finding.matched_via.lower() if finding.matched_via else None,
-                verdict=VERDICT_LABELS[finding.verdict],
-                reason=finding.reason,
-                matched_text=finding.matched_text,
-                rfp_clause_label=finding.clause_label,
-                rfp_chunk_id=finding.chunk_id,
-                rfp_excerpt=finding.excerpt,
+                verdict=finding_payload["verdict_label"],
+                reason=finding_payload["reason"],
+                matched_text=finding_payload["matched_text"],
+                rfp_clause_label=finding_payload["clause_label"],
+                rfp_chunk_id=finding_payload["chunk_id"],
+                rfp_excerpt=finding_payload["excerpt"],
                 rfp_value=rfp_value,
                 standard=(
                     finding.standard.model_dump(mode="json")

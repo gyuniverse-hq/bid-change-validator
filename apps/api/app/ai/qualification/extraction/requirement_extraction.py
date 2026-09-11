@@ -109,7 +109,7 @@ SLOT_SCHEMA: dict[str, Any] = {
                         "발급기관_raw": _nullable_source_string("등록·면허·인증 발급기관 원문. 없으면 null"),
                         "기업규모_raw": _nullable_source_string("소상공인·소기업·중소기업·중견기업 등 기업규모 원문. 없으면 null"),
                         "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
-                        "근거조항": _nullable_source_string("요건이 적힌 문서 자체의 조항 번호/라벨. 인용된 법령 조문은 제외. 없으면 null"),
+                        "근거조항": _nullable_source_string("이 요건이 적힌 문서 자체의 조항 번호/라벨(예: 2, 3.1, 제5조). 인용된 법령 조문은 제외. 없으면 null"),
                     },
                     "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"],
                 },
@@ -130,7 +130,7 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 8. 인증·면허·등록 요건은 '특정 등록/면허/인증을 보유 또는 완료해야 한다'는 단일 사실일 때만 각각 인증요건/면허요건/등록요건으로 분류한다. 등록인증_raw에는 실제 명칭을 담는다.
 9. 소재지 제한은 유형=지역요건, 지역_raw에 원문 지역명을 담는다.
 10. 소상공인·소기업·중소기업·중견기업·대기업 등 규모 제한은 유형=기업규모요건, 기업규모_raw에 원문 표현을 담는다. Backend enum으로 변환하지 마라.
-11. 근거조항에는 raw가 나온 문서 자체의 실제 조항 번호/라벨만 복사한다. 인용된 법령 조문은 문서 위치가 아니므로 적지 않는다. 제목과 하위 번호를 합성하지 않는다. 확실하지 않으면 null로 둔다.
+11. 근거조항에는 이 요건이 적힌 문서 자체의 조항 번호(예: 2, 3.1, 제5조)만 적는다. 요건 문장이 인용하는 법령 조문은 문서 위치가 아니다. 문서 조항 번호를 알 수 없으면 null로 둔다.
 12. 공동수급/공동계약 구성원·대표사 관계, 대표자 중복, 변경등록, 입찰무효, 법령상 예외, '아니어야 한다/하지 않아야 한다' 같은 부정 조건, 여러 조건이 '또는/다만/각 호'로 결합된 복합 절차 조건은 단순 등록·면허·인증 보유 요건으로 축약하지 마라. 닫힌 canonical 유형 하나로 안전하게 표현할 수 없으면 유형=기타요건으로 둔다.
 13. 원문에 여러 독립적인 원자 조건이 명시되어 있으면 한 문장을 임의 요약하지 말고 각각 별도 requirement로 추출한다. 단, 논리 관계를 잃게 되는 복합조건은 억지로 분해하지 말고 기타요건으로 둔다.
 14. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
@@ -194,6 +194,49 @@ def _normalize_reference(value: str) -> str:
     return re.sub(r"^(?:조항|제)\s*", "", value.strip()).rstrip(".)조항 ")
 
 
+_REFERENCE_SPLIT_RE = re.compile(r"[,、·]|\s+및\s+|\s+과\s+|\s+와\s+")
+
+
+def _reference_parts(reference: str) -> list[str]:
+    return [part.strip() for part in _REFERENCE_SPLIT_RE.split(reference) if part.strip()]
+
+
+def classify_clause_reference(
+    reference: str,
+    chunks: list[dict[str, Any]],
+    source_chunk: dict[str, Any] | None,
+) -> str:
+    """Classify a model-supplied reference without discarding grounded text."""
+    parts = _reference_parts(reference)
+    if not parts:
+        return "UNVERIFIED"
+
+    source_labels: set[str] = set()
+    if source_chunk and source_chunk.get("clause_label"):
+        source_labels.add(str(source_chunk["clause_label"]))
+    source_text = (source_chunk.get("text") or "") if source_chunk else ""
+    if source_labels and all(
+        part in source_labels or _normalize_reference(part) in source_labels
+        for part in parts
+    ):
+        return "DOCUMENT_CLAUSE"
+    if source_text and all(
+        re.search(
+            r"(?m)^\s*" + re.escape(_normalize_reference(part)) + r"(?:[.)\s]|$)",
+            source_text,
+        )
+        for part in parts
+    ):
+        return "DOCUMENT_CLAUSE"
+
+    haystack = _squash(source_text)
+    if not haystack:
+        haystack = "".join(_squash(chunk.get("text") or "") for chunk in chunks)
+    if haystack and all(_squash(part) in haystack for part in parts):
+        return "STATUTE"
+    return "UNVERIFIED"
+
+
 def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any] | None:
     probe = _squash(raw)
     if not probe:
@@ -222,19 +265,18 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
 
     reference = slot.get("근거조항")
     if reference:
-        normalized_reference = _normalize_reference(str(reference))
-        source_label = _normalize_reference(str(source_chunk.get("clause_label") or ""))
-        appears_in_source = re.search(r"(?m)^\s*" + re.escape(normalized_reference) + r"(?:[.)\s]|$)", source_chunk.get("text") or "")
-        if normalized_reference != source_label and not appears_in_source:
-            # A wrong location must not discard an otherwise grounded requirement.
-            # Statute citations remain in raw, not in the document's clause label.
+        kind = classify_clause_reference(str(reference), chunks, source_chunk)
+        slot["_reference_kind"] = kind
+        if kind == "STATUTE":
+            slot["_statute_reference"] = str(reference)
+            slot["근거조항"] = None
+        elif kind == "UNVERIFIED":
             slot["근거조항"] = None
 
     return True, "", source_chunk
 
 
 def _rejection_reason_code(reason: str) -> str:
-    """Convert internal validation text to the stable API contract."""
     if reason == "raw 비어 있음":
         return "MISSING_RAW"
     if reason.startswith("raw가 본문에 존재하지 않음"):
@@ -293,23 +335,11 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
         if accepted or not requirements:
             reported_rejections = rejected or (last_rejected if not requirements else [])
             truncated = len(full_body) > len(body)
-            notes = (
-                [
-                    f"검증 탈락 {len(reported_rejections)}건: "
-                    f"{[item['raw'][:30] for item in reported_rejections]}"
-                ]
-                if reported_rejections
-                else []
-            )
-            if not requirements and last_notes:
-                notes.append(last_notes)
+            notes = ([f"검증 탈락 {len(reported_rejections)}건"] if reported_rejections else [])
             if truncated:
                 notes.append("입력 길이 제한으로 선택된 원문 일부를 분석하지 못했습니다.")
-            return {"slots": accepted, "dropped_requirements": reported_rejections, "status": "partial" if notes else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+            return {"slots": accepted, "dropped_requirements": reported_rejections, "status": "partial" if reported_rejections or truncated else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
 
-        last_notes = (
-            f"전 슬롯 검증 탈락(시도 {attempt + 1}): "
-            f"{[item['raw'][:30] for item in rejected]}"
-        )
+        last_notes = f"전 슬롯 검증 탈락(시도 {attempt + 1})"
 
     return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": last_notes, "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}

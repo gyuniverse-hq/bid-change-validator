@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "017_company_profile_facts"
-down_revision = "016_dropped_requirements"
+revision = "018_company_profile_facts"
+down_revision = "017_req_judgment_contract"
 branch_labels = None
 depends_on = None
 

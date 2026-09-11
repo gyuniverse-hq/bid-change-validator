@@ -15,6 +15,7 @@ from apps.api.app.models import (
     BidNotice,
     BidNoticeVersion,
     NoticeCollectionRun,
+    NoticeChangeHistory,
     NoticeDocument,
     NoticeFact,
     NoticeRelation,
@@ -22,7 +23,7 @@ from apps.api.app.models import (
 from apps.api.app.routers import notices as notices_router
 from apps.api.app.routers import preflight_cases as preflight_cases_router
 from apps.api.app.schemas import BusinessType, NoticeInquiryType, NoticeSyncRequest
-from apps.api.app.services.g2b import G2BPage
+from apps.api.app.services.g2b import G2BClient, G2BPage
 from apps.api.app.services.document_storage import (
     LocalDocumentStorage,
     NoticeDocumentDownloader,
@@ -64,6 +65,24 @@ class FakeFileSession:
     def get(self, *_args, **_kwargs) -> FakeFileResponse:
         self.calls += 1
         return FakeFileResponse(self.content)
+
+
+class FakeJsonResponse:
+    def __init__(self, payload: bytes) -> None:
+        self.content = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class FakeJsonSession:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.calls: list[tuple[str, dict, float]] = []
+
+    def get(self, url: str, *, params: dict, timeout: float) -> FakeJsonResponse:
+        self.calls.append((url, params, timeout))
+        return FakeJsonResponse(self.payload)
 
 
 def _hwpx_content() -> bytes:
@@ -514,4 +533,142 @@ def test_sync_fetches_and_links_direct_previous_notice() -> None:
             if collection_run is not None:
                 db.delete(collection_run)
                 db.commit()
+        db.close()
+
+
+def test_g2b_change_history_uses_notice_number_operation() -> None:
+    payload = b'''{"response":{"header":{"resultCode":"00","resultMsg":"normal"},"body":{"items":[{"bidNtceNo":"R26TEST","chgItemNm":"bid deadline"}],"totalCount":1,"pageNo":1,"numOfRows":100}}}'''
+    session = FakeJsonSession(payload)
+    g2b = G2BClient(
+        service_key="decoded-key",
+        base_url="https://example.test/BidPublicInfoService",
+        timeout_seconds=7,
+        session=session,
+    )
+
+    page = g2b.fetch_change_history_page(
+        business_type=BusinessType.SERVICE,
+        bid_notice_no="R26TEST",
+    )
+
+    assert page.endpoint == "getBidPblancListInfoChgHstryServc"
+    assert page.total_count == 1
+    assert page.items[0]["chgItemNm"] == "bid deadline"
+    url, params, timeout = session.calls[0]
+    assert url.endswith("/getBidPblancListInfoChgHstryServc")
+    assert params["inqryDiv"] == "2"
+    assert params["bidNtceNo"] == "R26TEST"
+    assert timeout == 7
+
+    g2b.fetch_change_history_page(
+        business_type=BusinessType.SERVICE,
+        window_started_at=datetime(2026, 9, 5, 9, tzinfo=KST),
+        window_ended_at=datetime(2026, 9, 5, 10, tzinfo=KST),
+    )
+    _, window_params, _ = session.calls[1]
+    assert window_params["inqryDiv"] == "1"
+    assert window_params["inqryBgnDt"] == "202609050900"
+    assert window_params["inqryEndDt"] == "202609051000"
+
+
+def test_changed_sync_persists_authoritative_change_history() -> None:
+    notice_no = f"TEST-CHANGE-{uuid4()}"
+    changed_item = _item(notice_no)
+    changed_item["bidNtceOrd"] = "000"
+    history_item = {
+        "bsnsDivNm": "용역",
+        "chgDataDivNm": "입찰공고",
+        "chgDt": "2026-09-05 12:00:00",
+        "bidNtceNo": notice_no,
+        "bidNtceOrd": "000",
+        "rbidNo": "000",
+        "chgItemNm": "입찰마감일시",
+        "bfchgVal": "2026/09/10 10:00",
+        "afchgVal": "2026/09/12 10:00",
+    }
+
+    class FakeChangedG2BClient:
+        def __init__(self) -> None:
+            self.history_calls: list[dict] = []
+
+        def fetch_page(self, **kwargs) -> G2BPage:
+            return G2BPage(
+                items=[changed_item],
+                total_count=1,
+                page_number=kwargs["page_number"],
+                page_size=kwargs["page_size"],
+                endpoint="getBidPblancListInfoServc",
+            )
+
+        def fetch_change_history_page(self, **kwargs) -> G2BPage:
+            self.history_calls.append(kwargs)
+            return G2BPage(
+                items=[history_item],
+                total_count=1,
+                page_number=kwargs["page_number"],
+                page_size=kwargs["page_size"],
+                endpoint="getBidPblancListInfoChgHstryServc",
+            )
+
+    fake_client = FakeChangedG2BClient()
+    db = SessionLocal()
+    notice_id = None
+    run_ids = []
+    try:
+        request = NoticeSyncRequest(
+            business_type=BusinessType.SERVICE,
+            inquiry_type=NoticeInquiryType.CHANGED,
+            window_started_at=datetime(2026, 9, 5, 9, tzinfo=KST),
+            window_ended_at=datetime(2026, 9, 5, 13, tzinfo=KST),
+        )
+        first_run = run_notice_sync(db, request=request, client=fake_client)
+        run_ids.append(first_run.id)
+        notice = db.scalar(
+            select(BidNotice).where(BidNotice.bid_notice_no == notice_no)
+        )
+        assert notice is not None
+        notice_id = notice.id
+        version = db.scalar(
+            select(BidNoticeVersion).where(BidNoticeVersion.notice_id == notice.id)
+        )
+        history = db.scalar(
+            select(NoticeChangeHistory).where(
+                NoticeChangeHistory.notice_id == notice.id
+            )
+        )
+        assert history is not None
+        assert history.notice_version_id == version.id
+        assert history.item_name == "입찰마감일시"
+        assert history.before_value == "2026/09/10 10:00"
+        assert history.after_value == "2026/09/12 10:00"
+        assert first_run.api_calls == 2
+
+        second_run = run_notice_sync(db, request=request, client=fake_client)
+        run_ids.append(second_run.id)
+        assert db.scalar(
+            select(func.count())
+            .select_from(NoticeChangeHistory)
+            .where(NoticeChangeHistory.notice_id == notice.id)
+        ) == 1
+
+        response = client.get(f"/api/v1/notices/{notice.id}/change-history")
+        assert response.status_code == 200, response.text
+        assert response.json()[0]["item_name"] == "입찰마감일시"
+        version_response = client.get(
+            f"/api/v1/notices/{notice.id}/change-history",
+            params={"version_number": 1},
+        )
+        assert len(version_response.json()) == 1
+        assert len(fake_client.history_calls) == 2
+    finally:
+        if notice_id is not None:
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        for run_id in run_ids:
+            run = db.get(NoticeCollectionRun, run_id)
+            if run is not None:
+                db.delete(run)
+        db.commit()
         db.close()

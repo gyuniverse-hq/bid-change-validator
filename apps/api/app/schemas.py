@@ -572,6 +572,25 @@ class NoticeFactDiffRead(ApiModel):
     changes: list[NoticeFactChangeRead]
 
 
+class NoticeChangeHistoryRead(ApiModel):
+    id: UUID
+    notice_id: UUID
+    notice_version_id: UUID | None
+    bid_notice_order: str | None
+    rebid_number: str | None
+    changed_at: datetime | None
+    change_data_type: str | None
+    item_name: str
+    before_value: str | None
+    after_value: str | None
+    business_division_name: str | None
+    source_endpoint: str
+    payload_hash: str
+    collected_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
 class BidNoticeDetail(BidNoticeSummary):
     latest: BidNoticeVersionRead
     relation: NoticeRelationRead | None = None

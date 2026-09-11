@@ -18,8 +18,10 @@ from ..models import (
 )
 from ..schemas import BusinessType, NoticeInquiryType, NoticeSyncRequest
 from .g2b import G2BClient
+from .g2b import CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE
 from .document_storage import NoticeDocumentDownloader
 from .document_extraction import copy_extraction
+from .notice_change_history import upsert_notice_change_history
 from .notice_facts import upsert_g2b_notice_facts
 
 
@@ -349,6 +351,7 @@ def run_notice_sync(
     try:
         pending_previous_numbers: deque[str] = deque()
         queued_previous_numbers: set[str] = set()
+        change_history_targets: dict[str, tuple[BidNotice, BidNoticeVersion]] = {}
 
         def queue_previous_notice(item: dict[str, Any]) -> None:
             previous_notice_no = _text(item.get("befBidBbancNo"))
@@ -381,7 +384,7 @@ def run_notice_sync(
             )
             run.api_calls += 1
             for item in page.items:
-                result, _, _ = save_notice_snapshot(
+                result, notice, version = save_notice_snapshot(
                     db,
                     item=item,
                     business_type=request.business_type,
@@ -390,6 +393,8 @@ def run_notice_sync(
                 )
                 count_result(result)
                 queue_previous_notice(item)
+                if request.inquiry_type == NoticeInquiryType.CHANGED:
+                    change_history_targets[notice.bid_notice_no] = (notice, version)
             db.commit()
             if not page.items or page_number * request.page_size >= page.total_count:
                 break
@@ -428,6 +433,45 @@ def run_notice_sync(
                 )
                 count_result(result)
                 queue_previous_notice(previous_item)
+            db.commit()
+
+        if (
+            change_history_targets
+            and request.business_type in CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE
+        ):
+            history_page_number = 1
+            while history_page_number <= request.max_pages:
+                history_page = client.fetch_change_history_page(
+                    business_type=request.business_type,
+                    window_started_at=request.window_started_at,
+                    window_ended_at=request.window_ended_at,
+                    page_number=history_page_number,
+                    page_size=request.page_size,
+                )
+                run.api_calls += 1
+                history_by_notice: dict[str, list[dict[str, Any]]] = {}
+                for history_item in history_page.items:
+                    history_notice_no = _text(history_item.get("bidNtceNo"))
+                    if history_notice_no in change_history_targets:
+                        history_by_notice.setdefault(history_notice_no, []).append(
+                            history_item
+                        )
+                for bid_notice_no, history_items in history_by_notice.items():
+                    notice, version = change_history_targets[bid_notice_no]
+                    upsert_notice_change_history(
+                        db,
+                        notice=notice,
+                        fallback_version=version,
+                        items=history_items,
+                        source_endpoint=history_page.endpoint,
+                    )
+                if (
+                    not history_page.items
+                    or history_page_number * request.page_size
+                    >= history_page.total_count
+                ):
+                    break
+                history_page_number += 1
             db.commit()
 
         run.status = "COMPLETED"

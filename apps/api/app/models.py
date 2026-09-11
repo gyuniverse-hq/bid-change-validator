@@ -403,6 +403,57 @@ Index("idx_notice_facts_version", NoticeFact.notice_version_id)
 Index("idx_notice_facts_key", NoticeFact.fact_key)
 
 
+class NoticeChangeHistory(Base):
+    """Raw field-level change history reported by the G2B API."""
+
+    __tablename__ = "notice_change_histories"
+    __table_args__ = (
+        UniqueConstraint(
+            "notice_id", "payload_hash", name="uq_notice_change_history_payload"
+        ),
+        CheckConstraint(
+            "LENGTH(payload_hash) = 64",
+            name="notice_change_histories_payload_hash_length",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    notice_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notices.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notice_version_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notice_versions.id", ondelete="SET NULL"),
+    )
+    bid_notice_order: Mapped[str | None] = mapped_column(Text)
+    rebid_number: Mapped[str | None] = mapped_column(Text)
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    change_data_type: Mapped[str | None] = mapped_column(Text)
+    item_name: Mapped[str] = mapped_column(Text, nullable=False)
+    before_value: Mapped[str | None] = mapped_column(Text)
+    after_value: Mapped[str | None] = mapped_column(Text)
+    business_division_name: Mapped[str | None] = mapped_column(Text)
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+Index("idx_notice_change_histories_notice", NoticeChangeHistory.notice_id)
+Index("idx_notice_change_histories_version", NoticeChangeHistory.notice_version_id)
+Index("idx_notice_change_histories_changed_at", NoticeChangeHistory.changed_at.desc())
+
+
 class NoticeDocument(Base):
     __tablename__ = "notice_documents"
     __table_args__ = (

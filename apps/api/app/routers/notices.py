@@ -14,6 +14,7 @@ from ..models import (
     BidNotice,
     BidNoticeVersion,
     NoticeCollectionRun,
+    NoticeChangeHistory,
     NoticeDocument,
     NoticeFact,
     NoticeRelation,
@@ -26,6 +27,7 @@ from ..schemas import (
     BusinessType,
     DocumentExtractionBatchRead,
     NoticeCollectionRunRead,
+    NoticeChangeHistoryRead,
     NoticeDocumentTextRead,
     NoticeFactDiffRead,
     NoticeFactRead,
@@ -483,6 +485,45 @@ def list_notice_facts(
         .order_by(NoticeFact.fact_key)
     ).all()
     return [NoticeFactRead.model_validate(fact) for fact in facts]
+
+
+@router.get(
+    "/{notice_id}/change-history",
+    response_model=list[NoticeChangeHistoryRead],
+)
+def list_notice_change_history(
+    notice_id: UUID,
+    version_number: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    db: Session = Depends(get_db),
+) -> list[NoticeChangeHistoryRead]:
+    if db.get(BidNotice, notice_id) is None:
+        raise ApiError(404, "NOTICE_NOT_FOUND", "입찰공고를 찾을 수 없습니다.")
+
+    query = select(NoticeChangeHistory).where(
+        NoticeChangeHistory.notice_id == notice_id
+    )
+    if version_number is not None:
+        version = db.scalar(
+            select(BidNoticeVersion).where(
+                BidNoticeVersion.notice_id == notice_id,
+                BidNoticeVersion.version_number == version_number,
+            )
+        )
+        if version is None:
+            raise ApiError(404, "NOTICE_VERSION_NOT_FOUND", "입찰공고 버전을 찾을 수 없습니다.")
+        query = query.where(NoticeChangeHistory.notice_version_id == version.id)
+
+    rows = db.scalars(
+        query.order_by(
+            NoticeChangeHistory.changed_at.desc().nullslast(),
+            NoticeChangeHistory.created_at.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return [NoticeChangeHistoryRead.model_validate(row) for row in rows]
 
 
 @router.get("/{notice_id}/fact-changes", response_model=NoticeFactDiffRead)

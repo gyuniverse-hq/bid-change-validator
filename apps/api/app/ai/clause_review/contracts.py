@@ -261,11 +261,15 @@ def _own_first[T](own: T, everything: list[T]) -> list[T]:
 def finding_to_payload(
     finding: ClauseFinding, findings: list[ClauseFinding] | None = None
 ) -> dict[str, Any]:
-    classified = apply_overlapping_categories(
-        list(findings) if findings else [finding]
-    )
-    finding = next(
-        (item for item in classified if item.rule_id == finding.rule_id), finding
+    source_findings = list(findings) if findings else [finding]
+    categories, risk_types = overlapping_categories(finding, source_findings)
+    finding = finding.model_copy(
+        update={
+            "risk_type": finding.risk_type,
+            "risk_types": _own_first(finding.risk_type, risk_types),
+            "category": finding.category,
+            "categories": _own_first(finding.category, categories),
+        }
     )
     standard = finding.standard
     return {

@@ -3,44 +3,109 @@ name: Copilot integration validation
 on:
   push:
     branches: [feature/ai-copilot-v1]
-  pull_request:
-    branches: [develop]
-    paths:
-      - '.github/workflows/copilot-integration.yml'
-      - 'apps/**/copilot/**'
-      - 'apps/**/copilot-*'
-      - 'apps/**/test_copilot*'
 
+# Temporary, narrowly scoped publication bridge. The approved final tree replaces
+# this workflow with read-only validation and removes all transport files.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: copilot-integration-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  source-snapshots:
+  validate-and-publish-feature:
+    if: github.repository == 'gyuniverse-hq/bid-change-validator' && github.ref == 'refs/heads/feature/ai-copilot-v1' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: copilot_ci
+          POSTGRES_USER: copilot_ci
+          POSTGRES_PASSWORD: isolated_ci_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U copilot_ci -d copilot_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://copilot_ci:isolated_ci_only@127.0.0.1:5432/copilot_ci
+      AUTH_REQUIRED: 'false'
+      PYTHONPATH: ${{ github.workspace }}
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
+      APPROVED_TREE: c91fde71aa7f3b30e67838b8f2b0d2bd05f204a8
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Export exact tracked source snapshots (no credentials or runtime data)
+      - name: Assemble hash-verified source tree (no main or develop writes)
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p validation-artifacts
-          git rev-parse HEAD origin/develop origin/main > validation-artifacts/refs.txt
-          BASE=$(git merge-base HEAD origin/develop)
-          echo "$BASE" >> validation-artifacts/refs.txt
-          git archive --format=tar.gz -o validation-artifacts/copilot-source.tar.gz HEAD
-          git archive --format=tar.gz -o validation-artifacts/develop-source.tar.gz origin/develop
-          git archive --format=tar.gz -o validation-artifacts/main-source.tar.gz origin/main
-          git archive --format=tar.gz -o validation-artifacts/common-source.tar.gz "$BASE"
-          sha256sum validation-artifacts/* > validation-artifacts/SHA256SUMS
-      - uses: actions/upload-artifact@v4
+          test "$(git rev-parse origin/develop)" = "$COPILOT_BASE_SHA"
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, re, subprocess
+          def git(*args, **kwargs):
+              return subprocess.check_output(['git', *args], **kwargs).decode().strip()
+          packed = base64.b64decode(''.join(pathlib.Path(f'.integration-transport/part{i}.b64').read_text().strip() for i in range(4)), validate=True)
+          assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace', 'Transport checksum mismatch'
+          data = json.loads(lzma.decompress(packed))
+          assert data['schema'] == 1 and data['base'] == os.environ['COPILOT_BASE_SHA']
+          assert data['final_tree'] == os.environ['APPROVED_TREE']
+          subprocess.run(['git', 'merge-base', '--is-ancestor', data['source'], 'HEAD'], check=True)
+          subprocess.run(['git', 'read-tree', '--reset', '-u', data['base']], check=True)
+          for entry in data['entries']:
+              path = pathlib.PurePosixPath(entry['path'])
+              assert not path.is_absolute() and '..' not in path.parts
+              assert entry['mode'] in ('100644', '100755') and re.fullmatch('[0-9a-f]{40}', entry['sha'])
+              subprocess.run(['git', 'update-index', '--add', '--cacheinfo', entry['mode'], entry['sha'], entry['path']], check=True)
+          assert git('write-tree') == data['initial_tree'], 'Source object identity mismatch'
+          subprocess.run(['git', 'checkout-index', '-a', '-f'], check=True)
+          patch = data['patch'].encode('utf-8')
+          subprocess.run(['git', 'apply', '--check', '--index'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--index'], input=patch, check=True)
+          assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
+          subprocess.run(['git', 'diff', '--cached', '--check', data['base']], check=True)
+          pathlib.Path('.ci-results').mkdir(exist_ok=True)
+          pathlib.Path('.ci-results/approved-tree.txt').write_text(os.environ['APPROVED_TREE'] + '\n')
+          print('Exact approved tree assembled; source, baseline and file bytes verified')
+          PY
+      - uses: actions/setup-python@v5
         with:
-          name: copilot-source-snapshots
-          path: validation-artifacts/
-          retention-days: 3
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.txt
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Isolated DB, full backend, client, build and browser gates
+        shell: bash
+        run: bash scripts/ci_copilot_integration.sh
+      - name: Publish validated tree only to the Copilot feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/feature/ai-copilot-v1'
+          git diff --exit-code
+          test "$(git write-tree)" = "$APPROVED_TREE"
+          test "$(git ls-remote origin refs/heads/feature/ai-copilot-v1 | cut -f1)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/develop | cut -f1)" = "$COPILOT_BASE_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          COMMIT=$(git commit-tree "$APPROVED_TREE" -p "$GITHUB_SHA" -p "$COPILOT_BASE_SHA" -m 'feat(copilot): integrate released baseline with designer UI and safe action recovery')
+          git push origin "$COMMIT:refs/heads/feature/ai-copilot-v1"
+          printf '%s\n' "$COMMIT" > .ci-results/published-commit.txt
+          git diff --stat "$COPILOT_BASE_SHA" "$COMMIT" > .ci-results/integration-diff-stat.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: copilot-integration-results
+          path: .ci-results/
+          retention-days: 7

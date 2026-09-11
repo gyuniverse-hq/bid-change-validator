@@ -114,7 +114,8 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
               <p className="mt-2 text-[13.5px] text-[var(--product-muted)]">복합·예외·법적 요건은 사용자 답변만으로 판정하지 않습니다. 해당 조건은 원문 검토 대상으로 남겨둡니다.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {totalJudgments > 0 && <span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold text-[var(--product-muted)]">진행 {resolvedCount}/{totalJudgments}</span>}
+              {/* 사용자가 직접 답한 개수가 아니라 자동 판정까지 포함한 값이라 「진행」이 아니라 「판정 완료」로 쓴다 */}
+              {totalJudgments > 0 && <span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold text-[var(--product-muted)]">판정 완료 {resolvedCount}/{totalJudgments}</span>}
               <span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">답하면 판정 {askable.length}</span>
               <span className="rounded-full bg-[#f6f7f9] px-3 py-1 text-[12px] font-bold">물을 수 없음 {unaskable.length}</span>
             </div>
@@ -132,7 +133,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
                     <span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">답하면 판정합니다</span>
                     <span className="text-[12.5px] text-[var(--product-muted)]">{labelOf(REQUIREMENT_TYPE_LABEL, question.requirement_type)}</span>
                   </div>
-                  <button type="button" onClick={() => skip(question.requirement_key)} className="text-[12.5px] font-semibold text-[var(--product-muted)] underline underline-offset-2 hover:text-[var(--product-ink)]">건너뛰기</button>
+                  <button type="button" onClick={() => skip(question.requirement_key)} className="shrink-0 text-[12.5px] font-semibold text-[var(--product-muted)] underline underline-offset-2 hover:text-[var(--product-ink)]">이번 화면에서 건너뛰기</button>
                 </div>
                 <h3 className="mt-3 text-[19px] font-bold leading-8 tracking-[-0.03em] text-[var(--product-ink)]">{question.question}</h3>
                 <p className="mt-3 text-[13.5px] text-[var(--product-muted)]">회사 프로필에 비교할 값이 없어, 귀사 답변으로만 안전하게 판정할 수 있는 조건입니다.</p>
@@ -162,9 +163,13 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
 
           {askableSkipped.length > 0 && (
             <section className="rounded-[20px] border border-dashed border-[#eef0f4] bg-[#fafbfc] px-[26px] py-4">
-              <button type="button" onClick={() => setShowSkipped((v) => !v)} className="text-[13px] font-semibold text-[var(--product-muted)]">
-                건너뛴 항목 {askableSkipped.length}개 {showSkipped ? '접기 ▲' : '보기 ▼'}
-              </button>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <button type="button" onClick={() => setShowSkipped((v) => !v)} className="text-[13px] font-semibold text-[var(--product-muted)]">
+                  건너뛴 항목 {askableSkipped.length}개 {showSkipped ? '접기 ▲' : '보기 ▼'}
+                </button>
+                {/* skipped는 화면 state라 저장되지 않는다. 저장된 상태로 오해하지 않도록 명시한다. */}
+                <span className="text-[12px] text-[var(--product-faint)]">이 화면에서만 숨긴 상태로, 새로고침하면 다시 나타납니다</span>
+              </div>
               {showSkipped && (
                 <ul className="mt-3 space-y-2">
                   {askableSkipped.map((question) => (

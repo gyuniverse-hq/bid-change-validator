@@ -38,6 +38,8 @@ import { REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 const PROPOSAL_CHECK_TYPES = ['PERFORMANCE_AMOUNT', 'PERFORMANCE_COUNT', 'STAFF', 'REGISTRATION_CERTIFICATION', 'EXPERIENCE_FIELD', 'COMPANY_SIZE'];
 const CHECK_STATES: ProposalCheckState[] = ['CHECKED', 'PENDING', 'NOT_APPLICABLE'];
 const NOT_FOUND_COPY = '찾지 못했습니다. 직접 확인해주세요';
+/** 정상 조회 후 후보가 없는 것(NOT_FOUND_COPY)과 텍스트 조회 자체가 실패한 것은 다르게 표시한다. */
+const LOAD_FAILED_COPY = '제안서 텍스트를 불러오지 못했습니다. 원문에서 직접 확인해주세요.';
 
 type CheckMap = Record<string, ProposalCheckState>;
 
@@ -89,25 +91,28 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
   const { workspace, error, reload } = useCaseWorkspace(caseId);
 
   // ── 제안서 문서 · 추출 블록 ─────────────────────────────────────────────
+  // role === 'PROPOSAL'인 문서만 제안서로 본다. 첨부자료(ATTACHMENT)를 제안서처럼 대신 쓰지 않는다 —
+  // 제안서가 없으면 「제안서 없음 → 업로드 안내」 상태로 두는 게 검증 화면에서 맞다.
   const proposalDoc: ProposalDocument | null = useMemo(() => {
-    const docs = workspace?.caseItem.documents ?? [];
-    const proposals = docs.filter((doc) => doc.role === 'PROPOSAL');
-    const pick = proposals.length ? proposals : docs;
-    return pick.length ? pick[pick.length - 1] : null;
+    const proposals = (workspace?.caseItem.documents ?? []).filter((doc) => doc.role === 'PROPOSAL');
+    return proposals.length ? proposals[proposals.length - 1] : null;
   }, [workspace]);
   const extracted = proposalDoc?.extraction_status === 'EXTRACTED';
 
   // 동기 setState-in-effect 금지(팀 lint) → 상태는 docId와 함께 들고, 파생값으로 쓴다
-  const [blocksState, setBlocksState] = useState<{ docId: string; blocks: ProposalBlock[] } | null>(null);
-  const blocks = proposalDoc && extracted && blocksState?.docId === proposalDoc.id ? blocksState.blocks : null;
-  const blocksLoading = Boolean(proposalDoc && extracted && !blocks);
+  // status로 '정상 조회'와 '조회 실패'를 구분한다. 실패를 빈 배열로 뭉개면 화면에서 「찾지 못했습니다」로 보인다.
+  const [blocksState, setBlocksState] = useState<{ docId: string; status: 'success' | 'error'; blocks: ProposalBlock[] } | null>(null);
+  const currentBlocks = proposalDoc && extracted && blocksState?.docId === proposalDoc.id ? blocksState : null;
+  const blocks = currentBlocks?.status === 'success' ? currentBlocks.blocks : null;
+  const blocksError = currentBlocks?.status === 'error';
+  const blocksLoading = Boolean(proposalDoc && extracted && !currentBlocks);
   useEffect(() => {
     if (!proposalDoc || !extracted) return;
     let cancelled = false;
     const docId = proposalDoc.id;
     void getDocumentText(proposalDoc.text_url)
-      .then((payload) => { if (!cancelled) setBlocksState({ docId, blocks: (payload.blocks ?? []) as unknown as ProposalBlock[] }); })
-      .catch(() => { if (!cancelled) setBlocksState({ docId, blocks: [] }); });
+      .then((payload) => { if (!cancelled) setBlocksState({ docId, status: 'success', blocks: (payload.blocks ?? []) as unknown as ProposalBlock[] }); })
+      .catch(() => { if (!cancelled) setBlocksState({ docId, status: 'error', blocks: [] }); });
     return () => { cancelled = true; };
   }, [proposalDoc, extracted]);
 
@@ -231,6 +236,7 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
                     <button type="button" onClick={() => setSelectedKey(key)} className="flex h-full w-full cursor-pointer items-center bg-transparent px-4 text-left text-[13px]">
                       {!proposalDoc ? <span className="text-[var(--product-faint)]">제안서를 올리면 찾습니다</span>
                         : !extracted ? <span className="text-[var(--product-faint)]">텍스트를 추출하지 못했습니다</span>
+                        : blocksError ? <span className="text-[var(--product-bad)]">불러오지 못했습니다</span>
                         : blocksLoading || hits === null ? <LoaderCircle className="size-4 animate-spin text-[var(--product-faint)]" />
                         : first ? <><span className="text-[var(--product-accent)]">{first.location}</span><span className="mt-0.5 block text-[11.5px] text-[var(--product-faint)]">후보 {hits.length}곳</span></>
                         : <span className="text-[var(--product-faint)]">{NOT_FOUND_COPY}</span>}
@@ -277,7 +283,8 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
                       <Input value={query} onChange={(event) => setQuery(event.target.value)} disabled={!blocks} placeholder="제안서에서 직접 찾기 — 예: 투입인력" aria-label="제안서 직접 검색" className="h-auto flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" />
                       <Search className="size-4 text-[var(--product-muted)]" />
                     </div>
-                    {query.trim() && <div className="mt-2 space-y-2">
+                    {blocksError && <p className="mt-2 px-1 text-[12.5px] text-[var(--product-bad)]">{LOAD_FAILED_COPY}</p>}
+                    {query.trim() && blocks && <div className="mt-2 space-y-2">
                       {searchHits.length ? searchHits.map((hit) => <button key={hit.block.block_index} type="button" onClick={() => setQuery('')} className="block w-full rounded-[12px] border border-[#eef0f4] px-3 py-2 text-left"><span className="block text-[12.5px] font-semibold">{hit.location}</span><span className="mt-0.5 block text-[12px] leading-5 text-[var(--product-muted)]">{hit.excerpt}</span></button>)
                         : <p className="px-1 text-[12.5px] text-[var(--product-faint)]">「{query.trim()}」{NOT_FOUND_COPY}</p>}
                     </div>}
@@ -286,6 +293,7 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
                   {selected && <div className="px-5 pt-5">
                     <div className="flex items-center gap-2"><strong className="min-w-0 flex-1 truncate text-[15px] text-[var(--product-ink)]">{selected.requirement.raw}</strong><span className="rounded-full border border-[var(--product-line)] px-2.5 py-0.5 text-[11.5px]">{labelOf(REQUIREMENT_TYPE_LABEL, selected.requirement.type)}</span></div>
                     {!extracted ? <p className="mt-2 text-[12.5px] text-[var(--product-muted)]">텍스트를 추출하지 못해 위치를 찾을 수 없습니다. 아래 뷰어에서 직접 확인해 주세요.</p>
+                      : blocksError ? <p className="mt-2 text-[12.5px] text-[var(--product-bad)]">{LOAD_FAILED_COPY}</p>
                       : selected.hits === null ? <p className="mt-2 text-[12.5px] text-[var(--product-muted)]">제안서를 읽는 중입니다…</p>
                       : selected.hits.length ? <>
                         <p className="mt-2 text-[12.5px] text-[var(--product-muted)]">관련 문구 후보 {selected.hits.length}곳 · {[...new Set(selected.hits.flatMap((hit) => hit.matched))].slice(0, 4).map((word) => `「${word}」`).join('')}으로 찾았습니다</p>

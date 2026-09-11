@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from apps.api.app.auth_models import AppUser, AuthSession
+from apps.api.app import auth as auth_service
+from apps.api.app.config import get_settings
 from apps.api.app.database import SessionLocal
 from apps.api.app.main import app
 
@@ -76,3 +78,35 @@ def test_invalid_login_does_not_reveal_which_credential_failed() -> None:
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
+
+
+def test_business_apis_require_session_when_enabled(monkeypatch) -> None:
+    protected_settings = get_settings().model_copy(update={"auth_required": True})
+    monkeypatch.setattr(auth_service, "get_settings", lambda: protected_settings)
+    protected_client = TestClient(app)
+
+    unauthorized = protected_client.get("/api/v1/companies")
+    assert unauthorized.status_code == 401
+    assert unauthorized.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+    assert protected_client.get("/health").status_code == 200
+
+    login_response = protected_client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "admin"},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    authorized = protected_client.get(
+        "/api/v1/companies",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert authorized.status_code == 200
+
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(AppUser).where(AppUser.username == "admin"))
+        if user is not None:
+            db.delete(user)
+            db.commit()
+    finally:
+        db.close()

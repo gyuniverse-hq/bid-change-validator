@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     auth_bootstrap_admin_password: str = "admin"
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
     auth_cookie_secure: bool = False
+    auth_required: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

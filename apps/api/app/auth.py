@@ -136,6 +136,10 @@ def get_current_session(
     db: Session = Depends(get_db),
 ) -> AuthSession:
     raw_token = _extract_token(authorization, session_cookie)
+    return _load_session(db, raw_token)
+
+
+def _load_session(db: Session, raw_token: str) -> AuthSession:
     session = db.scalar(
         select(AuthSession)
         .where(AuthSession.token_hash == _token_hash(raw_token))
@@ -149,6 +153,19 @@ def get_current_session(
     ):
         raise ApiError(401, "INVALID_SESSION", "로그인 세션이 만료되었거나 유효하지 않습니다.")
     return session
+
+
+def require_authentication_if_enabled(
+    authorization: str | None = Header(default=None),
+    session_cookie: str | None = Cookie(default=None, alias="bidcheck_session"),
+    db: Session = Depends(get_db),
+) -> AppUser | None:
+    """Protect business APIs in deployments that enable authentication."""
+
+    if not get_settings().auth_required:
+        return None
+    raw_token = _extract_token(authorization, session_cookie)
+    return _load_session(db, raw_token).user
 
 
 def get_current_user(session: AuthSession = Depends(get_current_session)) -> AppUser:

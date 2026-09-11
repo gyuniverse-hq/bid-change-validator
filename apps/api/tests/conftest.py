@@ -6,7 +6,7 @@ from apps.api.app.database import SessionLocal
 from apps.api.app.models import IndustryCode, InstitutionCode, ProductCode
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def seed_required_master_codes():
     """Make backend tests reproducible on a freshly migrated database.
 

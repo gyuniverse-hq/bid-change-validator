@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
@@ -128,6 +129,7 @@ def _performance_response(performance: CompanyPerformance) -> PerformanceRead:
         amount=int(performance.amount),
         started_at=performance.started_at,
         completed_at=performance.completed_at,
+        completed_year=performance.completed_year,
         description=performance.description,
         fields=sorted(field.field_name for field in performance.experience_fields),
         verified=performance.verified,
@@ -150,6 +152,11 @@ def _company_response(company: Company) -> CompanyRead:
                 StaffRoleRead(
                     role_name=role.role_name,
                     headcount=role.headcount,
+                    career_years=(
+                        float(role.career_years)
+                        if role.career_years is not None
+                        else None
+                    ),
                     verified=role.verified,
                 )
                 for role in sorted(company.staff_roles, key=lambda item: item.role_name)
@@ -176,7 +183,11 @@ def _company_response(company: Company) -> CompanyRead:
             _performance_response(performance)
             for performance in sorted(
                 company.performances,
-                key=lambda item: (item.completed_at, str(item.id)),
+                key=lambda item: (
+                    item.completed_at
+                    or date(item.completed_year or 1900, 12, 31),
+                    str(item.id),
+                ),
                 reverse=True,
             )
         ],
@@ -228,6 +239,7 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)) -> Com
         CompanyStaffRole(
             role_name=role.role_name,
             headcount=role.headcount,
+            career_years=role.career_years,
             verified=role.verified,
         )
         for role in payload.staff.roles
@@ -303,6 +315,7 @@ def update_company(
                 CompanyStaffRole(
                     role_name=role.role_name,
                     headcount=role.headcount,
+                    career_years=role.career_years,
                     verified=role.verified,
                 )
                 for role in payload.staff.roles
@@ -356,6 +369,7 @@ def create_performance(
         amount=payload.amount,
         started_at=payload.started_at,
         completed_at=payload.completed_at,
+        completed_year=payload.completed_year,
         description=payload.description,
         verified=payload.verified,
         experience_fields=[
@@ -382,28 +396,66 @@ def update_performance(
     if "client_institution_code" in supplied:
         _validate_institution_code(db, payload.client_institution_code)
 
+    completion_fields = {"completed_at", "completed_year"} & supplied
+    if completion_fields:
+        completed_at = (
+            payload.completed_at
+            if "completed_at" in supplied
+            else performance.completed_at
+        )
+        completed_year = (
+            payload.completed_year
+            if "completed_year" in supplied
+            else performance.completed_year
+        )
+        if payload.completed_at is not None and "completed_year" not in supplied:
+            completed_year = None
+        if payload.completed_year is not None and "completed_at" not in supplied:
+            completed_at = None
+        if (completed_at is None) == (completed_year is None):
+            raise ApiError(
+                422,
+                "INVALID_COMPLETION_DATE",
+                "completed_at 또는 completed_year 중 하나만 입력해야 합니다.",
+            )
+        performance.completed_at = completed_at
+        performance.completed_year = completed_year
+
     for field in (
         "name",
         "client_name",
         "client_institution_code",
         "amount",
         "started_at",
-        "completed_at",
         "description",
         "verified",
     ):
         if field not in supplied:
             continue
         value = getattr(payload, field)
-        if field in {"name", "amount", "completed_at", "verified"} and value is None:
+        if field in {"name", "amount", "verified"} and value is None:
             raise ApiError(422, "INVALID_REQUEST", f"{field} cannot be null")
         setattr(performance, field, value)
 
-    if performance.started_at and performance.started_at > performance.completed_at:
+    if (
+        performance.started_at
+        and performance.completed_at
+        and performance.started_at > performance.completed_at
+    ):
         raise ApiError(
             422,
             "INVALID_DATE_RANGE",
             "started_at은 completed_at보다 늦을 수 없습니다.",
+        )
+    if (
+        performance.started_at
+        and performance.completed_year
+        and performance.started_at.year > performance.completed_year
+    ):
+        raise ApiError(
+            422,
+            "INVALID_DATE_RANGE",
+            "started_at 연도는 completed_year보다 늦을 수 없습니다.",
         )
 
     if "fields" in supplied:

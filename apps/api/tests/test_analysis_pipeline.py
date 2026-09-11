@@ -285,8 +285,8 @@ def test_pipeline_keeps_unmapped_evidence_even_with_rejected_candidates():
     assert result.requirements == []
     assert len(result.evidence) == 1
     diagnostic = next(item for item in result.diagnostics if item.code == "UNMAPPED_REQUIREMENT")
-    assert diagnostic.severity == "WARNING"
-    assert diagnostic.details["evidence_keys"] == [result.evidence[0].evidence_key]
+    assert diagnostic.severity == "INFO"
+    assert diagnostic.evidence_keys == [result.evidence[0].evidence_key]
 
 
 def test_pipeline_does_not_report_empty_retry_as_success():
@@ -297,7 +297,12 @@ def test_pipeline_does_not_report_empty_retry_as_success():
     result = analyze_qualification_documents(_input(), structured_extract=lambda *args: next(answers))
     assert result.status == "FAILED"
     assert result.diagnostics[0].code == "EXTRACTION_PARTIAL"
-    assert "원문에 없는 부산" in result.diagnostics[0].details["notes"]
+    assert [item.model_dump() for item in result.dropped_requirements] == [
+        {
+            "raw": "원문에 없는 부산 소재 업체",
+            "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+        }
+    ]
 
 
 def test_extracted_industry_code_reaches_existing_deterministic_judge():

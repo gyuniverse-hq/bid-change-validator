@@ -16,6 +16,13 @@ from ....qualification.rules.clause_safety import unsafe_clause_reason
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 _INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")
+_SIZE_EXCLUSION_RE = re.compile(
+    r"참여\s*(?:제한|불가|배제|금지)"
+    r"|참가\s*(?:제한|불가|배제)"
+    r"|참여할\s*수\s*없"
+    r"|참여\s*(?:를)?\s*(?:제외|배제)"
+    r"|입찰\s*참가\s*자격\s*(?:을)?\s*제한"
+)
 
 
 def _op(word: str | None) -> RequirementOperator | None:
@@ -216,7 +223,15 @@ def adapt_legacy_slot(
     elif slot_type == "기업규모요건":
         company_size = (slot.get("기업규모_raw") or "").strip()
         if company_size:
-            add("COMPANY_SIZE", "COMPANY_SIZE", operator="MATCH", value=company_size)
+            add(
+                "COMPANY_SIZE",
+                "COMPANY_SIZE",
+                operator="MATCH",
+                value=company_size,
+                scope={"restriction": "EXCLUDE"}
+                if _SIZE_EXCLUSION_RE.search(raw)
+                else {},
+            )
         else:
             diagnostics.append({"code": "UNMAPPED_COMPANY_SIZE", "raw": raw})
 

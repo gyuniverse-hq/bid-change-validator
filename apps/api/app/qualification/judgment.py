@@ -135,7 +135,7 @@ def build_company_profile_snapshot(company: Company, completeness: ProfileComple
         staff = ProfileStaffFact(
             total_count=company.staff.total_count,
             verified=company.staff.verified,
-            roles=[ProfileStaffRoleFact(role_name=item.role_name, headcount=item.headcount, verified=item.verified) for item in sorted(company.staff_roles, key=lambda x: x.role_name)],
+            roles=[ProfileStaffRoleFact(role_name=item.role_name, headcount=item.headcount, career_years=float(item.career_years) if item.career_years is not None else None, verified=item.verified) for item in sorted(company.staff_roles, key=lambda x: x.role_name)],
         )
     return CompanyProfileSnapshot(
         company_id=str(company.id),
@@ -149,12 +149,13 @@ def build_company_profile_snapshot(company: Company, completeness: ProfileComple
                 ref=str(item.id), name=item.name, client_name=item.client_name,
                 client_institution_code=item.client_institution_code, amount=int(item.amount),
                 started_at=item.started_at, completed_at=item.completed_at,
+                completed_year=item.completed_year,
                 fields=sorted(field.field_name for field in item.experience_fields), verified=item.verified,
             )
-            for item in sorted(company.performances, key=lambda x: (x.completed_at, str(x.id)), reverse=True)
+            for item in sorted(company.performances, key=lambda x: (x.completed_at or date(x.completed_year or 1900, 12, 31), str(x.id)), reverse=True)
         ],
         certifications=[
-            ProfileCertificationFact(ref=str(item.id), name=item.name, issuer_name=item.issuer_name, issued_at=item.issued_at, expires_at=item.expires_at, verified=item.verified)
+            ProfileCertificationFact(ref=str(item.id), name=item.name, certification_code=item.certification_code, issuer_name=item.issuer_name, issued_at=item.issued_at, expires_at=item.expires_at, verified=item.verified)
             for item in sorted(company.certifications, key=lambda x: (x.name, str(x.id)))
         ],
         completeness=completeness,
@@ -205,7 +206,9 @@ def run_qualification_judgment(db: Session, *, case_id: UUID, analysis_run_id: U
         db.add(QualificationJudgmentRecord(
             judgment_run_id=run.id, judgment_key=item.judgment_key, requirement_key=item.requirement_key,
             status=item.status, basis_type=item.basis_type, evidence_held=item.evidence_held,
-            reason_code=item.reason_code, requires_evidence=item.requires_evidence,
+            value_source=item.value_source, evidence_status=item.evidence_status,
+            reason_code=item.reason_code, unknown_reason=item.unknown_reason,
+            requires_evidence=item.requires_evidence,
             profile_refs=list(item.profile_refs), requirement_evidence_keys=list(item.requirement_evidence_keys),
             rule_version=item.rule_version,
         ))
@@ -225,7 +228,9 @@ def judgment_run_response(run: QualificationJudgmentRun) -> QualificationJudgmen
     judgments = [Judgment(
         judgment_key=item.judgment_key, preflight_case_id=str(run.preflight_case_id), notice_version_id=str(run.notice_version_id),
         requirement_key=item.requirement_key, status=item.status, basis_type=item.basis_type,
-        evidence_held=item.evidence_held, reason_code=item.reason_code, requires_evidence=item.requires_evidence,
+        evidence_held=item.evidence_held, value_source=item.value_source,
+        evidence_status=item.evidence_status, reason_code=item.reason_code,
+        unknown_reason=item.unknown_reason, requires_evidence=item.requires_evidence,
         profile_refs=list(item.profile_refs or []), requirement_evidence_keys=list(item.requirement_evidence_keys or []), rule_version=item.rule_version,
     ) for item in sorted(run.judgments, key=lambda x: x.requirement_key)]
     return QualificationJudgmentRunRead(

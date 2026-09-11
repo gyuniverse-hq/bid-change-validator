@@ -9,7 +9,7 @@ import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -366,11 +366,16 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">판정 대상이 아닌 확인사항 {noticeFacts.length}건</strong>
                     <ul className="mt-2 space-y-2">
-                      {noticeFacts.map((item) => {
+                      {/* message는 코드별 고정 문구라 같은 code가 여러 건이면 전부 같은 문장이 된다. 무엇이 걸렸는지는 근거 원문으로만 구분된다. */}
+                      {noticeFacts.map((item, index) => {
                         const evidenceKey = item.evidence_keys[0];
+                        const evidence = evidenceKey ? analysisDetail?.evidence.find((row) => row.evidence_key === evidenceKey) ?? null : null;
+                        const locationText = evidence ? evidenceLocationText(evidence.location) : null;
                         return (
-                          <li key={`${item.code}-${item.message}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
-                            <p className="text-[13px] leading-6 text-[var(--product-body)]">{item.message}</p>
+                          <li key={`${item.code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
+                            {evidence && <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
+                            <p className={evidence ? 'mt-1 text-[13px] leading-6 text-[var(--product-body)]' : 'text-[13px] leading-6 text-[var(--product-body)]'}>{item.message}</p>
+                            {locationText && <p className="mt-1 text-[12px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {evidenceKey && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidenceKey)}>근거 원문 보기</Button>}
                           </li>
                         );

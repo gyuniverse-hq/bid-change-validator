@@ -13,6 +13,7 @@ import type {
   QualificationAnalysisSummary,
   QualificationJudgment,
   QualificationJudgmentRun,
+  RequirementChange,
 } from '@/lib/qualification-api';
 
 type JudgmentStatus = QualificationJudgment['status'];
@@ -129,6 +130,14 @@ export const COMPANY_SIZE_LABEL: Record<CompanySize, string> = {
   MID_SIZED: '중견기업',
   LARGE: '대기업',
   NONE: '미분류',
+};
+
+/** 변경공고 재검증 결과의 변경 유형. app/changes/page.tsx의 CHANGE_TYPE_LABEL을 옮겨온 것. */
+export const CHANGE_TYPE_LABEL: Record<RequirementChange['change_type'], string> = {
+  UNCHANGED: '변경 없음',
+  MODIFIED: '수정됨',
+  ADDED: '신설됨',
+  REMOVED: '삭제됨',
 };
 
 /** 나라장터 사업유형. SERVICE 외에는 실제 값 확인 필요. */

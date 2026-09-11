@@ -182,3 +182,13 @@
 - 관련 단위·브리핑·확장항목 테스트: `29 passed in 0.88s`.
 - 최종 DB 제외 전체 회귀 테스트: `164 passed in 2.99s`.
 - 후속 수정: `.assist { display:flex }`가 브라우저의 기본 `[hidden]` 스타일을 덮어쓰던 문제를 발견해 `.assist[hidden] { display:none }`을 추가했습니다. 이제 토글을 끄면 챗봇 패널 전체가 실제로 사라집니다.
+
+## 2026-09-11
+
+### develop 변경사항 동기화
+
+- `origin/develop`의 DB 연결 안정화 및 마이그레이션 010~012 변경을 `integration/llm-rag-validation`에 병합했습니다.
+- 양쪽 브랜치가 `009_qualification_revalidation`에서 각각 갈라져 별도 마이그레이션 헤드를 만들고 있었으므로, 이미 적용된 revision ID를 변경하지 않고 `013_merge_develop_llm` 병합 마이그레이션으로 두 계보를 안전하게 합쳤습니다.
+- `.claude/`는 사용자 로컬 파일로 판단해 추적하거나 수정하지 않았습니다.
+- Alembic 단일 헤드(`013_merge_develop_llm`)와 전체 오프라인 upgrade SQL 생성을 확인했습니다.
+- LLM/RAG 핵심 회귀 테스트는 `59 passed`입니다. API 전체 테스트는 기존 환경 의존 문제(외부 DB 접근, Windows 임시 폴더 권한·CP949, 골든셋 해시 불일치)만 재현됐습니다.

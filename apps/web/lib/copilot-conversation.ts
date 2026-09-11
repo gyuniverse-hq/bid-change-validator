@@ -5,11 +5,21 @@ export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorC
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
 export type Transport = (request: CopilotChatRequest) => Promise<CopilotChatResponse>;
 
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value).sort()
+    .map(key => JSON.stringify(key) + ':' + canonical((value as Record<string, unknown>)[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+
 export function validateSources(response: CopilotChatResponse) {
   const refs = response.sources.map(s => s.ref);
-  const used = [...response.answer.matchAll(/\[(S\d+)\]/g)].map(m => m[1]);
+  const used = [...new Set([...response.answer.matchAll(/\[(S\d+)\]/g)].map(m => m[1]))];
   const required = response.presentation?.reasons.flatMap(r => r.evidence_refs) ?? [];
-  if (new Set(refs).size !== refs.length || [...used, ...required, ...response.citations.map(s => s.ref)].some(r => !refs.includes(r))) {
+  if (refs.some((ref, i) => ref !== 'S' + (i + 1)) ||
+      [...used, ...required].some(ref => !refs.includes(ref)) || required.some(ref => !used.includes(ref)) ||
+      response.citations.length !== used.length || response.citations.some((source, i) =>
+        source.ref !== used[i] || canonical(source) !== canonical(response.sources.find(s => s.ref === source.ref)))) {
     throw new Error('응답의 근거 연결을 확인하지 못했습니다. 다시 조회해 주세요.');
   }
 }

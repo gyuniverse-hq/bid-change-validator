@@ -15,8 +15,12 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.getByRole('button', { name: '참여 가능해?', exact: true }).click();
     await page.getByText('현재 저장된 판정만으로는 참가 가능 여부를 확정할 수 없습니다.', { exact: true }).waitFor();
     await page.getByRole('button', { name: '무엇을 확인해야 해?', exact: true }).click();
-    await page.getByText('저장된 판정의 확인 대상 2건입니다.', { exact: true }).waitFor();
-    await page.locator('.copilot-answer').last().getByRole('button', { name: '이 요건 근거 보기' }).last().click();
+    await page.getByText(new RegExp('저장된 판정의 확인 대상 [0-9]+건입니다.'), { exact: true }).waitFor();
+    // An already answered requirement can still have evidence. The remaining
+    // unknown performance fixture intentionally has no linked evidence.
+    await page.getByRole('button', { name: '참여 가능해?', exact: true }).click();
+    await page.locator('.copilot-answer').last().getByText('현재 저장된 판정만으로는 참가 가능 여부를 확정할 수 없습니다.', { exact: true }).waitFor();
+    await page.locator('.copilot-answer').last().locator('.copilot-reason').filter({ hasText: '등록' }).getByRole('button', { name: '이 요건 근거 보기' }).first().click();
     await page.getByText('선택한 요건에 연결된 공고문 원문입니다.', { exact: true }).waitFor();
     const answer = page.locator('.copilot-answer').last();
     await answer.locator('summary').click();

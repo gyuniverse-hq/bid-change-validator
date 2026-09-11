@@ -131,6 +131,8 @@ def route_intent(request: CopilotChatRequest) -> Intent:
         return "REQUIREMENT_EVIDENCE"
     if request.intent and request.intent not in ("ACTION_REQUEST", "UNKNOWN"):
         return request.intent
+    if control in (None, "explain", "status") and any(term in text for term in ("프로필", "회사정보", "판정당시")):
+        return "PROFILE_SNAPSHOT"
     if control == "status":
         return "QUALIFICATION_SUMMARY"
     if control in ("answer", "revalidate"):

@@ -86,6 +86,32 @@ assert.equal(store.get('case-b').focus, null);
 assert.equal(transportRequests[0].allow_external_processing, undefined);
 assert.equal(transportRequests[0].public_document_question, undefined);
 assert.throws(() => validateSources({ ...copilotMocks.eligible, answer: '[S99]', sources: [] }));
+
+const evidenceResponse = structuredClone(copilotMocks.productEvidence);
+validateSources(evidenceResponse);
+const wrongQuote = JSON.parse(JSON.stringify(evidenceResponse));
+wrongQuote.citations[0].evidence.quote = 'different text';
+assert.throws(() => validateSources(wrongQuote));
+const wrongVersion = JSON.parse(JSON.stringify(evidenceResponse));
+wrongVersion.citations[0].evidence.notice_version_id = 'different-version';
+assert.throws(() => validateSources(wrongVersion));
+assert.throws(() => validateSources({ ...evidenceResponse, citations: [] }));
+const missingReason = structuredClone(evidenceResponse);
+missingReason.presentation = { conclusion: 'test', reasons: [{ text: 'test', evidence_refs: ['S99'] }], limitations: [] };
+assert.throws(() => validateSources(missingReason));
+const reordered = structuredClone(evidenceResponse);
+reordered.citations = reordered.citations.map(source => Object.fromEntries(Object.entries(source).reverse()));
+validateSources(reordered);
+const oldReply = { status: 'RESOLVED', context_revision: 1, requirement_key: 'R2',
+  visible_requirement_keys: ['R2'], last_read_receipt: { kind: 'product', provenance: { judgment_run_id: 'old' } } };
+let historicalRequest;
+const history = new ConversationStore(async request => { historicalRequest = request; return copilotMocks.eligible; });
+history.focus('history', 'R2', oldReply);
+await history.ask('history', '그 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
+assert.equal(historicalRequest.conversation_context.last_read_receipt.provenance.judgment_run_id, 'old');
+assert.match(readFileSync(resolve(root, 'components/copilot/panel.tsx'), 'utf8'), /ask\('그 조건 근거 보여줘'/);
+console.log('Citation metadata identity, citation completeness and historical receipt checks passed.');
+
 console.log('Conversation isolation, duplicate reads, late response, privacy and invalid reference checks passed.');
 
   console.log('Copilot client/view-model checks passed; 11 response mocks + 1 error fixture. No network calls.');

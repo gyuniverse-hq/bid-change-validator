@@ -66,7 +66,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         {state.turns.map(turn => <div key={turn.id} className="copilot-turn">
           <p className="copilot-question">{turn.question}</p>
           {turn.response && <Answer response={turn.response} caseId={caseId} onSelect={key => {
-            store.focus(caseId, key, turn.response?.reply_context); ask('선택 요건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
+            store.focus(caseId, key, turn.response?.reply_context); ask('그 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
           }} />}
         </div>)}
       </div>

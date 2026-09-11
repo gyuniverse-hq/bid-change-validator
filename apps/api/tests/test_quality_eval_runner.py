@@ -23,8 +23,13 @@ def test_synthetic_pipeline_preserves_unmapped_evidence():
     case = report["cases"][0]
     assert case["metrics"]["canonical_match"]["value"] == 1
     assert case["metrics"]["evidence_preserved"]["value"] == 1
-    assert case["analysis_status"] == "PARTIAL"
-    assert any(d["code"] == "UNMAPPED_REQUIREMENT" for d in case["analysis"]["diagnostics"])
+    assert case["analysis_status"] == "SUCCEEDED"
+    assert any(
+        d["code"] == "UNMAPPED_REQUIREMENT"
+        and d["kind"] == "NOTICE_FACT"
+        and d["severity"] == "INFO"
+        for d in case["analysis"]["diagnostics"]
+    )
     assert case["extractor_calls"] == 1
 
 

@@ -200,3 +200,9 @@
 - 제품 프론트 `apps/web`에는 새 응답 타입과 호출·표시 로직이 아직 연결되지 않아, 기존 화면은 빌드되지만 신규 LLM/RAG 기능은 제품 화면에서 보이지 않습니다.
 - 프론트 lint는 이번 변경과 무관한 기존 접근성·React compiler·타입 규칙 오류가 남아 있어 통과하지 않습니다.
 - `develop`의 011 DB 마이그레이션은 런타임 계약과 달리 `category=코드`, `risk_type=표시문구`이고 `risk_types/categories` JSONB 컬럼이 없습니다. 합의 계약(`risk_type=대표 코드`, `category=대표 한글`, 복수 배열 JSONB)에 맞추려면 후속 마이그레이션과 저장 계층 연결이 필요합니다.
+
+### PR #104 품질평가 상태 회귀 수정
+
+- `UNMAPPED_REQUIREMENT`는 판정 실패가 아니라 별도 표시할 공고 사실(`NOTICE_FACT`, `INFO`)이라는 현재 계약을 재확인했습니다.
+- 운영 코드를 `PARTIAL`로 되돌리면 `test_notice_fact_diagnostic_does_not_degrade_analysis_status`와 제품 의미가 깨지므로, 오래된 품질평가 테스트 기대값을 `SUCCEEDED`로 수정했습니다.
+- 품질평가 테스트에는 코드뿐 아니라 `kind=NOTICE_FACT`, `severity=INFO`까지 검증하도록 보강했습니다.

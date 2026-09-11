@@ -31,6 +31,12 @@ export class ConversationStore {
   focus(caseId: string, key: string | null, reply?: ReplyContext | null) {
     this.update(caseId, { focus: key, reply: reply ?? this.get(caseId).reply, revision: this.get(caseId).revision + 1, busy: false });
   }
+  publish(caseId: string, response: CopilotChatResponse) {
+    validateSources(response);
+    const state = this.get(caseId), revision = state.revision + 1;
+    this.update(caseId, { revision, busy: false, focus: null, reply: response.reply_context ?? undefined,
+      error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
+  }
   async ask(caseId: string, question: string, intent?: CopilotIntent, page?: 'QUALIFICATION' | 'ASK_BACK' | 'EVIDENCE' | 'CHANGES') {
     const old = this.get(caseId);
     if (!caseId || old.busy || !question.trim()) return;

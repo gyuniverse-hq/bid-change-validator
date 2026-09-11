@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Bot, MessageCircle, Send, X } from 'lucide-react';
+import { ActionCard } from './action-card';
+import { useActions } from './provider';
+import { isLocked } from '@/lib/copilot-actions';
 import { useCopilot } from './provider';
 import { getSourceLocationLabel } from '@/lib/copilot-view-model';
 import type { CopilotChatResponse, CopilotIntent } from '@/lib/copilot-api';
@@ -73,6 +76,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
           ? '저장된 판정이 아직 없습니다. 참가자격 화면에서 검토 상태를 확인해 주세요.' : state.error}
         <button disabled={state.busy} onClick={() => ask('현재 판정 결과', 'QUALIFICATION_SUMMARY')}>현재 결과 다시 조회</button>
       </div>}
+      <ActionCard caseId={caseId} />
       <div ref={end} />
     </div>
     <form className="copilot-input" onSubmit={e => { e.preventDefault(); if (!question.trim() || state.busy || !caseId) return; ask(question); setQuestion(''); }}>
@@ -84,6 +88,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
 }
 function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void }) {
   const p = response.presentation;
+  const { controller, action } = useActions(caseId);
   return <article className="copilot-answer">
     {p ? <>
       <p className="copilot-conclusion">{p.conclusion}</p>
@@ -103,6 +108,9 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
       </div>)}
     </details>}
     {response.product_state && 'profile_snapshot' in response.product_state && <details><summary>판정 당시 회사정보</summary><pre>{JSON.stringify(response.product_state.profile_snapshot, null, 2)}</pre></details>}
-    {response.actions.length > 0 && <p>이 패널에서는 아직 작업을 실행하지 않습니다. 상세 화면에서 반영 절차를 확인해 주세요.</p>}
+    {response.product_state && 'questions' in response.product_state && response.product_state.questions.filter(q => q.askable).map(q =>
+      <button key={q.requirement_key} disabled={isLocked(action)} onClick={() => void controller.beginAnswer(caseId, q.requirement_key,
+        response.reply_context?.last_read_receipt?.kind === 'product' ? response.reply_context.last_read_receipt.provenance.judgment_run_id : undefined)}>{q.question} · 답변 입력</button>)}
+    {response.actions.map((proposal, i) => <button key={i} disabled={isLocked(action)} onClick={() => controller.adopt(caseId, proposal)}>서버 제안 검토 · 아직 실행 안 함</button>)}
   </article>;
 }

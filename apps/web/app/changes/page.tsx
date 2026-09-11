@@ -1,12 +1,14 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { GitCompareArrows, LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { Button } from '@/components/ui/button';
-import { runQualificationRevalidation, type QualificationRevalidation } from '@/lib/qualification-api';
+import { ActionCard } from '@/components/copilot/action-card';
+import { useActions } from '@/components/copilot/provider';
+import { isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
 
 function formatDate(value: string | null | undefined) {
@@ -25,29 +27,12 @@ export default function ChangesPage() {
 
 function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
-  const [result, setResult] = useState<QualificationRevalidation | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-
-  async function revalidate() {
-    if (!workspace?.sourceJudgment || !workspace.baselineAnalysis || !workspace.currentAnalysis) return;
-    setBusy(true);
-    setError('');
-    try {
-      const next = await runQualificationRevalidation(workspace.caseItem.id, {
-        source_judgment_run_id: workspace.sourceJudgment.id,
-        baseline_analysis_run_id: workspace.sourceJudgment.analysis_run_id,
-        current_analysis_run_id: workspace.currentAnalysis.id,
-      });
-      setResult(next);
-      await reload();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '변경공고 재검증에 실패했습니다.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { controller, action } = useActions(caseId ?? '');
+  const result = action.result && 'revalidated_keys' in action.result ? action.result : null;
+  const busy = isLocked(action);
+  useEffect(() => {
+    if (action.stage === 'COMPLETED') void reload();
+  }, [action.stage, action.result?.result_judgment_run_id, reload]);
 
   const comparison = useMemo(() => {
     if (!workspace) return [];
@@ -64,7 +49,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   }, [workspace]);
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || <LoaderCircle className="size-7 animate-spin" />}</main>;
 
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
@@ -75,7 +60,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
         <CaseHeader workspace={workspace} />
         <CaseTabs caseId={workspace.caseItem.id} active="changes" />
 
-        {error && <div className="mt-5 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>}
+        <ActionCard caseId={caseId} />
 
         <section className="mt-8">
           <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">공고 차수</h2><span className="text-[13.5px] text-[var(--product-muted)]">판정은 차수에 묶입니다</span></div>
@@ -103,7 +88,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             </section>
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">Canonical Requirement Diff를 기준으로 MODIFIED / ADDED만 affected-only 재판정합니다. 나머지 판정은 유지됩니다.</p></div><Button onClick={() => void revalidate()} disabled={!canRevalidate || busy} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button></div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
               {result && <div className="mt-5"><div className="mb-3 text-[14px]">실제 재판정 <strong>{result.revalidated_keys.length}건</strong></div><div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{result.changes.filter((item) => item.change_type !== 'UNCHANGED').map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{item.change_type}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div></div>}
             </section>

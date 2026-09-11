@@ -35,7 +35,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
-      APPROVED_TREE: 91632f3548bda704e2e5d801be18a623eaa2780f
+      APPROVED_TREE: 5bd5b19edbb1916c25117cb00ee818381a96d5bf
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,9 +51,11 @@ jobs:
               return subprocess.check_output(['git', *args], **kwargs).decode().strip()
           packed = base64.b64decode(''.join(pathlib.Path(f'.integration-transport/part{i}.b64').read_text().strip() for i in range(4)), validate=True)
           assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace', 'Transport checksum mismatch'
-          fixes = base64.b64decode(pathlib.Path('.integration-transport/fixes.xz.b64').read_text().strip(), validate=True)
-          assert hashlib.sha256(fixes).hexdigest() == '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72', 'Correction checksum mismatch'
-          correction = lzma.decompress(fixes)
+          corrections = []
+          for name, digest in [('fixes', '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72'), ('fixes2', '79d0b529f261cb1609871cc6545eaac33a4890c2d82d0877ca1fb2f187f305ad')]:
+              binary = base64.b64decode(pathlib.Path(f'.integration-transport/{name}.xz.b64').read_text().strip(), validate=True)
+              assert hashlib.sha256(binary).hexdigest() == digest, 'Correction checksum mismatch'
+              corrections.append(lzma.decompress(binary))
           data = json.loads(lzma.decompress(packed))
           assert data['schema'] == 1 and data['base'] == os.environ['COPILOT_BASE_SHA']
           assert data['final_tree'] == 'c91fde71aa7f3b30e67838b8f2b0d2bd05f204a8'
@@ -68,8 +70,9 @@ jobs:
           subprocess.run(['git', 'apply', '--check', '--cached'], input=data['patch'].encode('utf-8'), check=True)
           subprocess.run(['git', 'apply', '--cached'], input=data['patch'].encode('utf-8'), check=True)
           assert git('write-tree') == data['final_tree'], 'Base payload identity mismatch'
-          subprocess.run(['git', 'apply', '--check', '--cached'], input=correction, check=True)
-          subprocess.run(['git', 'apply', '--cached'], input=correction, check=True)
+          for correction in corrections:
+              subprocess.run(['git', 'apply', '--check', '--cached'], input=correction, check=True)
+              subprocess.run(['git', 'apply', '--cached'], input=correction, check=True)
           assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
           subprocess.run(['git', 'checkout-index', '--all', '--force', '--index'], check=True)
           subprocess.run(['git', 'diff', '--exit-code'], check=True)

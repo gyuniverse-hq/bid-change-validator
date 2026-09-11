@@ -5,6 +5,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -31,6 +32,7 @@ from apps.api.app.services.document_storage import (
 from apps.api.app.services.notices import run_notice_sync, save_notice_snapshot
 
 
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 client = TestClient(app)
 KST = ZoneInfo("Asia/Seoul")
 

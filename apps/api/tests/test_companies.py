@@ -1,10 +1,12 @@
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import app
 
 
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 client = TestClient(app)
 
 

@@ -1,11 +1,15 @@
 import hashlib
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from apps.api.app.auth_models import AppUser, AuthSession
 from apps.api.app.database import SessionLocal
 from apps.api.app.main import app
+
+
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 
 
 def test_development_admin_login_session_and_logout() -> None:

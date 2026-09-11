@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.database import SessionLocal
@@ -9,6 +10,7 @@ from apps.api.app.schemas import BusinessType
 from apps.api.app.services.notices import save_notice_snapshot
 
 
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 client = TestClient(app)
 
 

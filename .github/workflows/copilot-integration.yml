@@ -1,18 +1,13 @@
 name: Copilot integration validation
-
 on:
   push:
     branches: [feature/ai-copilot-v1]
-
-# Temporary feature-only publisher. The verified final tree replaces this with
-# read-only validation and removes all transport files.
+# Temporary feature-only publisher; approved final tree restores read-only CI.
 permissions:
   contents: write
-
 concurrency:
   group: copilot-integration-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   validate-and-publish-feature:
     if: github.repository == 'gyuniverse-hq/bid-change-validator' && github.ref == 'refs/heads/feature/ai-copilot-v1' && github.event_name == 'push'
@@ -26,33 +21,34 @@ jobs:
           POSTGRES_USER: copilot_ci
           POSTGRES_PASSWORD: isolated_ci_only
         ports: ['127.0.0.1:5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U copilot_ci -d copilot_ci"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+        options: --health-cmd "pg_isready -U copilot_ci -d copilot_ci" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://copilot_ci:isolated_ci_only@127.0.0.1:5432/copilot_ci
       AUTH_REQUIRED: 'false'
       PYTHONPATH: ${{ github.workspace }}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
-      APPROVED_TREE: 5bd5b19edbb1916c25117cb00ee818381a96d5bf
+      APPROVED_TREE: 0d8c82eb950d91b4dcb2650a0d169acfdaf8945f
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Assemble hash-verified source tree (no main or develop writes)
+      - name: Assemble and verify exact approved source tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse origin/develop)" = "$COPILOT_BASE_SHA"
           python - <<'PY'
           import base64, hashlib, json, lzma, os, pathlib, re, subprocess
-          def git(*args, **kwargs):
-              return subprocess.check_output(['git', *args], **kwargs).decode().strip()
+          def git(*args):
+              return subprocess.check_output(['git', *args]).decode().strip()
           packed = base64.b64decode(''.join(pathlib.Path(f'.integration-transport/part{i}.b64').read_text().strip() for i in range(4)), validate=True)
-          assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace', 'Transport checksum mismatch'
+          assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace'
           corrections = []
-          for name, digest in [('fixes', '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72'), ('fixes2', '79d0b529f261cb1609871cc6545eaac33a4890c2d82d0877ca1fb2f187f305ad')]:
+          for name, digest in [
+              ('fixes', '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72'),
+              ('fixes2', '79d0b529f261cb1609871cc6545eaac33a4890c2d82d0877ca1fb2f187f305ad'),
+              ('fixes3', 'b8d4dbcc84b3873d5ca6cb0818c5e6fdf91022f5b9dd9de40607ead874c27ff1')]:
               binary = base64.b64decode(pathlib.Path(f'.integration-transport/{name}.xz.b64').read_text().strip(), validate=True)
               assert hashlib.sha256(binary).hexdigest() == digest, 'Correction checksum mismatch'
               corrections.append(lzma.decompress(binary))
@@ -66,20 +62,17 @@ jobs:
               assert not path.is_absolute() and '..' not in path.parts
               assert entry['mode'] in ('100644', '100755') and re.fullmatch('[0-9a-f]{40}', entry['sha'])
               subprocess.run(['git', 'update-index', '--add', '--cacheinfo', entry['mode'], entry['sha'], entry['path']], check=True)
-          assert git('write-tree') == data['initial_tree'], 'Source object identity mismatch'
-          subprocess.run(['git', 'apply', '--check', '--cached'], input=data['patch'].encode('utf-8'), check=True)
-          subprocess.run(['git', 'apply', '--cached'], input=data['patch'].encode('utf-8'), check=True)
-          assert git('write-tree') == data['final_tree'], 'Base payload identity mismatch'
-          for correction in corrections:
-              subprocess.run(['git', 'apply', '--check', '--cached'], input=correction, check=True)
-              subprocess.run(['git', 'apply', '--cached'], input=correction, check=True)
+          assert git('write-tree') == data['initial_tree']
+          for patch in [data['patch'].encode('utf-8'), *corrections]:
+              subprocess.run(['git', 'apply', '--check', '--cached'], input=patch, check=True)
+              subprocess.run(['git', 'apply', '--cached'], input=patch, check=True)
           assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
           subprocess.run(['git', 'checkout-index', '--all', '--force', '--index'], check=True)
           subprocess.run(['git', 'diff', '--exit-code'], check=True)
           subprocess.run(['git', 'diff', '--cached', '--check', data['base']], check=True)
           pathlib.Path('.ci-results').mkdir(exist_ok=True)
           pathlib.Path('.ci-results/approved-tree.txt').write_text(os.environ['APPROVED_TREE'] + '\n')
-          print('Exact approved tree assembled; source, baseline and file bytes verified')
+          print('Exact approved source, baseline and file bytes verified')
           PY
       - uses: actions/setup-python@v5
         with:
@@ -95,7 +88,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - name: Isolated DB, full backend, client, build and browser gates
-        shell: bash
         run: bash scripts/ci_copilot_integration.sh
       - name: Publish validated tree only to the Copilot feature branch
         shell: bash

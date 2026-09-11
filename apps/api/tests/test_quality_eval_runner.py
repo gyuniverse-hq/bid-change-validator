@@ -3,6 +3,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 from apps.api.app.scripts.quality_eval_report import build_report
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -54,3 +56,86 @@ assert not any(".demo" in name or "sqlalchemy" in name or "fastapi" in name for 
                             encoding="utf-8", errors="replace")
     assert result.returncode == 0, result.stderr
     assert '"model_quality_claim": false' in result.stdout
+
+
+# ── 반복 측정 ────────────────────────────────────────────────────────────
+# 모델은 같은 입력에도 매번 다르게 답한다. 한 번 돌린 수치를 정확도라고 부르면
+# 다음 실행에서 달라지므로, 여러 번 돌려 평균과 개별 값을 함께 남긴다.
+def _synthetic_extractor(case, *, flaky=False):
+    import copy
+
+    state = {"calls": 0}
+
+    def extractor(_system, _body, _schema):
+        state["calls"] += 1
+        slots = copy.deepcopy(case.spec.synthetic_slots)
+        # 두 번째 호출만 빈 결과를 준다 — 모델이 흔들리는 상황을 흉내낸다.
+        if flaky and state["calls"] == 2:
+            return {"requirements": []}
+        return {"requirements": slots}
+
+    return extractor
+
+
+def _synthetic_case():
+    from apps.api.app.ai.quality_eval.golden.fixtures import load_dataset
+
+    return load_dataset(DATA).cases[0]
+
+
+def test_repeated_runs_keep_each_value_next_to_the_mean() -> None:
+    from apps.api.app.ai.quality_eval.runner import evaluate_case_runs
+
+    case = _synthetic_case()
+    report = evaluate_case_runs(
+        case, structured_extract=_synthetic_extractor(case, flaky=True), runs=3
+    )
+
+    assert report["run_count"] == 3
+    assert len(report["runs"]) == 3
+
+    canonical = report["metrics"]["canonical_match"]
+    # 개별 값이 남아야 "3번 중 2번" 과 "매번 66%" 를 구분할 수 있다.
+    assert len(canonical["runs"]) == 3
+    assert len(set(canonical["runs"])) > 1, "흔들리는 추출기인데 값이 전부 같다"
+    measured = [v for v in canonical["runs"] if v is not None]
+    assert canonical["value"] == sum(measured) / len(measured)
+
+
+def test_deterministic_stages_are_verified_not_averaged() -> None:
+    """청킹·컨텍스트는 모델을 타지 않는다. 달라지면 측정기가 흔들린 것이다."""
+    from apps.api.app.ai.quality_eval import runner
+
+    case = _synthetic_case()
+    report = runner.evaluate_case_runs(
+        case, structured_extract=_synthetic_extractor(case), runs=2
+    )
+    # 평균이 아니라 원래 값 그대로다.
+    assert "runs" not in report["metrics"]["span_containment"]
+    assert report["chunk_health"]["count"] > 0
+
+    original = runner.evaluate_case
+
+    def drifting(case, *, structured_extract=None):
+        result = original(case, structured_extract=structured_extract)
+        drifting.seen += 1
+        if drifting.seen > 1:
+            result["chunk_health"] = {**result["chunk_health"], "count": 999}
+        return result
+
+    drifting.seen = 0
+    runner.evaluate_case = drifting
+    try:
+        with pytest.raises(ValueError, match="deterministic stage varied"):
+            runner.evaluate_case_runs(
+                case, structured_extract=_synthetic_extractor(case), runs=2
+            )
+    finally:
+        runner.evaluate_case = original
+
+
+def test_repeated_runs_require_an_extractor() -> None:
+    from apps.api.app.ai.quality_eval.runner import evaluate_case_runs
+
+    with pytest.raises(ValueError, match="extractor is required"):
+        evaluate_case_runs(_synthetic_case(), structured_extract=None, runs=3)

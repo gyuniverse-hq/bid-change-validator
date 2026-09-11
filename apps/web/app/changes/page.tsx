@@ -8,6 +8,7 @@ import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { Button } from '@/components/ui/button';
 import { runQualificationRevalidation, type QualificationRevalidation } from '@/lib/qualification-api';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
+import { CHANGE_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -68,6 +69,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
 
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
+  const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -91,7 +93,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
           </section>
         ) : (
           <>
-            <section className="mt-8">
+            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
               <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[13.5px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
                 <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
@@ -103,16 +105,15 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             </section>
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">Canonical Requirement Diff를 기준으로 MODIFIED / ADDED만 affected-only 재판정합니다. 나머지 판정은 유지됩니다.</p></div><Button onClick={() => void revalidate()} disabled={!canRevalidate || busy} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button></div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">바뀐 자격조건(수정·신설)만 다시 판정합니다. 나머지 판정은 그대로 둡니다.</p></div><Button onClick={() => void revalidate()} disabled={!canRevalidate || busy} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">실제 재판정 <strong>{result.revalidated_keys.length}건</strong></div><div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{result.changes.filter((item) => item.change_type !== 'UNCHANGED').map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{item.change_type}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div></div>}
-            </section>
+              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{CHANGE_TYPE_LABEL[item.change_type]}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
           </>
         )}
 
         <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5 text-[13px] leading-6 text-[var(--product-muted)]">
-          <strong className="text-[var(--product-ink)]">현재 Product Baseline 정책</strong><br />공고 변경값 자체는 NoticeVersion 원본 필드를 비교하고, 자격 판정 영향은 Backend Canonical Requirement Diff와 affected-only Revalidation 결과를 Source of Truth로 사용합니다.
-        </section>
+          <strong className="text-[var(--product-ink)]">현재 판정 반영 기준</strong><br />공고 값 변경은 나라장터 수집 값끼리 비교하고, 자격 판정 영향은 백엔드의 자격조건 비교와 다시 판정한 결과를 기준으로 표시합니다.
+      </section>
       </div>
     </main>
   );

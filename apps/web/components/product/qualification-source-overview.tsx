@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { BidNoticeSummary, BidNoticeVersion, PreflightCase } from '@/lib/api';
 import type { QualificationAnalysisRun } from '@/lib/qualification-api';
+import { BUSINESS_TYPE_LABEL, EXTRACTION_STATUS_LABEL, VIEWER_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 
 function money(value: number | null | undefined) {
   return value == null ? '-' : `${value.toLocaleString()}원`;
@@ -27,7 +28,7 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
     ['입찰공고번호', caseItem.bid_notice_no],
     ['공고차수', `${caseItem.current_version_number}차`],
     ['공고기관', notice?.announcing_institution_name ?? '-'],
-    ['사업유형', notice?.business_type ?? '-'],
+    ['사업유형', labelOf(BUSINESS_TYPE_LABEL, notice?.business_type)],
     ['계약방법', version?.contract_method ?? '-'],
     ['추정가격', money(version?.estimated_price)],
     ['배정예산', money(version?.allocated_budget)],
@@ -50,7 +51,7 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
         <div className="rounded-[20px] border border-[var(--product-line-2)] bg-white p-6">
           <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">제출·첨부 서류</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">현재 차수에서 실제 수집된 문서입니다.</p></div><span className="text-[12px] text-[var(--product-muted)]">{version?.documents.length ?? 0}종</span></div>
           <div className="mt-4 divide-y divide-[var(--product-line-2)]">
-            {version?.documents.length ? version.documents.map((document) => <div key={document.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><strong className="block truncate text-[13.5px]">{document.name}</strong><span className="mt-1 block text-[11.5px] text-[var(--product-muted)]">{document.viewer_type} · {document.extraction_status}{document.extracted_char_count != null ? ` · ${document.extracted_char_count.toLocaleString()}자` : ''}</span></div><Link href={`/evidence?caseId=${caseItem.id}`}><Button variant="outline" size="sm" className="rounded-full">원문 대조</Button></Link></div>) : <p className="py-6 text-center text-[13px] text-[var(--product-muted)]">현재 차수에 수집된 문서가 없습니다.</p>}
+            {version?.documents.length ? version.documents.map((document) => <div key={document.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><strong className="block truncate text-[13.5px]">{document.name}</strong><span className="mt-1 block text-[11.5px] text-[var(--product-muted)]">{labelOf(VIEWER_TYPE_LABEL, document.viewer_type)} · {labelOf(EXTRACTION_STATUS_LABEL, document.extraction_status)}{document.extracted_char_count != null ? ` · ${document.extracted_char_count.toLocaleString()}자` : ''}</span></div><Link href={`/evidence?caseId=${caseItem.id}`}><Button variant="outline" size="sm" className="rounded-full">원문 대조</Button></Link></div>) : <p className="py-6 text-center text-[13px] text-[var(--product-muted)]">현재 차수에 수집된 문서가 없습니다.</p>}
           </div>
         </div>
 

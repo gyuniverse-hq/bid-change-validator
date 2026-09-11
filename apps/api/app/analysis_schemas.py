@@ -6,7 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from .ai.analysis_result import AnalysisDiagnostic
+from .ai.qualification.extraction.analysis_result import (
+    AnalysisDiagnostic,
+    DroppedRequirement,
+)
 from .ai.contracts import Evidence, QualificationRequirement
 
 
@@ -20,6 +23,7 @@ class QualificationAnalysisRunRead(BaseModel):
     status: str
     target_chunk_ids: list[str] = Field(default_factory=list)
     diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)
+    dropped_requirements: list[DroppedRequirement] = Field(default_factory=list)
     requirements: list[QualificationRequirement] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     created_at: datetime

@@ -64,6 +64,7 @@ def _unique_stripped(values: list[str]) -> list[str]:
 class StaffRoleInput(ApiModel):
     role_name: str
     headcount: int = Field(ge=0)
+    career_years: float | None = Field(default=None, ge=0, le=999.99)
     verified: bool = False
 
     @field_validator("role_name")
@@ -185,7 +186,8 @@ class PerformanceCreate(ApiModel):
     client_institution_code: str | None = None
     amount: int = Field(ge=0, le=999_999_999_999_999_999)
     started_at: date | None = None
-    completed_at: date
+    completed_at: date | None = None
+    completed_year: int | None = Field(default=None, ge=1900, le=2100)
     description: str | None = None
     fields: list[str] = Field(default_factory=list)
     verified: bool = False
@@ -207,8 +209,20 @@ class PerformanceCreate(ApiModel):
 
     @model_validator(mode="after")
     def validate_dates(self) -> "PerformanceCreate":
-        if self.started_at is not None and self.started_at > self.completed_at:
+        if (self.completed_at is None) == (self.completed_year is None):
+            raise ValueError("exactly one of completed_at or completed_year is required")
+        if (
+            self.started_at is not None
+            and self.completed_at is not None
+            and self.started_at > self.completed_at
+        ):
             raise ValueError("started_at must be on or before completed_at")
+        if (
+            self.started_at is not None
+            and self.completed_year is not None
+            and self.started_at.year > self.completed_year
+        ):
+            raise ValueError("started_at year must be on or before completed_year")
         return self
 
 
@@ -219,6 +233,7 @@ class PerformanceUpdate(ApiModel):
     amount: int | None = Field(default=None, ge=0, le=999_999_999_999_999_999)
     started_at: date | None = None
     completed_at: date | None = None
+    completed_year: int | None = Field(default=None, ge=1900, le=2100)
     description: str | None = None
     fields: list[str] | None = None
     verified: bool | None = None
@@ -241,6 +256,7 @@ class PerformanceUpdate(ApiModel):
 
 class CertificationCreate(ApiModel):
     name: str
+    certification_code: str | None = None
     certificate_number: str | None = None
     issuer_name: str | None = None
     issued_at: date | None = None
@@ -257,6 +273,11 @@ class CertificationCreate(ApiModel):
     def strip_optional_text(cls, value: str | None) -> str | None:
         return value.strip() or None if value is not None else None
 
+    @field_validator("certification_code")
+    @classmethod
+    def normalize_certification_code(cls, value: str | None) -> str | None:
+        return value.strip().upper() or None if value is not None else None
+
     @model_validator(mode="after")
     def validate_dates(self) -> "CertificationCreate":
         if self.issued_at and self.expires_at and self.issued_at > self.expires_at:
@@ -266,6 +287,7 @@ class CertificationCreate(ApiModel):
 
 class CertificationUpdate(ApiModel):
     name: str | None = None
+    certification_code: str | None = None
     certificate_number: str | None = None
     issuer_name: str | None = None
     issued_at: date | None = None
@@ -282,6 +304,11 @@ class CertificationUpdate(ApiModel):
     def strip_optional_text(cls, value: str | None) -> str | None:
         return value.strip() or None if value is not None else None
 
+    @field_validator("certification_code")
+    @classmethod
+    def normalize_certification_code(cls, value: str | None) -> str | None:
+        return value.strip().upper() or None if value is not None else None
+
 
 class IndustryRead(ApiModel):
     code: str
@@ -292,6 +319,7 @@ class IndustryRead(ApiModel):
 class StaffRoleRead(ApiModel):
     role_name: str
     headcount: int
+    career_years: float | None
     verified: bool
 
 
@@ -308,7 +336,8 @@ class PerformanceRead(ApiModel):
     client_institution_code: str | None
     amount: int
     started_at: date | None
-    completed_at: date
+    completed_at: date | None
+    completed_year: int | None
     description: str | None
     fields: list[str]
     verified: bool
@@ -319,6 +348,7 @@ class PerformanceRead(ApiModel):
 class CertificationRead(ApiModel):
     id: UUID
     name: str
+    certification_code: str | None
     certificate_number: str | None
     issuer_name: str | None
     issued_at: date | None
@@ -502,8 +532,68 @@ class BidNoticeSummary(ApiModel):
     current_version: int
 
 
+class NoticeRelationRead(ApiModel):
+    notice_id: UUID
+    previous_notice_id: UUID | None
+    previous_bid_notice_no: str
+    previous_notice_title: str | None
+    match_method: str
+    match_confidence: str
+    resolved: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoticeFactRead(ApiModel):
+    id: UUID
+    notice_version_id: UUID
+    fact_key: str
+    value_json: object
+    source_type: str
+    source_field: str | None
+    raw_value: str | None
+    document_id: UUID | None
+    evidence_location: dict | None
+    quote: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoticeFactChangeRead(ApiModel):
+    fact_key: str
+    change_type: str
+    baseline: NoticeFactRead | None
+    current: NoticeFactRead | None
+
+
+class NoticeFactDiffRead(ApiModel):
+    baseline_version_id: UUID
+    current_version_id: UUID
+    changes: list[NoticeFactChangeRead]
+
+
+class NoticeChangeHistoryRead(ApiModel):
+    id: UUID
+    notice_id: UUID
+    notice_version_id: UUID | None
+    bid_notice_order: str | None
+    rebid_number: str | None
+    changed_at: datetime | None
+    change_data_type: str | None
+    item_name: str
+    before_value: str | None
+    after_value: str | None
+    business_division_name: str | None
+    source_endpoint: str
+    payload_hash: str
+    collected_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
 class BidNoticeDetail(BidNoticeSummary):
     latest: BidNoticeVersionRead
+    relation: NoticeRelationRead | None = None
 
 
 class BidNoticeSearchResponse(ApiModel):

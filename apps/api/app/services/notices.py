@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections import deque
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -8,11 +9,20 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from ..models import BidNotice, BidNoticeVersion, NoticeCollectionRun, NoticeDocument
+from ..models import (
+    BidNotice,
+    BidNoticeVersion,
+    NoticeCollectionRun,
+    NoticeDocument,
+    NoticeRelation,
+)
 from ..schemas import BusinessType, NoticeInquiryType, NoticeSyncRequest
 from .g2b import G2BClient
+from .g2b import CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE
 from .document_storage import NoticeDocumentDownloader
 from .document_extraction import copy_extraction
+from .notice_change_history import upsert_notice_change_history
+from .notice_facts import upsert_g2b_notice_facts
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -97,6 +107,68 @@ def _documents(item: dict[str, Any]) -> list[dict[str, Any]]:
     return documents
 
 
+def _resolve_pending_notice_relations(
+    db: Session,
+    *,
+    collected_notice: BidNotice,
+    resolved_at: datetime,
+) -> None:
+    """Resolve references created before their predecessor was collected."""
+
+    db.execute(
+        update(NoticeRelation)
+        .where(
+            NoticeRelation.previous_notice_id.is_(None),
+            NoticeRelation.previous_bid_notice_no == collected_notice.bid_notice_no,
+            NoticeRelation.notice_id != collected_notice.id,
+        )
+        .values(previous_notice_id=collected_notice.id, updated_at=resolved_at)
+    )
+
+
+def _upsert_api_notice_relation(
+    db: Session,
+    *,
+    notice: BidNotice,
+    item: dict[str, Any],
+    updated_at: datetime,
+) -> None:
+    """Persist G2B's direct previous-notice reference when it is provided."""
+
+    previous_bid_notice_no = _text(item.get("befBidBbancNo"))
+    if previous_bid_notice_no is None:
+        return
+
+    previous_notice = db.scalar(
+        select(BidNotice).where(BidNotice.bid_notice_no == previous_bid_notice_no)
+    )
+    previous_notice_id = (
+        previous_notice.id
+        if previous_notice is not None and previous_notice.id != notice.id
+        else None
+    )
+
+    relation = db.get(NoticeRelation, notice.id)
+    if relation is None:
+        db.add(
+            NoticeRelation(
+                notice_id=notice.id,
+                previous_notice_id=previous_notice_id,
+                previous_bid_notice_no=previous_bid_notice_no,
+                match_method="API_FIELD",
+                match_confidence="CONFIRMED",
+                updated_at=updated_at,
+            )
+        )
+        return
+
+    relation.previous_notice_id = previous_notice_id
+    relation.previous_bid_notice_no = previous_bid_notice_no
+    relation.match_method = "API_FIELD"
+    relation.match_confidence = "CONFIRMED"
+    relation.updated_at = updated_at
+
+
 def save_notice_snapshot(
     db: Session,
     *,
@@ -142,6 +214,24 @@ def save_notice_snapshot(
         )
         notice.last_seen_at = collected_at
         if existing is not None:
+            _resolve_pending_notice_relations(
+                db,
+                collected_notice=notice,
+                resolved_at=collected_at,
+            )
+            _upsert_api_notice_relation(
+                db,
+                notice=notice,
+                item=item,
+                updated_at=collected_at,
+            )
+            upsert_g2b_notice_facts(
+                db,
+                notice_version_id=existing.id,
+                item=item,
+                updated_at=collected_at,
+            )
+            db.flush()
             return "UNCHANGED", notice, existing
 
         db.execute(
@@ -159,6 +249,18 @@ def save_notice_snapshot(
         ) or 0
         version_number = latest_number + 1
         result = "NEW_VERSION"
+
+    _resolve_pending_notice_relations(
+        db,
+        collected_notice=notice,
+        resolved_at=collected_at,
+    )
+    _upsert_api_notice_relation(
+        db,
+        notice=notice,
+        item=item,
+        updated_at=collected_at,
+    )
 
     notice.title = title
     notice.business_type = business_type.value
@@ -193,6 +295,12 @@ def save_notice_snapshot(
     )
     db.add(version)
     db.flush()
+    upsert_g2b_notice_facts(
+        db,
+        notice_version_id=version.id,
+        item=item,
+        updated_at=collected_at,
+    )
     downloaded_by_url: dict[str, NoticeDocument] = {}
     known_storage_by_hash: dict[str, str] = {}
     for document_values in _documents(item):
@@ -241,6 +349,28 @@ def run_notice_sync(
     db.refresh(run)
 
     try:
+        pending_previous_numbers: deque[str] = deque()
+        queued_previous_numbers: set[str] = set()
+        change_history_targets: dict[str, tuple[BidNotice, BidNoticeVersion]] = {}
+
+        def queue_previous_notice(item: dict[str, Any]) -> None:
+            previous_notice_no = _text(item.get("befBidBbancNo"))
+            if (
+                previous_notice_no is not None
+                and previous_notice_no not in queued_previous_numbers
+            ):
+                queued_previous_numbers.add(previous_notice_no)
+                pending_previous_numbers.append(previous_notice_no)
+
+        def count_result(result: SaveResult) -> None:
+            run.fetched_count += 1
+            if result == "CREATED":
+                run.created_count += 1
+            elif result == "NEW_VERSION":
+                run.new_version_count += 1
+            else:
+                run.unchanged_count += 1
+
         page_number = 1
         while page_number <= request.max_pages:
             page = client.fetch_page(
@@ -254,24 +384,95 @@ def run_notice_sync(
             )
             run.api_calls += 1
             for item in page.items:
-                result, _, _ = save_notice_snapshot(
+                result, notice, version = save_notice_snapshot(
                     db,
                     item=item,
                     business_type=request.business_type,
                     source_endpoint=page.endpoint,
                     document_downloader=document_downloader,
                 )
-                run.fetched_count += 1
-                if result == "CREATED":
-                    run.created_count += 1
-                elif result == "NEW_VERSION":
-                    run.new_version_count += 1
-                else:
-                    run.unchanged_count += 1
+                count_result(result)
+                queue_previous_notice(item)
+                if request.inquiry_type == NoticeInquiryType.CHANGED:
+                    change_history_targets[notice.bid_notice_no] = (notice, version)
             db.commit()
             if not page.items or page_number * request.page_size >= page.total_count:
                 break
             page_number += 1
+
+        # Reannouncements use a different notice number. Fetch direct predecessors
+        # immediately and follow a bounded chain so the relation works at once.
+        resolved_chain_numbers: set[str] = set()
+        while pending_previous_numbers and len(resolved_chain_numbers) < 25:
+            previous_notice_no = pending_previous_numbers.popleft()
+            if previous_notice_no in resolved_chain_numbers:
+                continue
+            resolved_chain_numbers.add(previous_notice_no)
+            if db.scalar(
+                select(BidNotice.id).where(BidNotice.bid_notice_no == previous_notice_no)
+            ) is not None:
+                continue
+
+            previous_page = client.fetch_page(
+                business_type=request.business_type,
+                inquiry_type=NoticeInquiryType.NOTICE_NUMBER,
+                page_number=1,
+                page_size=100,
+                bid_notice_no=previous_notice_no,
+            )
+            run.api_calls += 1
+            for previous_item in previous_page.items:
+                if _text(previous_item.get("bidNtceNo")) != previous_notice_no:
+                    continue
+                result, _, _ = save_notice_snapshot(
+                    db,
+                    item=previous_item,
+                    business_type=request.business_type,
+                    source_endpoint=previous_page.endpoint,
+                    document_downloader=document_downloader,
+                )
+                count_result(result)
+                queue_previous_notice(previous_item)
+            db.commit()
+
+        if (
+            change_history_targets
+            and request.business_type in CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE
+        ):
+            history_page_number = 1
+            while history_page_number <= request.max_pages:
+                history_page = client.fetch_change_history_page(
+                    business_type=request.business_type,
+                    window_started_at=request.window_started_at,
+                    window_ended_at=request.window_ended_at,
+                    page_number=history_page_number,
+                    page_size=request.page_size,
+                )
+                run.api_calls += 1
+                history_by_notice: dict[str, list[dict[str, Any]]] = {}
+                for history_item in history_page.items:
+                    history_notice_no = _text(history_item.get("bidNtceNo"))
+                    if history_notice_no in change_history_targets:
+                        history_by_notice.setdefault(history_notice_no, []).append(
+                            history_item
+                        )
+                for bid_notice_no, history_items in history_by_notice.items():
+                    notice, version = change_history_targets[bid_notice_no]
+                    upsert_notice_change_history(
+                        db,
+                        notice=notice,
+                        fallback_version=version,
+                        items=history_items,
+                        source_endpoint=history_page.endpoint,
+                    )
+                if (
+                    not history_page.items
+                    or history_page_number * request.page_size
+                    >= history_page.total_count
+                ):
+                    break
+                history_page_number += 1
+            db.commit()
 
         run.status = "COMPLETED"
         run.completed_at = datetime.now(KST)

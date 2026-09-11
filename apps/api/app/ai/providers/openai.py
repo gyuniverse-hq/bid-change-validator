@@ -108,3 +108,53 @@ class OpenAIStructuredExtractor:
         if not isinstance(parsed, dict):
             raise RuntimeError("OpenAI structured extraction must return a JSON object")
         return parsed
+
+
+# NOTE(LLM/RAG 이식): 공고 요약·판정 브리핑·질의응답처럼 모델이 산문을 쓰는 경로가
+# 필요해서 추가했습니다. OpenAIStructuredExtractor는 JSON 스키마 고정 출력 전용이라
+# 자유 서술에 쓰면 디코딩 단계가 하나 더 붙고 실패 지점만 늘어납니다.
+# 기존 클래스는 건드리지 않았습니다.
+class OpenAINarrator:
+    """Plain-text chat adapter for prose output (summaries, follow-up wording).
+
+    Kept separate from the structured extractor because the two have opposite
+    requirements: extraction must be schema-locked and verifiable, narration must
+    be free text. Sharing one class would mean one of them carrying a JSON
+    contract it does not want.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        client_factory: ClientFactory | None = None,
+    ) -> None:
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.model = model or os.getenv("OPENAI_MODEL_DEFAULT") or "gpt-5.6-luna"
+        self._client_factory = client_factory or _default_client_factory
+        self._client: Any | None = None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+    def _get_client(self) -> Any:
+        if not self.api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+        if self._client is None:
+            self._client = self._client_factory(self.api_key)
+        return self._client
+
+    def __call__(self, system_prompt: str, user_body: str) -> str:
+        response = self._get_client().chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_body},
+            ],
+        )
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise RuntimeError("OpenAI response did not contain any choices")
+        return getattr(choices[0].message, "content", None) or ""

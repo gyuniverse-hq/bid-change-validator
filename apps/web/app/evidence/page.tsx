@@ -7,6 +7,7 @@ import { LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
+import { BASIS_TYPE_LABEL, EXTRACTION_STATUS_LABEL, REASON_CODE_LABEL, judgmentBadgeLabel, labelOf } from '@/lib/status-copy';
 import { Button } from '@/components/ui/button';
 import { absoluteApiUrl, getDocumentText, type NoticeDocumentText } from '@/lib/api';
 import { currentVersion, useCaseWorkspace, workspaceHref, type CaseWorkspace } from '@/lib/case-workspace';
@@ -90,7 +91,7 @@ function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorksp
           <div className="rounded-[20px] border border-[#eef0f4] bg-white px-[22px] py-5">
             <div className="flex flex-wrap items-center gap-3 border-b border-[var(--product-line)] pb-[14px]">
               <strong className="text-[14px]">{document?.name ?? '문서 없음'}</strong>
-              <span className="text-[12.5px] text-[var(--product-muted)]">{document?.extraction_status ?? '-'}</span>
+              <span className="text-[12.5px] text-[var(--product-muted)]">{labelOf(EXTRACTION_STATUS_LABEL, document?.extraction_status)}</span>
               {document && <a href={absoluteApiUrl(document.render_source_url)} target="_blank" rel="noreferrer" className="ml-auto"><Button variant="outline" size="sm">원본 열기</Button></a>}
             </div>
 
@@ -113,8 +114,8 @@ function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorksp
               {evidence ? <>
                 <div className="flex items-center gap-2"><span className="rounded-full bg-[#fbf0dc] px-3 py-1 text-[12px] font-bold text-[#8a5a00]">{judgment?.status === 'SATISFIED' ? '충족' : judgment?.status === 'UNSATISFIED' ? '미달' : '확인 필요'}</span><span className="text-[12.5px] text-[var(--product-muted)]">{displayLocation(evidence.location)}</span></div>
                 <h2 className="mt-4 text-[18px] font-bold">{requirement?.raw ?? '판정 근거'}</h2>
-                <div className="mt-4"><EvidenceQuote label={evidence.evidence_key} quote={evidence.quote} /></div>
-                <div className="mt-4 divide-y divide-[var(--product-line-2)] text-[13px]"><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">판정</span><strong>{judgment?.status ?? '미판정'}</strong></div><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">판정 근거</span><span>{judgment?.basis_type ?? '-'}</span></div><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">Reason</span><span>{judgment?.reason_code ?? '-'}</span></div></div>
+                <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>
+                <div className="mt-4 divide-y divide-[var(--product-line-2)] text-[13px]"><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">판정</span><strong>{judgmentBadgeLabel(judgment?.status ?? 'UNJUDGED', judgment?.basis_type)}</strong></div><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">무엇을 보고 판정했나</span><span>{judgment ? BASIS_TYPE_LABEL[judgment.basis_type] : '아직 판정하지 않았습니다'}</span></div><div className="flex justify-between py-3"><span className="text-[var(--product-muted)]">판정 사유</span><span>{judgment ? (REASON_CODE_LABEL[judgment.reason_code as keyof typeof REASON_CODE_LABEL] ?? '사유가 기록되지 않았습니다') : '-'}</span></div></div>
               </> : <p className="text-[14px] text-[var(--product-muted)]">선택할 Evidence가 없습니다.</p>}
             </section>
 

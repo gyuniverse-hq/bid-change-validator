@@ -1,4 +1,4 @@
-from apps.api.app.ai.canonicalize import canonicalize_validated_slot
+from apps.api.app.ai.qualification.canonical.canonicalize import canonicalize_validated_slot
 
 
 def test_validated_slot_becomes_atomic_requirements_with_shared_evidence() -> None:
@@ -94,7 +94,7 @@ def test_hwpx_evidence_keeps_section_and_paragraph_without_fake_page() -> None:
     assert evidence[0].extracted_text_sha256 == "text-sha-hwpx"
 
 
-def test_unmapped_slot_does_not_create_untraceable_evidence() -> None:
+def test_unmapped_slot_keeps_evidence_linked_to_diagnostic() -> None:
     requirements, evidence, diagnostics = canonicalize_validated_slot(
         {
             "유형": "기타요건",
@@ -116,5 +116,60 @@ def test_unmapped_slot_does_not_create_untraceable_evidence() -> None:
     )
 
     assert requirements == []
-    assert evidence == []
+    assert len(evidence) == 1
+    assert evidence[0].quote == "자동 판정 범위 밖 조건"
+    assert evidence[0].document_id == "doc-1"
+    assert evidence[0].location.page == 15
     assert diagnostics[0]["code"] == "UNMAPPED_REQUIREMENT"
+    assert diagnostics[0]["evidence_keys"] == [evidence[0].evidence_key]
+
+
+def test_industry_and_registration_slots_use_the_same_explicit_code():
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+
+    for slot_type in ("업종요건", "등록요건"):
+        requirements, diagnostics = adapt_legacy_slot(
+            {"유형": slot_type, "raw": "소프트웨어사업(업종코드: 1468) 등록업체",
+             "업종_raw": "소프트웨어사업", "등록인증_raw": "소프트웨어사업"},
+            notice_version_id="v", key_prefix="r",
+        )
+        assert diagnostics == []
+        assert [(item.type, item.value) for item in requirements] == [("INDUSTRY", "1468")]
+        assert requirements[0].scope["industry_name"] == "소프트웨어사업"
+
+
+def test_industry_mapping_does_not_guess_codes_or_collapse_multiple_conditions():
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+
+    for slot_type in ("업종요건", "등록요건"):
+        for raw in (
+            "업종코드: 1468 및 업종코드: 0036 등록업체",
+            "업종코드: 1468, 0036 등록업체",
+            "업종코드: 1468/0036 등록업체",
+            "업종코드: 1468 또는 업종코드: 0036 등록업체",
+            "공동수급체 구성원 모두 업종코드: 1468 등록업체",
+        ):
+            requirements, diagnostics = adapt_legacy_slot(
+                {"유형": slot_type, "raw": raw}, notice_version_id="v", key_prefix="r",
+            )
+            assert requirements == []
+            assert diagnostics
+
+    for raw in ("소프트웨어사업 등록업체", "업종코드: 14680 등록업체"):
+        requirements, _ = adapt_legacy_slot(
+            {"유형": "등록요건", "raw": raw, "등록인증_raw": "소프트웨어사업"},
+            notice_version_id="v", key_prefix="r",
+        )
+        assert requirements[0].type == "REGISTRATION_CERTIFICATION"
+        assert requirements[0].value == "소프트웨어사업"
+
+
+def test_certification_is_not_replaced_by_an_industry_code():
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+
+    requirements, _ = adapt_legacy_slot(
+        {"유형": "인증요건", "raw": "업종코드: 1468 업체는 ISO 27001 인증 보유",
+         "등록인증_raw": "ISO 27001"}, notice_version_id="v", key_prefix="r",
+    )
+    assert requirements[0].type == "REGISTRATION_CERTIFICATION"
+    assert requirements[0].value == "ISO 27001"

@@ -1,5 +1,10 @@
+import pytest
+
 from apps.api.app.database import SessionLocal
 from apps.api.app.scripts.product_data_inventory import collect_product_data_inventory
+
+
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 
 
 def test_product_data_inventory_shape() -> None:

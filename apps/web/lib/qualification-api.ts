@@ -104,18 +104,65 @@ export type QualificationAnalysisSummary = {
   created_at: string;
 };
 
+/**
+ * 구조화 검증에서 제외된 후보 원문. apps/api analysis_result.py의 DroppedRequirement 그대로다.
+ * 필드는 raw · reason_code 둘뿐이다 — evidence_key나 location은 오지 않으므로 원문 링크는 만들 수 없다.
+ */
+export type DroppedReasonCode =
+  | 'MISSING_RAW'
+  | 'RAW_NOT_FOUND_IN_SOURCE'
+  | 'DETAIL_NOT_FOUND_IN_SOURCE'
+  | 'SOURCE_VALIDATION_FAILED';
+
+export type DroppedRequirement = {
+  raw: string;
+  reason_code: DroppedReasonCode;
+};
+
+/**
+ * 분석 진단. kind가 NOTICE_FACT인 것은 오류가 아니라 「공고에서 확인했지만 판정 대상이 아닌 사실」이다.
+ * PIPELINE 경고와 같은 자리에 그리면 사용자가 오류로 읽는다.
+ */
+export type AnalysisDiagnostic = {
+  code: string;
+  severity: string;
+  message: string;
+  kind: 'PIPELINE' | 'NOTICE_FACT';
+  details: Record<string, unknown>;
+  evidence_keys: string[];
+};
+
 export type QualificationAnalysisRun = QualificationAnalysisSummary & {
   notice_id: string;
   analysis_kind: string;
   target_chunk_ids: string[];
-  diagnostics: Array<{ code: string; severity: string; message: string }>;
+  diagnostics: AnalysisDiagnostic[];
+  dropped_requirements: DroppedRequirement[];
   requirements: CanonicalRequirement[];
   evidence: Array<{
     evidence_key: string;
     document_id: string;
     quote: string;
-    location: Record<string, unknown>;
+    location: EvidenceLocation;
   }>;
+};
+
+/**
+ * 근거의 위치. 백엔드가 extracted_blocks를 기준으로 만든다.
+ * HWP/HWPX에는 페이지가 없어서 page가 null인 경우가 정상이다.
+ * 화면이 "3.2항 p.4"를 직접 조립하지 말고 display를 그대로 쓴다.
+ */
+export type EvidenceLocation = {
+  block_start?: number | null;
+  block_end?: number | null;
+  page?: number | null;
+  section_index?: number | null;
+  paragraph_start?: number | null;
+  paragraph_end?: number | null;
+  source_line_start?: number | null;
+  source_line_end?: number | null;
+  clause_label?: string | null;
+  display?: string | null;
 };
 
 export type QualificationJudgment = {

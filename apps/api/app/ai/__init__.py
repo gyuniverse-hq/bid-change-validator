@@ -6,12 +6,12 @@ semantic chunking, requirement extraction adapters, retrieval evidence contracts
 judgment adapters, and change/revalidation logic.
 """
 
-from .analysis_pipeline import (
+from .qualification.extraction.analysis_pipeline import (
     QualificationAnalysisInput,
     QualificationDocumentInput,
     analyze_qualification_documents,
 )
-from .analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
+from .qualification.extraction.analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
 from .contracts import Evidence, Judgment, QualificationRequirement
 
 __all__ = [

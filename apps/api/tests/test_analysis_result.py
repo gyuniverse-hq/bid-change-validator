@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from apps.api.app.ai.analysis_result import (
+from apps.api.app.ai.qualification.extraction.analysis_result import (
     RequirementAnalysisResult,
     build_requirement_analysis_result,
 )
@@ -59,7 +59,7 @@ def test_build_successful_analysis_result():
     assert result.evidence[0].extracted_text_sha256 == "text-sha"
 
 
-def test_canonicalization_diagnostic_makes_result_partial():
+def test_notice_fact_diagnostic_does_not_degrade_analysis_status():
     result = build_requirement_analysis_result(
         notice_id="notice-1",
         notice_version_id="version-1",
@@ -71,8 +71,10 @@ def test_canonicalization_diagnostic_makes_result_partial():
         },
     )
 
-    assert result.status == "PARTIAL"
+    assert result.status == "SUCCEEDED"
     assert result.diagnostics[0].code == "UNMAPPED_REQUIREMENT"
+    assert result.diagnostics[0].kind == "NOTICE_FACT"
+    assert result.diagnostics[0].severity == "INFO"
     assert result.requirements
 
 
@@ -90,6 +92,24 @@ def test_extraction_failure_without_results_is_failed_and_empty():
     assert result.requirements == []
     assert result.evidence == []
     assert result.diagnostics[0].code == "EXTRACTION_FAILED"
+
+
+def test_partial_extraction_keeps_unmapped_evidence_and_warning():
+    result = build_requirement_analysis_result(
+        notice_id="notice-1", notice_version_id="version-1", document_ids=["doc-1"],
+        extraction_status="partial", extraction_notes="입력 길이 제한",
+        canonicalized={
+            "requirements": [], "evidence": [_evidence()],
+            "diagnostics": [{"code": "UNMAPPED_REQUIREMENT", "raw": "복합조건",
+                             "evidence_keys": ["REQ-001-EVD"]}],
+        },
+    )
+    assert result.status == "PARTIAL"
+    assert result.requirements == []
+    assert len(result.evidence) == 1
+    diagnostic = result.diagnostics[1]
+    assert diagnostic.severity == "INFO"
+    assert diagnostic.evidence_keys == [result.evidence[0].evidence_key]
 
 
 def test_result_rejects_unresolved_evidence_reference():

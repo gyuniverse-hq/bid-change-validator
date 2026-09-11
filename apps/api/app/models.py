@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -120,12 +120,16 @@ class CompanyStaff(Base):
 
 class CompanyStaffRole(Base):
     __tablename__ = "company_staff_roles"
+    __table_args__ = (
+        CheckConstraint("career_years IS NULL OR career_years >= 0"),
+    )
 
     company_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True
     )
     role_name: Mapped[str] = mapped_column(Text, primary_key=True)
     headcount: Mapped[int] = mapped_column(Integer)
+    career_years: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     verified: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -140,7 +144,12 @@ class CompanyStaffRole(Base):
 class CompanyPerformance(Base):
     __tablename__ = "company_performances"
     __table_args__ = (
-        CheckConstraint("started_at IS NULL OR started_at <= completed_at"),
+        CheckConstraint("(completed_at IS NOT NULL) <> (completed_year IS NOT NULL)"),
+        CheckConstraint("completed_year IS NULL OR completed_year BETWEEN 1900 AND 2100"),
+        CheckConstraint("started_at IS NULL OR completed_at IS NULL OR started_at <= completed_at"),
+        CheckConstraint(
+            "started_at IS NULL OR completed_year IS NULL OR EXTRACT(YEAR FROM started_at) <= completed_year"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -156,7 +165,8 @@ class CompanyPerformance(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 0))
     started_at: Mapped[date | None] = mapped_column(Date)
-    completed_at: Mapped[date] = mapped_column(Date)
+    completed_at: Mapped[date | None] = mapped_column(Date)
+    completed_year: Mapped[int | None] = mapped_column(SmallInteger)
     description: Mapped[str | None] = mapped_column(Text)
     verified: Mapped[bool] = mapped_column(
         Boolean,
@@ -196,6 +206,7 @@ class CompanyCertification(Base):
         PostgresUUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(Text)
+    certification_code: Mapped[str | None] = mapped_column(Text)
     certificate_number: Mapped[str | None] = mapped_column(Text)
     issuer_name: Mapped[str | None] = mapped_column(Text)
     issued_at: Mapped[date | None] = mapped_column(Date)
@@ -294,6 +305,153 @@ class BidNoticeVersion(Base):
     documents: Mapped[list["NoticeDocument"]] = relationship(
         back_populates="notice_version", cascade="all, delete-orphan", passive_deletes=True
     )
+
+
+class NoticeRelation(Base):
+    """Direct link from a reannouncement to its immediately previous notice."""
+
+    __tablename__ = "notice_relations"
+    __table_args__ = (
+        CheckConstraint(
+            "previous_notice_id IS NULL OR previous_notice_id <> notice_id",
+            name="notice_relations_not_self_referential",
+        ),
+        CheckConstraint(
+            "match_method IN ('API_FIELD', 'NAME_AGENCY_PRICE', 'MANUAL')",
+            name="notice_relations_match_method_valid",
+        ),
+        CheckConstraint(
+            "match_confidence IN ('CONFIRMED', 'SUGGESTED')",
+            name="notice_relations_match_confidence_valid",
+        ),
+    )
+
+    notice_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notices.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    previous_notice_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notices.id", ondelete="SET NULL"),
+    )
+    previous_bid_notice_no: Mapped[str] = mapped_column(Text)
+    match_method: Mapped[str] = mapped_column(Text)
+    match_confidence: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+    notice: Mapped[BidNotice] = relationship(foreign_keys=[notice_id])
+    previous_notice: Mapped[BidNotice | None] = relationship(foreign_keys=[previous_notice_id])
+
+
+Index("idx_notice_relations_previous_notice", NoticeRelation.previous_notice_id)
+Index("idx_notice_relations_previous_number", NoticeRelation.previous_bid_notice_no)
+
+
+class NoticeFact(Base):
+    """Normalized, version-scoped notice fact used for deterministic diffs."""
+
+    __tablename__ = "notice_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "notice_version_id", "fact_key", name="uq_notice_fact_version_key"
+        ),
+        CheckConstraint(
+            "fact_key IN ('SUBMISSION_DEADLINE', 'BUDGET_AMOUNT', "
+            "'ORDERING_AGENCY', 'JOINT_SUPPLY')",
+            name="notice_facts_key_valid",
+        ),
+        CheckConstraint(
+            "source_type IN ('G2B_API', 'DOCUMENT_EXTRACTION', 'MANUAL')",
+            name="notice_facts_source_type_valid",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    notice_version_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notice_versions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    fact_key: Mapped[str] = mapped_column(Text, nullable=False)
+    value_json: Mapped[object] = mapped_column(JSONB, nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_field: Mapped[str | None] = mapped_column(Text)
+    raw_value: Mapped[str | None] = mapped_column(Text)
+    document_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("notice_documents.id", ondelete="SET NULL"),
+    )
+    evidence_location: Mapped[dict | None] = mapped_column(JSONB)
+    quote: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+Index("idx_notice_facts_version", NoticeFact.notice_version_id)
+Index("idx_notice_facts_key", NoticeFact.fact_key)
+
+
+class NoticeChangeHistory(Base):
+    """Raw field-level change history reported by the G2B API."""
+
+    __tablename__ = "notice_change_histories"
+    __table_args__ = (
+        UniqueConstraint(
+            "notice_id", "payload_hash", name="uq_notice_change_history_payload"
+        ),
+        CheckConstraint(
+            "LENGTH(payload_hash) = 64",
+            name="notice_change_histories_payload_hash_length",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    notice_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notices.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notice_version_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notice_versions.id", ondelete="SET NULL"),
+    )
+    bid_notice_order: Mapped[str | None] = mapped_column(Text)
+    rebid_number: Mapped[str | None] = mapped_column(Text)
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    change_data_type: Mapped[str | None] = mapped_column(Text)
+    item_name: Mapped[str] = mapped_column(Text, nullable=False)
+    before_value: Mapped[str | None] = mapped_column(Text)
+    after_value: Mapped[str | None] = mapped_column(Text)
+    business_division_name: Mapped[str | None] = mapped_column(Text)
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+Index("idx_notice_change_histories_notice", NoticeChangeHistory.notice_id)
+Index("idx_notice_change_histories_version", NoticeChangeHistory.notice_version_id)
+Index("idx_notice_change_histories_changed_at", NoticeChangeHistory.changed_at.desc())
 
 
 class NoticeDocument(Base):

@@ -138,6 +138,29 @@ def test_confirmation_is_explicit_and_profile_write_rejected(state, api):
                     'requirement_key': 'REQ-REGISTRATION', 'user_input': {'satisfies_requirement': 'yes'}}).status_code == 422
 
 
+def test_receipt_followup_and_stale_recovery_preserve_write_boundary(state, api):
+    db, case, _, _ = state
+    first = ask(api, case.id, '입찰 넣어도 돼?')
+    context = {
+        'visible_requirement_keys': first['reply_context']['visible_requirement_keys'],
+        'last_read_receipt': first['reply_context']['last_read_receipt'],
+        'last_response_intent': first['intent'],
+    }
+    selected = context['visible_requirement_keys'][1]
+    result = ask(api, case.id, '두 번째 항목 근거', conversation_context=context)
+    assert result['reply_context']['requirement_key'] == selected
+    assert result['product_state']['requirement']['requirement_key'] == selected
+    context['last_read_receipt']['provenance']['judgment_run_id'] = str(uuid4())
+    before = db.scalar(select(func.count()).select_from(QualificationJudgmentRun).where(
+        QualificationJudgmentRun.preflight_case_id == case.id))
+    stale = ask(api, case.id, '두 번째 항목 적용해줘', conversation_context=context,
+                user_input={'satisfies_requirement': False})
+    assert stale['reply_context']['status'] == 'STALE_CONTEXT'
+    assert stale['actions'] == [] and stale['reply_context']['requirement_key'] is None
+    assert db.scalar(select(func.count()).select_from(QualificationJudgmentRun).where(
+        QualificationJudgmentRun.preflight_case_id == case.id)) == before
+
+
 def test_document_optin_privacy_hybrid_and_extractive_citations(state, api, monkeypatch):
     db, case, _, source = state
     sent = []
@@ -213,7 +236,9 @@ def test_changed_notice_golden_and_revalidation_replay():
             app.dependency_overrides[get_db] = lambda: db
             with TestClient(app) as client:
                 read = ask(client, case.id, '변경공고에서 뭐 바뀌었어?')
-                assert read['actions'][0] == proposal.model_dump(mode='json')
+                assert read['actions'] == []
+                requested = ask(client, case.id, '전체 변경 요건 재검증해줘')
+                assert requested['actions'] == [proposal.model_dump(mode='json')]
                 assert read['product_state']['provenance']['current']['judgment_run_id'] is None
                 response = client.post('/api/v1/copilot/actions/confirm', json=confirmed.model_dump(mode='json'))
                 assert response.status_code == 200, response.text

@@ -248,3 +248,30 @@ def test_all_tools_are_select_only_even_with_pending_changes(state, monkeypatch)
         assert (set(db.new), set(db.dirty), set(db.deleted)) == before
     finally:
         event.remove(connection, 'before_cursor_execute', check_sql)
+
+
+def test_explanation_batch_preserves_scope_order_and_metadata(state):
+    db, case, _, _ = state
+    keys = [item.requirement_key for item in tools.get_qualification_summary(db, case.id).judgments]
+    bundles = tools.get_explanation_evidence(db, case.id, keys)
+    assert [item.requirement.requirement_key for item in bundles] == keys
+    assert tools.matching_provenance(*bundles)
+    for item in bundles:
+        assert item == tools.get_requirement_evidence(db, case.id, item.requirement.requirement_key)
+        assert all(e.notice_version_id == str(case.current_version_id) for e in item.evidence)
+
+
+def test_matching_provenance_rejects_different_reads_without_db():
+    from types import SimpleNamespace
+    from apps.api.app.copilot.contracts import ProductProvenance
+    provenance = ProductProvenance(
+        case_id=uuid4(), notice_id=uuid4(), notice_version_id=uuid4(), version_number=1,
+        company_id=uuid4(), analysis_run_id=uuid4(), judgment_run_id=uuid4(),
+        analysis_status='PARTIAL', rule_version='rule-1',
+    )
+    first = SimpleNamespace(provenance=provenance)
+    assert tools.matching_provenance(first, SimpleNamespace(provenance=provenance.model_copy()))
+    for field, value in [('judgment_run_id', uuid4()), ('analysis_run_id', uuid4()),
+                         ('notice_version_id', uuid4()), ('rule_version', 'rule-2'), ('analysis_status', 'SUCCEEDED')]:
+        assert not tools.matching_provenance(first, SimpleNamespace(provenance=provenance.model_copy(update={field: value})))
+    assert not tools.matching_provenance()

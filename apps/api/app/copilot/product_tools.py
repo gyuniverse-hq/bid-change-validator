@@ -107,16 +107,26 @@ def get_qualification_summary(db: Session, case_id: UUID) -> QualificationSummar
 
 
 def get_requirement_evidence(db: Session, case_id: UUID, requirement_key: str) -> RequirementEvidenceResult:
+    return get_explanation_evidence(db, case_id, [requirement_key])[0]
+
+
+def get_explanation_evidence(db: Session, case_id: UUID, requirement_keys: list[str]) -> list[RequirementEvidenceResult]:
+    """Read several reasons' evidence with one existing context validation."""
     with db.no_autoflush:
         provenance, analysis, _ = _load_context(db, case_id)
-        requirement = next((item for item in analysis.requirements if item.requirement_key == requirement_key), None)
-        if requirement is None:
+        requirements = {item.requirement_key: item for item in analysis.requirements}
+        if not set(requirement_keys) <= requirements.keys():
             raise QualificationJudgmentError("REQUIREMENT_NOT_FOUND", "분석에서 요건을 찾을 수 없습니다.", status_code=404)
         evidence = {item.evidence_key: item for item in analysis.evidence}
-        return RequirementEvidenceResult(
-            provenance=provenance, requirement=requirement,
-            evidence=[evidence[key] for key in dict.fromkeys(requirement.evidence_keys)],
-        )
+        return [RequirementEvidenceResult(
+            provenance=provenance, requirement=requirements[key],
+            evidence=[evidence[ref] for ref in dict.fromkeys(requirements[key].evidence_keys)],
+        ) for key in dict.fromkeys(requirement_keys)]
+
+
+def matching_provenance(*results) -> bool:
+    """A composed explanation must use exactly one observed product context."""
+    return bool(results) and all(item.provenance == results[0].provenance for item in results[1:])
 
 
 def get_required_checks(db: Session, case_id: UUID) -> RequiredChecksResult:

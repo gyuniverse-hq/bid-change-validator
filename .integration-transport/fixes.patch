@@ -1,0 +1,131 @@
+diff --git a/.github/workflows/copilot-integration.yml b/.github/workflows/copilot-integration.yml
+index 78b220c..699ade5 100644
+--- a/.github/workflows/copilot-integration.yml
++++ b/.github/workflows/copilot-integration.yml
+@@ -20,7 +20,7 @@ jobs:
+           POSTGRES_DB: copilot_ci
+           POSTGRES_USER: copilot_ci
+           POSTGRES_PASSWORD: isolated_ci_only
+-        ports: ['5432:5432']
++        ports: ['127.0.0.1:5432:5432']
+         options: --health-cmd "pg_isready -U copilot_ci -d copilot_ci" --health-interval 5s --health-timeout 5s --health-retries 10
+     env:
+       DATABASE_URL: postgresql://copilot_ci:isolated_ci_only@127.0.0.1:5432/copilot_ci
+@@ -45,3 +45,4 @@ jobs:
+           name: copilot-integration-results
+           path: .ci-results/
+           retention-days: 7
++          include-hidden-files: true
+diff --git a/apps/api/tests/test_copilot_product_tools.py b/apps/api/tests/test_copilot_product_tools.py
+index f8d6338..72150a3 100644
+--- a/apps/api/tests/test_copilot_product_tools.py
++++ b/apps/api/tests/test_copilot_product_tools.py
+@@ -166,6 +166,13 @@ def test_required_checks_reuses_askability_and_keeps_nonaskable(state):
+             'REQ-REGION': 'SATISFIED', 'REQ-PERFORMANCE-AMOUNT': 'UNSATISFIED',
+             'REQ-STAFF': 'UNKNOWN', 'REQ-REGISTRATION': 'UNKNOWN',
+         }[record.requirement_key]
++        # Migration 017 makes the UNKNOWN reason mandatory only for UNKNOWN.
++        # Keep this synthetic state internally valid; do not relax the DB check.
++        record.unknown_reason = 'profile_missing' if record.status == 'UNKNOWN' else None
++        record.reason_code = {
++            'SATISFIED': 'RULE_MATCH', 'UNSATISFIED': 'RULE_MISMATCH',
++            'UNKNOWN': 'INSUFFICIENT_DATA',
++        }[record.status]
+     db.flush()
+     expected = list_questions(db, case_id=case.id, source_judgment_run_id=run.id)
+     result = tools.get_required_checks(db, case.id)
+diff --git a/apps/web/app/evidence/page.tsx b/apps/web/app/evidence/page.tsx
+index d18e512..5b9a288 100644
+--- a/apps/web/app/evidence/page.tsx
++++ b/apps/web/app/evidence/page.tsx
+@@ -32,9 +32,22 @@ export default function EvidencePage() {
+   const searchParams = useSearchParams();
+   const caseId = searchParams.get('caseId');
+   const evidenceParam = searchParams.get('evidence');
++  const expectedAnalysis = searchParams.get('analysisRunId');
+   const { workspace, error } = useCaseWorkspace(caseId);
+   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
+   if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
++  // A historical Copilot chip must not silently open a reused key in a new run.
++  if (expectedAnalysis && expectedAnalysis !== workspace.currentAnalysisDetail?.id) {
++    return <main className="app-shell-container py-12">
++      <CaseHeader workspace={workspace} />
++      <CaseTabs caseId={caseId} active="evidence" />
++      <section role="alert" className="mt-5 rounded-xl border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] p-5">
++        <h2 className="font-bold">이 근거는 이전 분석 기준입니다</h2>
++        <p className="mt-2">현재 분석과 연결 기준이 달라 같은 근거 키로 자동 이동하지 않았습니다. 과거 인용문은 대화에서 확인할 수 있습니다.</p>
++        <Link href={workspaceHref('/evidence', caseId)} className="mt-3 inline-block underline">현재 분석의 근거 선택하기</Link>
++      </section>
++    </main>;
++  }
+   return <EvidenceWorkspace key={`${caseId}:${workspace.currentAnalysis?.id}:${evidenceParam}`} workspace={workspace} evidenceParam={evidenceParam} />;
+ }
+ 
+diff --git a/apps/web/components/copilot/panel.tsx b/apps/web/components/copilot/panel.tsx
+index 1c15172..f197e76 100644
+--- a/apps/web/components/copilot/panel.tsx
++++ b/apps/web/components/copilot/panel.tsx
+@@ -56,9 +56,9 @@ export function CopilotPanel() {
+ 
+ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
+   const { state } = useCopilot(caseId);
+-  const lastProduct = [...state.turns].reverse().find(turn => turn.response?.product_state && 'overall_status' in turn.response.product_state)?.response?.product_state;
+-  const summary = lastProduct && 'overall_status' in lastProduct ? lastProduct : null;
+   const last = [...state.turns].reverse().find(turn => turn.response?.product_state)?.response?.product_state;
++  // Never pair a previous judgment's status with another response's version.
++  const summary = last && 'overall_status' in last ? last : null;
+   const version = last && ('version_number' in last.provenance ? last.provenance.version_number : last.provenance.current.version_number);
+   return <header className="copilot-header">
+     <CopilotMascot /><h2 id="copilot-title">AI Copilot</h2>
+@@ -122,9 +122,9 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof
+   </>;
+ }
+ 
+-function SourceChip({ source, caseId }: { source: CopilotSource; caseId: string }) {
++function SourceChip({ source, caseId, analysisRunId }: { source: CopilotSource; caseId: string; analysisRunId?: string }) {
+   if (source.source_origin !== 'PRODUCT_EVIDENCE') return <span className="copilot-evidence-chip">[{source.ref}] {getSourceLocationLabel(source)}</span>;
+-  return <Link className="copilot-evidence-chip" href={`${href('/evidence', caseId)}&evidence=${encodeURIComponent(source.evidence.evidence_key)}`}>
++  return <Link className="copilot-evidence-chip" href={`${href('/evidence', caseId)}&evidence=${encodeURIComponent(source.evidence.evidence_key)}${analysisRunId ? '&analysisRunId=' + encodeURIComponent(analysisRunId) : ''}`}>
+     [{source.ref}] {getSourceLocationLabel(source)} · 원문
+   </Link>;
+ }
+@@ -135,6 +135,7 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
+   const router = useRouter();
+   const state = response.product_state;
+   const changed = Boolean(state && 'changes' in state);
++  const analysisRunId = state && 'analysis_run_id' in state.provenance ? state.provenance.analysis_run_id : undefined;
+   const insufficient = response.sources.length === 0 && (
+     response.intent === 'REQUIREMENT_EVIDENCE' || (response.intent === 'DOCUMENT_QA' && response.external_processing_used)
+   );
+@@ -146,7 +147,7 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
+     <p>{reason.text}</p>
+     <div className="copilot-evidence-chips">{reason.evidence_refs.map(ref => {
+       const source = response.sources.find(item => item.ref === ref);
+-      return source ? <SourceChip key={ref} source={source} caseId={caseId} /> : null;
++      return source ? <SourceChip key={ref} source={source} caseId={caseId} analysisRunId={analysisRunId} /> : null;
+     })}</div>
+     {reason.requirement_key && <button type="button" className="copilot-detail-link" onClick={() => onSelect(reason.requirement_key!)}>이 요건 근거 보기</button>}
+   </div>;
+@@ -162,7 +163,7 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
+     </> : <p>{response.answer}</p>}
+     {response.sources.length > 0 && <details><summary>원문 근거 {response.sources.length}건</summary>
+       {response.sources.map(source => <div className="copilot-source" key={source.ref}>
+-        <SourceChip source={source} caseId={caseId} />
++        <SourceChip source={source} caseId={caseId} analysisRunId={analysisRunId} />
+         <blockquote>{source.source_origin === 'PRODUCT_EVIDENCE' ? source.evidence.quote : source.quote}</blockquote>
+       </div>)}
+     </details>}
+diff --git a/apps/web/scripts/check-copilot-design-browser.cjs b/apps/web/scripts/check-copilot-design-browser.cjs
+index 2e16c6b..acbcefe 100644
+--- a/apps/web/scripts/check-copilot-design-browser.cjs
++++ b/apps/web/scripts/check-copilot-design-browser.cjs
+@@ -107,6 +107,9 @@ function load(file) {
+     await card.getByText('반영 후 새 판정 결과를確認しました。',{exact:true}).waitFor();
+     await page.getByText('작업 상태는 위에 유지됩니다.',{exact:false}).waitFor();assert.equal(confirms,1);
+     failWorkspace=false;await page.getByRole('button',{name:'화면 정보 다시 조회'}).click();assert.equal(confirms,1);
++    await page.goto(`${origin}/evidence?caseId=${id}&evidence=E1&analysisRunId=historical-analysis`);
++    await page.getByRole('heading',{name:'이 근거는 이전 분석 기준입니다'}).waitFor();
++    assert.equal(await page.locator('.app-shell-content blockquote').count(),0);
+     await page.goto(`${origin}/evaluation?caseId=${id}`);assert.equal(await page.getByRole('button',{name:'AI Copilot',exact:true}).count(),0);
+     assert.deepEqual(errors,[]);
+     fs.writeFileSync(path.join(out,'browser-result.json'),JSON.stringify({result:'passed',sevenStates:true,mobile:true,confirmRequests:confirms,readRequests:reads,pageErrors:errors,mode:'actual UI + synthetic intercepted API, not real DB browser E2E'},null,2));

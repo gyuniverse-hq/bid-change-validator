@@ -37,6 +37,15 @@ def canonicalize_validated_slot(
         case_id=case_id,
     )
 
+    if not requirements:
+        # A notice fact that cannot be mapped to the closed qualification
+        # taxonomy still needs traceable source evidence in the API response.
+        return (
+            [],
+            [evidence],
+            [{**item, "evidence_keys": [evidence_key]} for item in diagnostics],
+        )
+
     linked_requirements: list[QualificationRequirement] = []
     for requirement in requirements:
         linked_requirements.append(

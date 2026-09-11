@@ -116,13 +116,21 @@ def build_clause_index(documents: list[tuple[str, str]]) -> dict[str, Any]:
     return {"sources": sources, "clauses": clauses}
 
 
-def load_clauses(path: str | Path) -> list[dict[str, Any]]:
+# 인덱스는 패키지 안에 산다. 리포 루트 `data/` 에 두면 Docker 이미지가
+# `apps/api` 만 복사하므로 컨테이너에서 조용히 사라진다 — 로컬에서는 동작하고
+# 배포에서만 표준 대조가 통째로 빠지는, 발견이 가장 늦는 종류의 고장이다.
+BUNDLED_CLAUSE_INDEX = Path(__file__).with_name("data") / "clauses.json"
+
+
+def load_clauses(path: str | Path | None = None) -> list[dict[str, Any]]:
     """Read a previously built index. Missing index is an error, not an empty list.
 
     Returning [] would let every rule silently report "standard clause missing",
     which reads like the rules changed rather than like the index was never built.
+
+    `path` 를 주지 않으면 패키지에 함께 배포되는 인덱스를 쓴다.
     """
-    index_path = Path(path)
+    index_path = Path(path) if path is not None else BUNDLED_CLAUSE_INDEX
     if not index_path.exists():
         raise FileNotFoundError(
             f"표준 조문 인덱스가 없습니다: {index_path} "

@@ -376,7 +376,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                             {evidence && <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
                             <p className={evidence ? 'mt-1 text-[13px] leading-6 text-[var(--product-body)]' : 'text-[13px] leading-6 text-[var(--product-body)]'}>{item.message}</p>
                             {locationText && <p className="mt-1 text-[12px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
-                            {evidenceKey && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidenceKey)}>근거 원문 보기</Button>}
+                            {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
+                            {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
                           </li>
                         );
                       })}
@@ -388,12 +389,18 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">구조화에서 제외된 요건 {droppedRequirements.length}건</strong>
                     <ul className="mt-2 space-y-2">
-                      {droppedRequirements.map((item, index) => (
-                        <li key={`${item.reason_code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
-                          <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{item.raw}」</p>
-                          <p className="mt-1 text-[12.5px] text-[var(--product-muted)]">{labelOf(DROPPED_REASON_LABEL, item.reason_code)}</p>
-                        </li>
-                      ))}
+                      {/* MISSING_RAW는 raw가 비어 있을 수 있다. 빈 따옴표만 남기지 않고 확보하지 못했다고 말한다. */}
+                      {droppedRequirements.map((item, index) => {
+                        const raw = item.raw.trim();
+                        return (
+                          <li key={`${item.reason_code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
+                            {raw
+                              ? <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{raw}」</p>
+                              : <p className="text-[13.5px] leading-6 text-[var(--product-faint)]">원문 문구를 확보하지 못했습니다.</p>}
+                            <p className="mt-1 text-[12.5px] text-[var(--product-muted)]">{labelOf(DROPPED_REASON_LABEL, item.reason_code)}</p>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
@@ -403,7 +410,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item) => <p key={`${item.code}-${item.message}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void revalidate()} disabled={!canRevalidate || busy !== null}>{busy === 'revalidation' ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
 

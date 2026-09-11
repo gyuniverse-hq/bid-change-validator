@@ -153,3 +153,32 @@ def test_yes_no_answers_read_negation_before_affirmation() -> None:
     assert parse("conglomerate_affiliate", "확인이 필요합니다") is None
     assert parse("conglomerate_affiliate", "") is None
 
+
+
+def test_product_profile_path_cannot_answer_an_extension_yet() -> None:
+    """제품 경로(Company → ProfileSnapshot)는 아직 `extensions` 를 채우지 않는다.
+
+    이번 PR 범위는 "Core 판정 지원까지"다. 수집(ask_back)·저장(ORM)·적재
+    (build_company_profile_snapshot) 세 자리가 비어 있어서, 제품에서 이 요건을
+    만나면 결과는 항상 UNKNOWN 이다. 위 테스트들이 `extensions` 를 직접 넣어
+    검증하는 것과 실제 제품 동작이 다르다는 사실을 여기서 고정해 둔다.
+
+    연결이 끝나면 이 테스트가 깨진다 — 그것이 연결이 끝났다는 신호다.
+    """
+    from apps.api.app.models import Company
+    from apps.api.app.qualification.judgment import build_company_profile_snapshot
+    from apps.api.app.qualification.rules.judgment import ProfileCompleteness
+
+    company = Company(name="테스트회사", company_size="SMALL")
+    snapshot = build_company_profile_snapshot(company, ProfileCompleteness())
+
+    assert snapshot.extensions == {}
+
+    judgment = judge_requirement(
+        _requirement("특급기술자 2인 이상 참여"),
+        snapshot,
+        preflight_case_id=CASE_ID,
+        reference_date=date(2026, 9, 9),
+    )
+
+    assert judgment.status == "UNKNOWN"

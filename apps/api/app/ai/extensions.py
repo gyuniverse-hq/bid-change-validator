@@ -22,6 +22,20 @@ field only when a notice actually requires it.
 
 Adding support for another industry means adding one entry to `EXTENSION_SPECS`.
 Every function here is plain code; the LLM is not involved in any of it.
+
+제품 연결 현황 — 이 모듈은 판정까지만 지원한다
+------------------------------------------------
+`profile.extensions` 를 채우는 경로는 아직 비어 있다. 세 자리가 남아 있다:
+
+1. 수집 — `app.qualification.ask_back` 가 `required_for()` 로 질문을 만들어야 한다.
+2. 저장 — 답변을 `company_sw_engineer_grades` 행과 `companies.conglomerate_affiliate`
+   컬럼에 써야 한다. 표는 migration 010 으로 이미 있고, ORM 모델이 없다.
+3. 적재 — `build_company_profile_snapshot()` 이 그 값을 `extensions` 로 실어야 한다.
+
+세 자리가 비어 있는 동안 제품에서 이 요건을 만나면 결과는 항상 UNKNOWN(확인 불가)
+이다. 조용히 '충족'으로 새지 않는다는 뜻이므로 안전한 상태이고,
+`test_product_profile_path_cannot_answer_an_extension_yet` 이 그 상태를 고정한다.
+연결이 끝나면 그 테스트가 깨지는 것이 신호다.
 """
 
 from __future__ import annotations

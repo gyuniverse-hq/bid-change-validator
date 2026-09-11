@@ -6,8 +6,9 @@ import { GitCompareArrows, LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { Button } from '@/components/ui/button';
-import { runQualificationRevalidation, type QualificationRevalidation, type RequirementChange } from '@/lib/qualification-api';
+import { runQualificationRevalidation, type QualificationRevalidation } from '@/lib/qualification-api';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
+import { CHANGE_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -17,7 +18,6 @@ function formatDate(value: string | null | undefined) {
 function money(value: number | null | undefined) {
   return value == null ? '-' : `${value.toLocaleString()} 원`;
 }
-const CHANGE_TYPE_LABEL: Record<RequirementChange['change_type'], string> = { UNCHANGED: '변경 없음', MODIFIED: '수정됨', ADDED: '신설됨', REMOVED: '삭제됨' };
 
 export default function ChangesPage() {
   const caseId = useSearchParams().get('caseId');
@@ -93,7 +93,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
           </section>
         ) : (
           <>
-            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">수집 값 기준으로 바뀐 항목이 없습니다.</p>}
+            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
               <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[13.5px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
                 <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>

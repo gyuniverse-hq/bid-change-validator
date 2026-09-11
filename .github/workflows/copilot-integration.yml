@@ -28,7 +28,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
-      APPROVED_TREE: 0d8c82eb950d91b4dcb2650a0d169acfdaf8945f
+      APPROVED_TREE: 0ddf21f054cf385352d8610dd0253b41ebcec39c
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,7 +48,8 @@ jobs:
           for name, digest in [
               ('fixes', '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72'),
               ('fixes2', '79d0b529f261cb1609871cc6545eaac33a4890c2d82d0877ca1fb2f187f305ad'),
-              ('fixes3', 'b8d4dbcc84b3873d5ca6cb0818c5e6fdf91022f5b9dd9de40607ead874c27ff1')]:
+              ('fixes3', 'b8d4dbcc84b3873d5ca6cb0818c5e6fdf91022f5b9dd9de40607ead874c27ff1'),
+              ('fixes4', '4a517d165803ce2e2ff2ccbfadec76ffa3e9513fa94d3b08be8143569adbc931')]:
               binary = base64.b64decode(pathlib.Path(f'.integration-transport/{name}.xz.b64').read_text().strip(), validate=True)
               assert hashlib.sha256(binary).hexdigest() == digest, 'Correction checksum mismatch'
               corrections.append(lzma.decompress(binary))

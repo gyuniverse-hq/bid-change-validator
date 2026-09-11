@@ -1,0 +1,46 @@
+name: Copilot integration validation
+
+on:
+  push:
+    branches: [feature/ai-copilot-v1]
+  pull_request:
+    branches: [develop]
+    paths:
+      - '.github/workflows/copilot-integration.yml'
+      - 'apps/**/copilot/**'
+      - 'apps/**/copilot-*'
+      - 'apps/**/test_copilot*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copilot-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-snapshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export exact tracked source snapshots (no credentials or runtime data)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p validation-artifacts
+          git rev-parse HEAD origin/develop origin/main > validation-artifacts/refs.txt
+          BASE=$(git merge-base HEAD origin/develop)
+          echo "$BASE" >> validation-artifacts/refs.txt
+          git archive --format=tar.gz -o validation-artifacts/copilot-source.tar.gz HEAD
+          git archive --format=tar.gz -o validation-artifacts/develop-source.tar.gz origin/develop
+          git archive --format=tar.gz -o validation-artifacts/main-source.tar.gz origin/main
+          git archive --format=tar.gz -o validation-artifacts/common-source.tar.gz "$BASE"
+          sha256sum validation-artifacts/* > validation-artifacts/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copilot-source-snapshots
+          path: validation-artifacts/
+          retention-days: 3

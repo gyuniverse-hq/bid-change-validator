@@ -132,3 +132,27 @@ def test_multiple_korean_labels_are_kept_when_they_share_one_category() -> None:
     assert payload["categories"] == ["WARRANTY_PERIOD"]
     assert payload["risk_type"] == "하자보수 기간 과다"
     assert payload["risk_types"] == ["하자보수 기간 과다", "하자보수보증금율 과다"]
+
+
+def test_payload_preserves_each_finding_when_rule_id_repeats() -> None:
+    first = _finding("penalty_rate", "지체상금 요율 과다", "첫 번째 조항은 1일당 0.5%로 한다.")
+    first.chunk_id = "CHUNK-0010"
+    first.clause_label = "10.1"
+    first.reason = "첫 번째 조항 검토 필요"
+
+    second = _finding("penalty_rate", "지체상금 요율 과다", "두 번째 조항은 1일당 0.7%로 한다.")
+    second.chunk_id = "CHUNK-0032"
+    second.clause_label = "32.1"
+    second.reason = "두 번째 조항 검토 필요"
+
+    findings = [first, second]
+    first_payload = _finding_json(first, findings)
+    second_payload = _finding_json(second, findings)
+
+    assert first_payload["chunk_id"] == "CHUNK-0010"
+    assert first_payload["excerpt"] == "첫 번째 조항은 1일당 0.5%로 한다."
+    assert first_payload["reason"] == "첫 번째 조항 검토 필요"
+
+    assert second_payload["chunk_id"] == "CHUNK-0032"
+    assert second_payload["excerpt"] == "두 번째 조항은 1일당 0.7%로 한다."
+    assert second_payload["reason"] == "두 번째 조항 검토 필요"

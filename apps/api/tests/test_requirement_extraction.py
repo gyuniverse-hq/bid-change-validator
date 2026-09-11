@@ -226,7 +226,12 @@ def test_extract_legacy_slots_retries_when_all_slots_fail_validation():
     assert calls["count"] == 2
     assert result["status"] == "partial"
     assert result["slots"] == []
-    assert "존재하지 않는 문장" in result["notes"]
+    assert result["dropped_requirements"] == [
+        {
+            "raw": "존재하지 않는 문장",
+            "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+        }
+    ]
 
 
 def test_quote_suffix_cannot_be_fabricated_after_matching_prefix():

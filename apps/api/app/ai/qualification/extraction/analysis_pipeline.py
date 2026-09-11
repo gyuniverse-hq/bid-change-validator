@@ -148,5 +148,8 @@ def analyze_qualification_documents(
         canonicalized=canonicalized,
         extraction_status=str(extraction.get("status") or "failed"),
         extraction_notes=str(extraction.get("notes") or ""),
+        extraction_dropped_requirements=list(
+            extraction.get("dropped_requirements") or []
+        ),
         target_chunk_ids=list(extraction.get("target_chunk_ids") or []),
     )

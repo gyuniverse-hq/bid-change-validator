@@ -14,8 +14,8 @@
 `git log HEAD..origin/develop` 가 비어 있습니다. develop 의 모든 커밋을 담고 있고
 그 위에 Core 커밋만 얹힌 상태입니다.
 
-테스트는 215건 통과입니다. 다만 공용 DB 를 쓰는 7건은 제외하고 센 숫자이며,
-그 7건은 아래 ⑧ 에 따로 적었습니다.
+테스트는 **222건 전부 통과**입니다(실패 0). 공용 DB 를 쓰는 7건도 포함한
+숫자입니다 — 아래 ⑧ 의 migration 을 적용한 뒤 다시 돌렸습니다.
 
 ### ② PR 범위를 LLM/RAG Core + Evaluation 으로 정리 — 완료
 
@@ -118,9 +118,11 @@ clauses    : 423
 있으니, CI 에서 이미지가 떠서 `load_clauses()` 가 423건을 읽는지 한 번 봐주시면
 확실해집니다.
 
-### ⑦ Related Issue 정리 — PR 본문 수정 필요
+### ⑦ Related Issue 정리 — 완료
 
-`Related Issue: #XX` 자리표시자를 없앤 본문을 아래 §PR 본문 에 적어 두었습니다.
+`Related Issue: #XX` 자리표시자를 `Related Issue: 없음` 으로 바꿨습니다. 이 작업에
+대응하는 Issue 가 따로 없어서, 연결 대신 '없음' 으로 명시하는 쪽을 택했습니다.
+본문 전체는 아래 §PR 본문 에 있습니다.
 
 ### ⑧ (리뷰에 없던 항목) 누락된 migration 을 찾아 추가했습니다
 
@@ -207,9 +209,15 @@ UPDATE alembic_version SET version_num='013_dropped_requirements'
 COMMIT;
 ```
 
-**아직 적용하지 않았습니다.** 공용 DB 라 제가 임의로 올릴 일이 아니라고 봤습니다.
-merge 시점에 맞춰 올릴지, 미리 올려 둘지 알려주시면 그대로 하겠습니다. 적용
-전까지 공용 DB 를 쓰는 테스트 7건은 계속 실패합니다.
+**공용 DB 에 적용 완료했습니다** (2026-09-11, 재현님 승인 후).
+
+```
+적용 전 : 012_late_penalty_rate
+적용 후 : 013_dropped_requirements (head)
+```
+
+적용 후 전체 테스트 222건 통과(실패 0)를 확인했습니다. 추가 전용이라 이 컬럼을
+모르는 다른 브랜치는 영향을 받지 않습니다.
 
 #### 이 PR 에 **넣지 않은** DDL 하나
 
@@ -238,8 +246,8 @@ merge 시점에 맞춰 올릴지, 미리 올려 둘지 알려주시면 그대로
 | 사업계획서 별도 PR 분리 | ✅ |
 | 위험조항 분류 Contract 정합성 수정 | ✅ |
 | clauses.json Docker runtime 문제 해결 | ✅ (컨테이너 실행 확인은 CI 에 부탁드립니다) |
-| Issue 연결 정리 | ⏳ PR 본문 수정 |
-| 수정 후 전체 CI 재통과 | ⏳ 215 통과 / 공용 DB 7건은 013 적용 후 |
+| Issue 연결 정리 | ✅ 연결할 Issue 없음으로 명시 |
+| 수정 후 전체 CI 재통과 | ✅ 222건 전부 통과 (실패 0) |
 
 ---
 
@@ -262,10 +270,11 @@ LLM/RAG Core + Evaluation 고도화입니다. 판정은 코드가 하고 모델�
 
 ## DB 변경
 013_dropped_requirements 1건입니다. 선형이고 추가 전용입니다.
-merge 후 `alembic upgrade head` 가 필요합니다.
+공용 DB 에는 이미 적용했습니다 (012 -> 013). 로컬에서는 `alembic upgrade head`
+한 번 돌려 주세요.
 
 ## 확인
-- 테스트 215건 통과 (공용 DB 필요 7건 제외 — 013 적용 후 통과)
+- 테스트 222건 전부 통과 (공용 DB 테스트 포함, 실패 0)
 - clauses.json: Docker COPY 규칙을 재현한 리포 밖 컨텍스트에서 423건 로드 확인
 
 ## 리뷰 반영
@@ -274,5 +283,5 @@ docs/llm-rag/09-pr104-review-response.md 에 항목별로 정리했습니다.
 Related Issue: 없음
 ```
 
-`Related Issue` 에 연결할 이슈 번호가 있으면 '없음' 자리를 `#번호` 로 바꿔
-주세요.
+리뷰어가 "실제 Issue 를 연결하거나 없음으로 명확히" 라고 하셨는데, 이 작업에
+대응하는 Issue 가 없어 '없음' 으로 명시했습니다.

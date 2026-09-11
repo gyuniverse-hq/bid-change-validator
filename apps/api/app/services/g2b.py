@@ -19,6 +19,12 @@ ENDPOINT_BY_BUSINESS_TYPE = {
     BusinessType.OTHER: "getBidPblancListInfoEtc",
 }
 
+CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE = {
+    BusinessType.SERVICE: "getBidPblancListInfoChgHstryServc",
+    BusinessType.GOODS: "getBidPblancListInfoChgHstryThng",
+    BusinessType.CONSTRUCTION: "getBidPblancListInfoChgHstryCnstwk",
+}
+
 INQUIRY_DIVISION = {
     NoticeInquiryType.REGISTERED: "1",
     NoticeInquiryType.NOTICE_NUMBER: "2",
@@ -94,6 +100,50 @@ class G2BClient:
             params["inqryBgnDt"] = _format_query_datetime(window_started_at)
             params["inqryEndDt"] = _format_query_datetime(window_ended_at)
 
+        return self._fetch_json_page(endpoint=endpoint, params=params)
+
+    def fetch_change_history_page(
+        self,
+        *,
+        business_type: BusinessType,
+        page_number: int = 1,
+        page_size: int = 100,
+        bid_notice_no: str | None = None,
+        window_started_at: datetime | None = None,
+        window_ended_at: datetime | None = None,
+    ) -> G2BPage:
+        """Fetch G2B's authoritative field-level change history for one notice."""
+
+        endpoint = CHANGE_HISTORY_ENDPOINT_BY_BUSINESS_TYPE.get(business_type)
+        if endpoint is None:
+            raise ValueError(
+                "change history is available only for SERVICE, GOODS, and CONSTRUCTION"
+            )
+        params: dict[str, str | int] = {
+            "serviceKey": self._service_key,
+            "pageNo": page_number,
+            "numOfRows": page_size,
+            "type": "json",
+        }
+        if bid_notice_no is not None:
+            params["inqryDiv"] = "2"
+            params["bidNtceNo"] = bid_notice_no
+        else:
+            if window_started_at is None or window_ended_at is None:
+                raise ValueError("bid_notice_no or collection window is required")
+            params["inqryDiv"] = "1"
+            params["inqryBgnDt"] = _format_query_datetime(window_started_at)
+            params["inqryEndDt"] = _format_query_datetime(window_ended_at)
+        return self._fetch_json_page(endpoint=endpoint, params=params)
+
+    def _fetch_json_page(
+        self,
+        *,
+        endpoint: str,
+        params: dict[str, str | int],
+    ) -> G2BPage:
+        page_number = int(params["pageNo"])
+        page_size = int(params["numOfRows"])
         try:
             response = self._session.get(
                 f"{self._base_url}/{endpoint}",

@@ -17,7 +17,14 @@ export function getSourceLocationLabel(source: CopilotSource): string {
   const clause = product ? product.clause_label : source.source_origin === 'DOCUMENT_RAG' ? source.clause_label : null;
   const locations = source.source_origin === 'DOCUMENT_RAG' ? source.source_locations.filter(Boolean) : [];
   const page = product ? product.page : source.source_origin === 'DOCUMENT_RAG' ? source.page : null;
-  const location = locations.join(', ') || product?.display || (page != null ? `p.${page}` : '');
+  const parts = [
+    page != null ? `p.${page}` : '',
+    product?.section_index != null ? `섹션 ${product.section_index}` : '',
+    product?.paragraph_start != null ? `문단 ${product.paragraph_start}–${product.paragraph_end ?? product.paragraph_start}` : '',
+    product?.block_start != null ? `블록 ${product.block_start}–${product.block_end ?? product.block_start}` : '',
+    product?.source_line_start != null ? `줄 ${product.source_line_start}–${product.source_line_end ?? product.source_line_start}` : '',
+  ].filter(Boolean);
+  const location = locations.join(', ') || product?.display || parts.join(' · ');
   return [clause ? `조항 ${clause}` : '', location].filter(Boolean).join(' · ') || '위치 정보 없음';
 }
 

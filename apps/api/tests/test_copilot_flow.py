@@ -24,6 +24,9 @@ from apps.api.tests.test_document_rag_store import FakeEmbeddings, _record
 from apps.api.tests.test_mvp_golden_e2e import _cleanup, _seed_golden_case
 
 
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
+
+
 @pytest.fixture
 def api(state):
     db = state[0]

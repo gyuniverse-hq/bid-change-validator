@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .contracts import JudgmentProfileResult, QualificationSummary, RequiredChecksResult, RequirementEvidenceResult
-from .source_map import display_text
+from .source_map import display_text, invalid_mapping, source_identity
 
 
 class Reason(BaseModel):
@@ -120,6 +120,48 @@ def present_product(state, evidence_refs, focus=None, summary=None):
     if "PARTIAL" in statuses:
         presentation.limitations.append("분석이 부분 완료 상태여서 검토 범위에 한계가 있습니다. 이 상태만으로 구체적인 원인은 알 수 없습니다.")
     return presentation
+
+
+def attach_analysis_scope(presentation, summary, sources):
+    """Explain omitted scope without changing Product Truth or write targets."""
+    scope = summary.analysis_scope if summary else None
+    if scope is None:
+        return
+    if scope.analysis_run_id != summary.provenance.analysis_run_id:
+        raise invalid_mapping()
+    count = len(scope.notice_facts) + len(scope.dropped_requirements)
+    if count:
+        presentation.limitations.append(
+            f"이 판정에 포함되지 않은 확인사항이 {count}건 있습니다. 참가자격 화면에서 함께 확인해 주세요."
+        )
+    for item in scope.notice_facts:
+        refs = []
+        for evidence in item.evidence:
+            if evidence.notice_version_id != str(summary.provenance.notice_version_id):
+                raise invalid_mapping()
+            # Local import avoids the existing chat/presentation dependency cycle.
+            from .chat import ProductSource
+            source = ProductSource(ref="", evidence=evidence)
+            sources.append(source)
+            refs.append(source_identity(source))
+        presentation.reasons.append(Reason(
+            text="판정 대상이 아닌 확인사항 — " + item.message, evidence_refs=refs,
+        ))
+    labels = {
+        "MISSING_RAW": "원문 문구가 없어 구조화에서 제외되었습니다.",
+        "RAW_NOT_FOUND_IN_SOURCE": "제시된 문구를 원문에서 확인하지 못했습니다.",
+        "DETAIL_NOT_FOUND_IN_SOURCE": "세부 조건을 원문에서 확인하지 못했습니다.",
+        "SOURCE_VALIDATION_FAILED": "원문 대조를 통과하지 못했습니다.",
+    }
+    for item in scope.dropped_requirements:
+        raw = item.raw.strip() or "원문 문구를 확보하지 못했습니다."
+        presentation.reasons.append(Reason(
+            text=f"구조화에서 제외된 요건 — {raw}\n{labels.get(item.reason_code, item.reason_code)}",
+        ))
+    if scope.pipeline_diagnostics:
+        presentation.limitations.append(
+            f"분석 처리 진단 {len(scope.pipeline_diagnostics)}건은 참가자격 화면의 분석 완전성에서 확인해 주세요."
+        )
 
 
 def render_answer(presentation, sources):

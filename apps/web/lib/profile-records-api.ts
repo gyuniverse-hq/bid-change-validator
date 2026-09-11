@@ -1,10 +1,10 @@
-import { absoluteApiUrl, ApiError } from '@/lib/api';
+import { apiFetch, ApiError } from '@/lib/api';
 import type { CompanyProfile } from '@/lib/qualification-api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set('Content-Type', 'application/json');
-  const response = await fetch(absoluteApiUrl(path), { ...init, headers });
+  const response = await apiFetch(path, { ...init, headers });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
     throw new ApiError(payload?.error?.message ?? `요청에 실패했습니다. (${response.status})`, response.status, payload?.error?.code ?? 'HTTP_ERROR');

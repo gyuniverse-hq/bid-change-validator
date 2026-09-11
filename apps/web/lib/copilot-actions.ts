@@ -2,12 +2,28 @@ import { ApiError } from './api';
 import { sendCopilotMessage, confirmCopilotAction, type ActionProposal, type CopilotChatResponse, type CopilotChatRequest, type ConfirmAction, type ConfirmActionResult, type ReadReceipt } from './copilot-api';
 import { validateSources } from './copilot-conversation';
 
-export type Execution = 'IDLE' | 'DRAFT' | 'PROPOSAL_READY' | 'CONFIRMING' | 'REFRESHING' | 'COMPLETED' | 'STALE' | 'FAILED' | 'OUTCOME_UNKNOWN' | 'DONE_REFRESH_FAILED';
+export type Execution = 'IDLE' | 'DRAFT' | 'PROPOSAL_READY' | 'CONFIRMING' | 'REFRESHING' | 'COMPLETED' | 'STALE' | 'FAILED' | 'OUTCOME_UNKNOWN' | 'DONE_REFRESH_FAILED' | 'AUTH_REQUIRED';
 export type Draft = { requirement_key: string; label: string; satisfies_requirement: boolean | null; evidence_held: boolean | null; normalized_value: string; receipt: ReadReceipt };
-export type ActionState = { stage: Execution; busy: boolean; revision: number; draft: Draft | null; proposal: ActionProposal | null; result: ConfirmActionResult | null; response: CopilotChatResponse | null; message: string };
-const initial = (): ActionState => ({ stage: 'IDLE', busy: false, revision: 0, draft: null, proposal: null, result: null, response: null, message: '' });
-export const isLocked = (state: ActionState) => state.busy || ['CONFIRMING', 'REFRESHING', 'OUTCOME_UNKNOWN', 'DONE_REFRESH_FAILED'].includes(state.stage);
+export type ActionState = { stage: Execution; busy: boolean; externalBusy: boolean; revision: number; draft: Draft | null; proposal: ActionProposal | null; result: ConfirmActionResult | null; response: CopilotChatResponse | null; message: string };
+const initial = (): ActionState => ({ stage: 'IDLE', busy: false, externalBusy: false, revision: 0, draft: null, proposal: null, result: null, response: null, message: '' });
+export const isLocked = (state: ActionState) => state.busy || state.externalBusy || ['CONFIRMING', 'REFRESHING', 'OUTCOME_UNKNOWN', 'DONE_REFRESH_FAILED'].includes(state.stage);
 const messageOf = (error: unknown) => error instanceof Error ? error.message : '처리를 확인하지 못했습니다.';
+export function authenticationRejected(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401 &&
+    ['AUTHENTICATION_REQUIRED', 'INVALID_SESSION'].includes(error.code);
+}
+
+// A past result may remain in memory, but must not be labelled as current.
+export function currentRevalidation(result: ConfirmActionResult | null, context: {
+  caseId: string; baselineAnalysisId?: string | null; currentAnalysisId?: string | null;
+  judgmentId?: string | null;
+}) {
+  return result && 'revalidated_keys' in result && result.preflight_case_id === context.caseId &&
+    result.baseline_analysis_run_id === context.baselineAnalysisId &&
+    result.current_analysis_run_id === context.currentAnalysisId &&
+    result.result_judgment_run_id === context.judgmentId ? result : null;
+}
+
 type Read = (request: CopilotChatRequest) => Promise<CopilotChatResponse>;
 type Confirm = (request: ConfirmAction) => Promise<ConfirmActionResult>;
 
@@ -27,8 +43,16 @@ export class ActionController {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
     this.listeners.forEach(fn => fn());
   }
+  // A full review uses existing APIs, but shares the in-tab mutation lock.
+  acquireReview(caseId: string) {
+    const state = this.get(caseId);
+    if (isLocked(state)) return false;
+    this.update(caseId, { ...initial(), revision: state.revision + 1, externalBusy: true });
+    return true;
+  }
+  releaseReview(caseId: string) { this.update(caseId, { externalBusy: false }); }
   private fail(caseId: string, error: unknown) {
-    this.update(caseId, { busy: false, proposal: null, stage: error instanceof ApiError && error.status === 409 ? 'STALE' : 'FAILED', message: messageOf(error) });
+    this.update(caseId, { busy: false, proposal: null, stage: authenticationRejected(error) ? 'AUTH_REQUIRED' : error instanceof ApiError && error.status === 409 ? 'STALE' : 'FAILED', message: messageOf(error) });
   }
   async beginAnswer(caseId: string, key: string, expectedJudgmentId?: string) {
     if (!caseId || isLocked(this.get(caseId))) return;
@@ -95,9 +119,10 @@ export class ActionController {
       if (result.preflight_case_id !== caseId || !result.result_judgment_run_id) throw new Error('저장 응답의 대상 또는 결과를 확인하지 못했습니다.');
     } catch (error) {
       // Only explicit client/stale rejections establish that this attempt did not save.
-      const rejected = error instanceof ApiError && [400, 404, 409, 422].includes(error.status);
-      this.update(caseId, { busy: false, proposal: null, stage: rejected ? (error.status === 409 ? 'STALE' : 'FAILED') : 'OUTCOME_UNKNOWN',
-        message: rejected ? messageOf(error) : '저장 성공 여부를 확인할 수 없습니다. 자동으로 다시 실행하지 않습니다. 현재 결과를 조회해 확인해 주세요.' });
+      const auth = authenticationRejected(error);
+      const rejected = auth || (error instanceof ApiError && [400, 404, 409, 422].includes(error.status));
+      this.update(caseId, { busy: false, proposal: null, stage: auth ? 'AUTH_REQUIRED' : rejected ? (error instanceof ApiError && error.status === 409 ? 'STALE' : 'FAILED') : 'OUTCOME_UNKNOWN',
+        message: auth ? '로그인이 만료되어 반영 요청이 거절됐습니다. 다시 로그인한 뒤 새 제안을 확인해 주세요.' : rejected ? messageOf(error) : '저장 성공 여부를 확인할 수 없습니다. 자동으로 다시 실행하지 않습니다. 현재 결과를 조회해 확인해 주세요.' });
       return;
     }
     this.update(caseId, { stage: 'REFRESHING', result, proposal: null });

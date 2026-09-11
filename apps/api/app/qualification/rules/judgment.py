@@ -14,7 +14,7 @@ import calendar
 import math
 import re
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,7 @@ class ProfileIndustryFact(BaseModel):
 class ProfileStaffRoleFact(BaseModel):
     role_name: str
     headcount: int = Field(ge=0)
+    career_years: float | None = Field(default=None, ge=0)
     verified: bool = False
 
 
@@ -61,7 +62,8 @@ class ProfilePerformanceFact(BaseModel):
     client_institution_code: str | None = None
     amount: int = Field(ge=0)
     started_at: date | None = None
-    completed_at: date
+    completed_at: date | None = None
+    completed_year: int | None = Field(default=None, ge=1900, le=2100)
     fields: list[str] = Field(default_factory=list)
     verified: bool = False
 
@@ -69,6 +71,7 @@ class ProfilePerformanceFact(BaseModel):
 class ProfileCertificationFact(BaseModel):
     ref: str
     name: str
+    certification_code: str | None = None
     issuer_name: str | None = None
     issued_at: date | None = None
     expires_at: date | None = None
@@ -84,6 +87,7 @@ class CompanyProfileSnapshot(BaseModel):
     staff: ProfileStaffFact | None = None
     performances: list[ProfilePerformanceFact] = Field(default_factory=list)
     certifications: list[ProfileCertificationFact] = Field(default_factory=list)
+    extensions: dict[str, Any] = Field(default_factory=dict)
     completeness: ProfileCompleteness = Field(default_factory=ProfileCompleteness)
 
 
@@ -230,11 +234,48 @@ def _string_match(observed: str, expected: object | None) -> bool:
     return left == right or right in left or left in right
 
 
+_NAME_TOKEN_RE = re.compile(r"[0-9]+|[A-Za-z]+|[가-힣]+")
+
+
+def _certification_match(held_name: str, required_name: object | None) -> bool:
+    """Match a held certification against a required one, tolerating punctuation.
+
+    `_string_match` alone reports a company that holds ISO 27001 as UNSATISFIED
+    when the notice writes it "ISO/IEC 27001": `_norm` strips the separators, so
+    "iso27001" and "isoiec27001" are neither equal nor a substring of each other.
+    That is the dangerous direction of error — telling a qualified bidder it does
+    not qualify — so a token comparison backs the substring one up.
+
+    A standard's number is its identity, which is what keeps this from being too
+    loose: every digit token the requirement names must be held, and at least one
+    word must be shared. So ISO/IEC 27001 matches ISO27001, while ISO 9001 (wrong
+    number) and KS 27001 (wrong body) both still fail.
+    """
+    if _string_match(held_name, required_name):
+        return True
+
+    held = [token.casefold() for token in _NAME_TOKEN_RE.findall(str(held_name or ""))]
+    required = [
+        token.casefold() for token in _NAME_TOKEN_RE.findall(str(required_name or ""))
+    ]
+    if not held or not required:
+        return False
+
+    held_digits = {token for token in held if token.isdigit()}
+    required_digits = {token for token in required if token.isdigit()}
+    if not required_digits or not required_digits <= held_digits:
+        return False
+
+    held_words = {token for token in held if not token.isdigit()}
+    required_words = {token for token in required if not token.isdigit()}
+    return bool(held_words & required_words)
+
+
 def _performance_candidates(
     profile: CompanyProfileSnapshot,
     requirement: QualificationRequirement,
     reference_date: date,
-) -> list[ProfilePerformanceFact]:
+) -> tuple[list[ProfilePerformanceFact], bool]:
     cutoff = (
         _subtract_months(reference_date, requirement.period_months)
         if requirement.period_months is not None
@@ -243,11 +284,8 @@ def _performance_candidates(
     client_requirement = str(requirement.scope.get("client_requirement") or "").strip()
 
     candidates: list[ProfilePerformanceFact] = []
+    has_ambiguous_date = False
     for item in profile.performances:
-        if item.completed_at > reference_date:
-            continue
-        if cutoff is not None and item.completed_at < cutoff:
-            continue
         field = requirement.scope.get("experience_field")
         if field and not any(_string_match(value, field) for value in [item.name, *item.fields]):
             continue
@@ -257,8 +295,24 @@ def _performance_candidates(
                 client_ok = bool(item.client_institution_code) or "공공" in _norm(item.client_name)
             if not client_ok:
                 continue
+        if item.completed_at is not None:
+            if item.completed_at > reference_date:
+                continue
+            if cutoff is not None and item.completed_at < cutoff:
+                continue
+        elif item.completed_year is not None:
+            earliest = date(item.completed_year, 1, 1)
+            latest = date(item.completed_year, 12, 31)
+            if earliest > reference_date or (cutoff is not None and latest < cutoff):
+                continue
+            if latest > reference_date or (cutoff is not None and earliest < cutoff):
+                has_ambiguous_date = True
+                continue
+        else:
+            has_ambiguous_date = True
+            continue
         candidates.append(item)
-    return candidates
+    return candidates, has_ambiguous_date
 
 
 def _judge_region(
@@ -267,7 +321,7 @@ def _judge_region(
     preflight_case_id: str,
 ) -> Judgment:
     observed = profile.region_name or profile.region_code
-    if not observed:
+    if not observed or observed == "NONE":
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
@@ -290,7 +344,7 @@ def _judge_company_size(
     preflight_case_id: str,
 ) -> Judgment:
     observed = profile.company_size
-    if not observed:
+    if not observed or observed == "NONE":
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
@@ -298,15 +352,43 @@ def _judge_company_size(
     expected_text = str(requirement.value).strip()
     allowed = _COMPANY_SIZE_ALIASES.get(expected_text)
     matched = observed in allowed if allowed is not None else _string_match(observed, expected_text)
-    if not matched and not profile.completeness.company_size:
+
+    # "대기업 및 중견기업 참여 제한" names the sizes barred from bidding, so being
+    # one of them is what fails. Extraction records that in `scope`.
+    if str(requirement.scope.get("restriction") or "") == "EXCLUDE":
+        satisfied = not matched
+    else:
+        satisfied = matched
+
+    # A combined restriction can also bar members of a large-business group.
+    # That is independent of legal company size, so a smaller company remains
+    # UNKNOWN until the notice-specific answer is supplied.
+    from ...ai.extensions import required_for
+
+    needs_affiliation = any(
+        spec.key == "conglomerate_affiliate" for spec in required_for([requirement])
+    )
+    affiliation = profile.extensions.get("conglomerate_affiliate")
+    is_affiliate = (
+        affiliation.get("is_affiliate") if isinstance(affiliation, dict) else None
+    )
+    if satisfied and needs_affiliation:
+        if is_affiliate is None:
+            return _unknown(requirement, preflight_case_id)
+        satisfied = not is_affiliate
+
+    if not satisfied and not profile.completeness.company_size:
         return _unknown(requirement, preflight_case_id)
+    refs = [_profile_ref("company", "company_size", observed)]
+    if needs_affiliation and is_affiliate is not None:
+        refs.append(_profile_ref("extension", "conglomerate_affiliate", is_affiliate))
     return _judgment(
         requirement=requirement,
         preflight_case_id=preflight_case_id,
-        status="SATISFIED" if matched else "UNSATISFIED",
+        status="SATISFIED" if satisfied else "UNSATISFIED",
         basis_type="PROFILE",
-        reason_code="RULE_MATCH" if matched else "RULE_MISMATCH",
-        profile_refs=[_profile_ref("company", "company_size", observed)],
+        reason_code="RULE_MATCH" if satisfied else "RULE_MISMATCH",
+        profile_refs=refs,
     )
 
 
@@ -424,9 +506,11 @@ def _judge_performance_amount(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     if not candidates:
-        if not profile.completeness.performances:
+        if has_ambiguous_date or not profile.completeness.performances:
             return _unknown(requirement, preflight_case_id)
         return _judgment(
             requirement=requirement,
@@ -452,6 +536,8 @@ def _judge_performance_amount(
     )
     if compared is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if not compared and has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if aggregation == "UNSPECIFIED" and len(candidates) > 1:
         summed = sum(item.amount for item in candidates)
         sum_compared = _compare_range(summed, requirement.scope) if requirement.operator == "RANGE" else _compare_number(summed, requirement.operator, requirement.value)
@@ -479,11 +565,15 @@ def _judge_performance_count(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     observed = len(candidates)
     compared = _compare_number(observed, requirement.operator, requirement.value)
     if compared is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if not compared and has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if not compared and not profile.completeness.performances:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -508,7 +598,9 @@ def _judge_experience_field(
 ) -> Judgment:
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
-    candidates = _performance_candidates(profile, requirement, reference_date)
+    candidates, has_ambiguous_date = _performance_candidates(
+        profile, requirement, reference_date
+    )
     matched = next(
         (
             item
@@ -528,6 +620,8 @@ def _judge_experience_field(
             reason_code="RULE_MATCH",
             profile_refs=[_profile_ref("performance", "ref", matched.ref)],
         )
+    if has_ambiguous_date:
+        return _unknown(requirement, preflight_case_id)
     if not profile.completeness.performances:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -552,7 +646,8 @@ def _judge_certification(
     name_matches = [
         item
         for item in profile.certifications
-        if _string_match(item.name, requirement.value)
+        if _certification_match(item.name, requirement.value)
+        or _certification_match(item.certification_code or "", requirement.value)
     ]
     valid_matches = [
         item
@@ -573,6 +668,11 @@ def _judge_certification(
             profile_refs=[
                 _profile_ref("certification", "ref", item.ref),
                 _profile_ref("certification", "name", item.name),
+                *(
+                    [_profile_ref("certification", "certification_code", item.certification_code)]
+                    if item.certification_code
+                    else []
+                ),
             ],
         )
 
@@ -600,8 +700,38 @@ def judge_requirement(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
-    if unsafe_clause_reason(requirement.raw):
+    # 안전 가드가 가장 먼저다. 판정하기 위험한 조항(복합 조건·부정 조건 등)이면
+    # 확장 경로라고 예외일 이유가 없다. 순서를 뒤집으면 SW등급 요건이 가드를
+    # 우회해서, 하나로 줄일 수 없는 조건을 충족/미충족으로 단정하게 된다.
+    if unsafe_clause_reason(requirement.raw) or requirement.condition_complexity == "composite":
         return _unknown(requirement, preflight_case_id, unsupported=True)
+
+    # 공고별 확장 요건은 일반 유형보다 먼저 판정한다. 특히 SW기술자 등급은
+    # `_judge_staff` 로도 흘러가면 안 된다 — 같은 요건을 두 번 판정하게 되고,
+    # 역할 이름 매칭이라는 더 약한 기준이 결과를 뒤집을 수 있다.
+    from ...ai.extensions import spec_for_requirement
+
+    extension = spec_for_requirement(requirement)
+    if extension is not None:
+        status, _detail = extension.judge(
+            profile.extensions.get(extension.key), requirement
+        )
+        if status is None:
+            return _unknown(requirement, preflight_case_id)
+        satisfied = status == "충족"
+        return _judgment(
+            requirement=requirement,
+            preflight_case_id=preflight_case_id,
+            status="SATISFIED" if satisfied else "UNSATISFIED",
+            basis_type="USER_ANSWER",
+            reason_code="RULE_MATCH" if satisfied else "RULE_MISMATCH",
+            profile_refs=[
+                _profile_ref(
+                    "extension", extension.key, profile.extensions.get(extension.key)
+                )
+            ],
+        )
+
     if requirement.type == "REGION":
         return _judge_region(requirement, profile, preflight_case_id)
     if requirement.type == "COMPANY_SIZE":
@@ -639,7 +769,7 @@ def derive_overall_status(
     grouped: dict[str, tuple[str, list[str]]] = {}
 
     for requirement in requirements:
-        if not requirement.required:
+        if requirement.requirement_role != "mandatory":
             continue
         group_key = requirement.requirement_group_key or requirement.requirement_key
         operator = requirement.group_operator or "ALL_OF"

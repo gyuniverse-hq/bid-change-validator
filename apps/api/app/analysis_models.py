@@ -37,6 +37,7 @@ class QualificationAnalysisRun(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     target_chunk_ids: Mapped[list] = mapped_column(JSONB, default=list)
     diagnostics: Mapped[list] = mapped_column(JSONB, default=list)
+    dropped_requirements: Mapped[list] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
@@ -55,6 +56,14 @@ class QualificationRequirementRecord(Base):
     __table_args__ = (
         UniqueConstraint(
             "analysis_run_id", "requirement_key", name="uq_qualification_requirement_run_key"
+        ),
+        CheckConstraint(
+            "requirement_role IN ('mandatory', 'preferred', 'informational')",
+            name="qualification_requirements_role_valid",
+        ),
+        CheckConstraint(
+            "condition_complexity IN ('simple', 'composite')",
+            name="qualification_requirements_complexity_valid",
         ),
     )
 
@@ -75,6 +84,8 @@ class QualificationRequirementRecord(Base):
     unit: Mapped[str | None] = mapped_column(Text)
     period_months: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     scope: Mapped[dict] = mapped_column(JSONB, default=dict)
+    requirement_role: Mapped[str] = mapped_column(Text, default="mandatory", nullable=False)
+    condition_complexity: Mapped[str] = mapped_column(Text, default="simple", nullable=False)
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     raw: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(6, 5))

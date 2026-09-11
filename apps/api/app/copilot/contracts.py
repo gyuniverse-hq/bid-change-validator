@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from ..ai.contracts import Evidence, Judgment, JudgmentStatus, QualificationRequirement, RequirementType
+from ..ai.qualification.extraction.analysis_result import AnalysisDiagnostic, DroppedRequirement
 from ..ask_back_schemas import QualificationQuestionRead
 from ..qualification.rules.judgment import OverallQualificationStatus, ProfileCompleteness
 
@@ -27,12 +28,27 @@ class RequirementJudgmentSummary(Judgment):
     raw: str
 
 
+class AnalysisNoticeFact(BaseModel):
+    """Read-only context, never an ask-back requirement or ordinal target."""
+    code: str
+    message: str
+    evidence: list[Evidence] = Field(default_factory=list)
+
+
+class AnalysisScope(BaseModel):
+    analysis_run_id: UUID
+    notice_facts: list[AnalysisNoticeFact] = Field(default_factory=list)
+    dropped_requirements: list[DroppedRequirement] = Field(default_factory=list)
+    pipeline_diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)
+
+
 class QualificationSummary(BaseModel):
     provenance: ProductProvenance
     overall_status: OverallQualificationStatus
     analysis_status: Literal["SUCCEEDED", "PARTIAL"]
     judgment_counts: dict[JudgmentStatus, int]
     judgments: list[RequirementJudgmentSummary]
+    analysis_scope: AnalysisScope | None = None
 
 
 class RequirementEvidenceResult(BaseModel):

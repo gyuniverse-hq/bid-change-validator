@@ -8,8 +8,9 @@ import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { Button } from '@/components/ui/button';
 import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
-import { isLocked } from '@/lib/copilot-actions';
+import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
+import { CHANGE_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -28,7 +29,11 @@ export default function ChangesPage() {
 function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
   const { controller, action } = useActions(caseId ?? '');
-  const result = action.result && 'revalidated_keys' in action.result ? action.result : null;
+  const result = currentRevalidation(action.result, {
+    caseId: caseId ?? '', baselineAnalysisId: workspace?.baselineAnalysis?.id,
+    currentAnalysisId: workspace?.currentAnalysis?.id, judgmentId: workspace?.displayJudgment?.id,
+  });
+  const hasPastResult = Boolean(action.result && 'revalidated_keys' in action.result && !result);
   const busy = isLocked(action);
   useEffect(() => {
     if (action.stage === 'COMPLETED') void reload();
@@ -49,10 +54,15 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   }, [workspace]);
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  if (!workspace) return <main className="app-shell-container py-12">
+    <ActionCard caseId={caseId} />
+    <p role="alert">{loadError || '검토 데이터를 불러오고 있습니다.'}</p>
+    {loadError && <Button variant="outline" onClick={() => void reload()}>화면 정보 다시 조회</Button>}
+  </main>;
 
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
+  const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -61,6 +71,11 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
         <CaseTabs caseId={workspace.caseItem.id} active="changes" />
 
         <ActionCard caseId={caseId} />
+        {hasPastResult && <p className="mt-3 text-sm text-[var(--product-muted)]">이전 분석 기준의 재검증 기록은 현재 결과 집계에 포함하지 않습니다.</p>}
+        {loadError && <section role="alert" className="mt-4 rounded-xl border p-4">
+          <p>작업 상태는 위에 유지됩니다. 화면 정보 갱신에 실패하여 마지막 조회 결과를 표시합니다.</p>
+          <Button variant="outline" onClick={() => void reload()}>화면 정보 다시 조회</Button>
+        </section>}
 
         <section className="mt-8">
           <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">공고 차수</h2><span className="text-[13.5px] text-[var(--product-muted)]">판정은 차수에 묶입니다</span></div>
@@ -76,7 +91,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
           </section>
         ) : (
           <>
-            <section className="mt-8">
+            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
               <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[13.5px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
                 <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
@@ -88,16 +103,15 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             </section>
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">실제 재판정 <strong>{result.revalidated_keys.length}건</strong></div><div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{result.changes.filter((item) => item.change_type !== 'UNCHANGED').map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{item.change_type}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div></div>}
-            </section>
+              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{CHANGE_TYPE_LABEL[item.change_type]}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
           </>
         )}
 
         <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5 text-[13px] leading-6 text-[var(--product-muted)]">
-          <strong className="text-[var(--product-ink)]">현재 Product Baseline 정책</strong><br />공고 변경값 자체는 NoticeVersion 원본 필드를 비교하고, 자격 판정 영향은 Backend Canonical Requirement Diff와 affected-only Revalidation 결과를 Source of Truth로 사용합니다.
-        </section>
+          <strong className="text-[var(--product-ink)]">현재 판정 반영 기준</strong><br />공고 값 변경은 나라장터 수집 값끼리 비교하고, 자격 판정 영향은 백엔드의 자격조건 비교와 다시 판정한 결과를 기준으로 표시합니다.
+      </section>
       </div>
     </main>
   );

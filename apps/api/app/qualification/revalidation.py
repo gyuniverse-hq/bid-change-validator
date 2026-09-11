@@ -57,7 +57,9 @@ def _select_analysis_run(db: Session, *, notice_version_id: UUID, explicit_run_i
 def _copy_judgment(record: QualificationJudgmentRecord, *, notice_version_id: UUID, case_id: UUID, requirement_key: str, current_evidence_keys: list[str]) -> Judgment:
     return Judgment(
         judgment_key=f"JUDG:{case_id}:{requirement_key}", preflight_case_id=str(case_id), notice_version_id=str(notice_version_id), requirement_key=requirement_key,
-        status=record.status, basis_type=record.basis_type, evidence_held=record.evidence_held, reason_code=record.reason_code,
+        status=record.status, basis_type=record.basis_type, evidence_held=record.evidence_held,
+        value_source=record.value_source, evidence_status=record.evidence_status,
+        reason_code=record.reason_code, unknown_reason=record.unknown_reason,
         requires_evidence=record.requires_evidence, profile_refs=list(record.profile_refs or []), requirement_evidence_keys=list(current_evidence_keys), rule_version=record.rule_version,
     )
 
@@ -129,7 +131,9 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
     for item in judgments:
         db.add(QualificationJudgmentRecord(
             judgment_run_id=result_run.id, judgment_key=item.judgment_key, requirement_key=item.requirement_key,
-            status=item.status, basis_type=item.basis_type, evidence_held=item.evidence_held, reason_code=item.reason_code,
+            status=item.status, basis_type=item.basis_type, evidence_held=item.evidence_held,
+            value_source=item.value_source, evidence_status=item.evidence_status,
+            reason_code=item.reason_code, unknown_reason=item.unknown_reason,
             requires_evidence=item.requires_evidence, profile_refs=list(item.profile_refs), requirement_evidence_keys=list(item.requirement_evidence_keys), rule_version=item.rule_version,
         ))
 

@@ -28,6 +28,7 @@ export function validateSources(response: CopilotChatResponse) {
 export class ConversationStore {
   private states = new Map<string, Conversation>();
   private listeners = new Set<() => void>();
+  private failed = new Map<string, CopilotChatRequest>();
   constructor(private transport: Transport = sendCopilotMessage) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   get(caseId: string) {
@@ -47,25 +48,40 @@ export class ConversationStore {
     this.update(caseId, { revision, busy: false, focus: null, reply: response.reply_context ?? undefined,
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }
+  async retry(caseId: string) {
+    const request = this.failed.get(caseId);
+    if (!request || this.get(caseId).busy) return;
+    const old = this.get(caseId), revision = old.revision + 1;
+    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question: request.message }] });
+    await this.perform(caseId, { ...request, conversation_context: request.conversation_context ? {
+      ...request.conversation_context, context_revision: revision, request_id: crypto.randomUUID(),
+    } : undefined }, revision);
+  }
   async ask(caseId: string, question: string, intent?: CopilotIntent, page?: 'QUALIFICATION' | 'ASK_BACK' | 'EVIDENCE' | 'CHANGES') {
     const old = this.get(caseId);
     if (!caseId || old.busy || !question.trim()) return;
     const revision = old.revision + 1;
     this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question }] });
-    try {
-      const response = await this.transport({
+    const request: CopilotChatRequest = {
         case_id: caseId, message: question, intent, requirement_key: old.focus,
         conversation_context: { request_id: crypto.randomUUID(), context_revision: revision, source_page: page,
           visible_requirement_keys: old.reply?.visible_requirement_keys ?? [], last_read_receipt: old.reply?.last_read_receipt,
           last_response_intent: old.turns.at(-1)?.response?.intent },
-      });
+      };
+    await this.perform(caseId, request, revision);
+  }
+  private async perform(caseId: string, request: CopilotChatRequest, revision: number) {
+    try {
+      const response = await this.transport(request);
       validateSources(response);
       if (this.get(caseId).revision !== revision) return;
+      this.failed.delete(caseId);
       this.update(caseId, { busy: false, reply: response.reply_context ?? undefined,
         focus: response.reply_context?.requirement_key ?? null,
         turns: this.get(caseId).turns.map(t => t.id === revision ? { ...t, response } : t) });
     } catch (error) {
       if (this.get(caseId).revision !== revision) return;
+      this.failed.set(caseId, structuredClone(request));
       this.update(caseId, { busy: false, error: error instanceof Error ? error.message : '조회하지 못했습니다.',
         errorCode: error && typeof error === 'object' && 'code' in error ? String(error.code) : '' });
     }

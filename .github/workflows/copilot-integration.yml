@@ -2,17 +2,17 @@ name: Copilot integration validation
 on:
   push:
     branches: [feature/ai-copilot-v1]
-# Temporary feature-only publisher; approved final tree restores read-only CI.
+  pull_request:
+    branches: [develop]
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: copilot-integration-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  validate-and-publish-feature:
-    if: github.repository == 'gyuniverse-hq/bid-change-validator' && github.ref == 'refs/heads/feature/ai-copilot-v1' && github.event_name == 'push'
+  integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -26,85 +26,19 @@ jobs:
       DATABASE_URL: postgresql://copilot_ci:isolated_ci_only@127.0.0.1:5432/copilot_ci
       AUTH_REQUIRED: 'false'
       PYTHONPATH: ${{ github.workspace }}
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       COPILOT_BASE_SHA: 40de1a37224080c0b1a9b45a65691d1c0f419a7d
-      APPROVED_TREE: 0ddf21f054cf385352d8610dd0253b41ebcec39c
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Assemble and verify exact approved source tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse origin/develop)" = "$COPILOT_BASE_SHA"
-          python - <<'PY'
-          import base64, hashlib, json, lzma, os, pathlib, re, subprocess
-          def git(*args):
-              return subprocess.check_output(['git', *args]).decode().strip()
-          packed = base64.b64decode(''.join(pathlib.Path(f'.integration-transport/part{i}.b64').read_text().strip() for i in range(4)), validate=True)
-          assert hashlib.sha256(packed).hexdigest() == '894a460ea5121660ca1462d0c630962127768ab16e6c76bce9232bbe4f1a3ace'
-          corrections = []
-          for name, digest in [
-              ('fixes', '64cc565cf887047a3ef70bce14d25b7eb659bf5fe68d52b89f377ef609e99e72'),
-              ('fixes2', '79d0b529f261cb1609871cc6545eaac33a4890c2d82d0877ca1fb2f187f305ad'),
-              ('fixes3', 'b8d4dbcc84b3873d5ca6cb0818c5e6fdf91022f5b9dd9de40607ead874c27ff1'),
-              ('fixes4', '4a517d165803ce2e2ff2ccbfadec76ffa3e9513fa94d3b08be8143569adbc931')]:
-              binary = base64.b64decode(pathlib.Path(f'.integration-transport/{name}.xz.b64').read_text().strip(), validate=True)
-              assert hashlib.sha256(binary).hexdigest() == digest, 'Correction checksum mismatch'
-              corrections.append(lzma.decompress(binary))
-          data = json.loads(lzma.decompress(packed))
-          assert data['schema'] == 1 and data['base'] == os.environ['COPILOT_BASE_SHA']
-          assert data['final_tree'] == 'c91fde71aa7f3b30e67838b8f2b0d2bd05f204a8'
-          subprocess.run(['git', 'merge-base', '--is-ancestor', data['source'], 'HEAD'], check=True)
-          subprocess.run(['git', 'read-tree', '--reset', '-u', data['base']], check=True)
-          for entry in data['entries']:
-              path = pathlib.PurePosixPath(entry['path'])
-              assert not path.is_absolute() and '..' not in path.parts
-              assert entry['mode'] in ('100644', '100755') and re.fullmatch('[0-9a-f]{40}', entry['sha'])
-              subprocess.run(['git', 'update-index', '--add', '--cacheinfo', entry['mode'], entry['sha'], entry['path']], check=True)
-          assert git('write-tree') == data['initial_tree']
-          for patch in [data['patch'].encode('utf-8'), *corrections]:
-              subprocess.run(['git', 'apply', '--check', '--cached'], input=patch, check=True)
-              subprocess.run(['git', 'apply', '--cached'], input=patch, check=True)
-          assert git('write-tree') == os.environ['APPROVED_TREE'], 'Unapproved file tree'
-          subprocess.run(['git', 'checkout-index', '--all', '--force', '--index'], check=True)
-          subprocess.run(['git', 'diff', '--exit-code'], check=True)
-          subprocess.run(['git', 'diff', '--cached', '--check', data['base']], check=True)
-          pathlib.Path('.ci-results').mkdir(exist_ok=True)
-          pathlib.Path('.ci-results/approved-tree.txt').write_text(os.environ['APPROVED_TREE'] + '\n')
-          print('Exact approved source, baseline and file bytes verified')
-          PY
+        with: {fetch-depth: 0, persist-credentials: false}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: apps/api/requirements-dev.txt
+        with: {python-version: '3.12'}
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.0
+        with: {version: 10.15.0}
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: pnpm
-          cache-dependency-path: apps/web/pnpm-lock.yaml
-      - name: Isolated DB, full backend, client, build and browser gates
+        with: {node-version: '22'}
+      - name: Isolated backend, web and design regression
         run: bash scripts/ci_copilot_integration.sh
-      - name: Publish validated tree only to the Copilot feature branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/feature/ai-copilot-v1'
-          git diff --exit-code
-          test "$(git write-tree)" = "$APPROVED_TREE"
-          test "$(git ls-remote origin refs/heads/feature/ai-copilot-v1 | cut -f1)" = "$GITHUB_SHA"
-          test "$(git ls-remote origin refs/heads/develop | cut -f1)" = "$COPILOT_BASE_SHA"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          COMMIT=$(git commit-tree "$APPROVED_TREE" -p "$GITHUB_SHA" -p "$COPILOT_BASE_SHA" -m 'feat(copilot): integrate released baseline with designer UI and safe action recovery')
-          git push origin "$COMMIT:refs/heads/feature/ai-copilot-v1"
-          printf '%s\n' "$COMMIT" > .ci-results/published-commit.txt
-          git diff --stat "$COPILOT_BASE_SHA" "$COMMIT" > .ci-results/integration-diff-stat.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

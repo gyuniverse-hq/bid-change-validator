@@ -84,6 +84,9 @@ def _persist_result(
         status=result.status,
         target_chunk_ids=list(result.target_chunk_ids),
         diagnostics=[item.model_dump(mode="json") for item in result.diagnostics],
+        dropped_requirements=[
+            item.model_dump(mode="json") for item in result.dropped_requirements
+        ],
     )
     db.add(run)
     db.flush()
@@ -105,6 +108,8 @@ def _persist_result(
                     else None
                 ),
                 scope=dict(requirement.scope),
+                requirement_role=requirement.requirement_role,
+                condition_complexity=requirement.condition_complexity,
                 required=requirement.required,
                 raw=requirement.raw,
                 confidence=(
@@ -188,6 +193,8 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
             unit=item.unit,
             period_months=float(item.period_months) if item.period_months is not None else None,
             scope=dict(item.scope or {}),
+            requirement_role=item.requirement_role,
+            condition_complexity=item.condition_complexity,
             required=item.required,
             raw=item.raw,
             confidence=float(item.confidence) if item.confidence is not None else None,
@@ -220,6 +227,7 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
         status=run.status,
         target_chunk_ids=list(run.target_chunk_ids or []),
         diagnostics=list(run.diagnostics or []),
+        dropped_requirements=list(run.dropped_requirements or []),
         requirements=requirements,
         evidence=evidence,
         created_at=run.created_at,

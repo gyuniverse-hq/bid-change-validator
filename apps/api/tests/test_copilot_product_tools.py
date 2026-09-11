@@ -20,7 +20,7 @@ from apps.api.tests.test_mvp_golden_e2e import _cleanup, _seed_golden_case
 
 
 @pytest.fixture
-def state():
+def state(seed_required_master_codes):
     seed = _seed_golden_case()
     try:
         with SessionLocal() as db:
@@ -166,6 +166,13 @@ def test_required_checks_reuses_askability_and_keeps_nonaskable(state):
             'REQ-REGION': 'SATISFIED', 'REQ-PERFORMANCE-AMOUNT': 'UNSATISFIED',
             'REQ-STAFF': 'UNKNOWN', 'REQ-REGISTRATION': 'UNKNOWN',
         }[record.requirement_key]
+        # Migration 017 makes the UNKNOWN reason mandatory only for UNKNOWN.
+        # Keep this synthetic state internally valid; do not relax the DB check.
+        record.unknown_reason = 'profile_missing' if record.status == 'UNKNOWN' else None
+        record.reason_code = {
+            'SATISFIED': 'RULE_MATCH', 'UNSATISFIED': 'RULE_MISMATCH',
+            'UNKNOWN': 'INSUFFICIENT_DATA',
+        }[record.status]
     db.flush()
     expected = list_questions(db, case_id=case.id, source_judgment_run_id=run.id)
     result = tools.get_required_checks(db, case.id)

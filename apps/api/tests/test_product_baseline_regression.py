@@ -8,6 +8,9 @@ from apps.api.app.database import SessionLocal
 from apps.api.tests.test_mvp_golden_e2e import _seed_golden_case, _cleanup, client, REFERENCE_DATE
 
 
+pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
+
+
 @pytest.fixture
 def scenario():
     seed = _seed_golden_case()

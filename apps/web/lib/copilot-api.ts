@@ -1,4 +1,4 @@
-import { absoluteApiUrl, ApiError } from './api';
+import { apiFetch, ApiError } from './api';
 import type { EvidenceLocation, QualificationQuestion } from './qualification-api';
 
 // Pydantic app/copilot/{chat,contracts,actions}.py is the source of truth.
@@ -34,6 +34,7 @@ export type ProductProvenance = {
 };
 export type QualificationSummary = {
   provenance: ProductProvenance; overall_status: OverallStatus; analysis_status: 'SUCCEEDED' | 'PARTIAL';
+  analysis_scope?: { analysis_run_id: string; notice_facts: { code: string; message: string; evidence: Evidence[] }[]; dropped_requirements: { raw: string; reason_code: string }[]; pipeline_diagnostics: { code: string; message: string }[] } | null;
   judgment_counts: Record<JudgmentStatus, number>; judgments: (Judgment & { type: RequirementType; raw: string })[];
 };
 export type RequirementEvidenceResult = {
@@ -111,7 +112,7 @@ export type RevalidationResult = {
 export type ConfirmActionResult = AnswerResult | RevalidationResult;
 
 async function post<T>(path: string, payload: CopilotChatRequest | ConfirmAction, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(absoluteApiUrl(path), {
+  const response = await apiFetch(path, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal,
   });
   if (!response.ok) {

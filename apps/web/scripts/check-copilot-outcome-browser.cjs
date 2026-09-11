@@ -1,12 +1,15 @@
-// Requires the isolated synthetic case. Confirm is aborted before it reaches the API.
-const assert = require('node:assert/strict');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
+// Requires the isolated synthetic case. Confirm is aborted before it reaches the API.
+const assert = (await import('node:assert/strict')).default;
+const { pathToFileURL } = await import('node:url');
+const { resolve } = await import('node:path');
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE
+  ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE, 'index.mjs')).href : 'playwright');
   const url = new URL(process.env.COPILOT_TEST_URL);
   assert(['localhost', '127.0.0.1'].includes(url.hostname));
   const caseId = url.searchParams.get('caseId');
   assert(caseId);
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_BROWSER_CHANNEL ? { channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL } : {}), headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     let confirms = 0;
@@ -31,14 +34,14 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await card.getByRole('button', { name: '결과 조회만 다시 시도' }).click();
     const message = '현재 판정을 조회했습니다. 이 조회만으로 이전 요청의 성공을 확정할 수 없어 재실행은 잠겨 있습니다.';
     await card.getByText(message, { exact: true }).waitFor();
-    await page.getByRole('button', { name: '공고 도우미', exact: true }).click();
+    await page.getByRole('button', { name: 'AI Copilot', exact: true }).click();
     const panel = page.locator('#copilot-panel');
     await panel.getByText(message, { exact: true }).waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForFunction(() => document.querySelector('#copilot-panel').matches(':modal'));
     assert((await panel.boundingBox()).width <= 390);
     await page.getByRole('button', { name: '도우미 닫기' }).click();
-    await page.getByRole('button', { name: '공고 도우미', exact: true }).click();
+    await page.getByRole('button', { name: 'AI Copilot', exact: true }).click();
     await panel.getByText(message, { exact: true }).waitFor();
     assert(await panel.getByLabel('이 요건을 충족하나요?').isDisabled());
     await page.setViewportSize({ width: 1440, height: 1000 });

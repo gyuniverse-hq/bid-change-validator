@@ -24,6 +24,7 @@ from ..qualification.judgment import (
     load_qualification_judgment_run,
 )
 from .contracts import (
+    AnalysisScope, AnalysisNoticeFact,
     JudgmentProfileResult,
     ProductProvenance,
     QualificationSummary,
@@ -90,13 +91,28 @@ def _load_context(
     return provenance, analysis, judgment
 
 
+def analysis_scope(analysis: QualificationAnalysisRunRead) -> AnalysisScope:
+    """Use the exact judged analysis; exclude opaque diagnostic details."""
+    evidence = {item.evidence_key: item for item in analysis.evidence}
+    return AnalysisScope(
+        analysis_run_id=analysis.id,
+        notice_facts=[AnalysisNoticeFact(
+            code=item.code, message=item.message,
+            evidence=[evidence[key] for key in dict.fromkeys(item.evidence_keys) if key in evidence],
+        ) for item in analysis.diagnostics if item.kind == "NOTICE_FACT"],
+        dropped_requirements=[item.model_copy(deep=True) for item in analysis.dropped_requirements],
+        pipeline_diagnostics=[item.model_copy(update={"details": {}, "evidence_keys": []})
+                              for item in analysis.diagnostics if item.kind != "NOTICE_FACT"],
+    )
+
+
 def get_qualification_summary(db: Session, case_id: UUID) -> QualificationSummary:
     with db.no_autoflush:
         provenance, analysis, judgment = _load_context(db, case_id)
         requirements = {item.requirement_key: item for item in analysis.requirements}
         return QualificationSummary(
             provenance=provenance, overall_status=judgment.overall_status,
-            analysis_status=provenance.analysis_status,
+            analysis_status=provenance.analysis_status, analysis_scope=analysis_scope(analysis),
             judgment_counts={status: sum(item.status == status for item in judgment.judgments)
                              for status in ("SATISFIED", "UNSATISFIED", "UNKNOWN")},
             judgments=[RequirementJudgmentSummary(

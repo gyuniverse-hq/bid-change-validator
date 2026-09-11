@@ -7,17 +7,19 @@ package boundary is stabilized in Baseline v2.
 """
 
 from .contracts import (
-    RISK_TYPE_BY_RULE,
-    RISK_TYPE_LABELS,
+    CATEGORY_BY_RULE,
+    CATEGORY_LABELS,
     VERDICT_LABELS,
     VERDICT_PRIORITY,
     ClauseFinding,
     ClauseVerdict,
-    RiskType,
+    CategoryCode,
     StandardReference,
     apply_overlapping_categories,
+    finding_to_payload,
     overlapping_categories,
 )
+from .embedding_fallback import make_embedding_fallback
 from .pattern_match import detect_patterns
 from .standard_diff import (
     RULES,
@@ -29,11 +31,12 @@ from .standard_diff import (
 __all__ = [
     "ClauseFinding",
     "ClauseVerdict",
-    "RiskType",
-    "RISK_TYPE_BY_RULE",
-    "RISK_TYPE_LABELS",
+    "CategoryCode",
+    "CATEGORY_BY_RULE",
+    "CATEGORY_LABELS",
     "StandardReference",
     "apply_overlapping_categories",
+    "finding_to_payload",
     "overlapping_categories",
     "VERDICT_LABELS",
     "VERDICT_PRIORITY",
@@ -41,5 +44,6 @@ __all__ = [
     "detect_standard_diff",
     "infer_contract_scope",
     "scope_for_notice",
+    "make_embedding_fallback",
     "RULES",
 ]

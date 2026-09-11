@@ -25,7 +25,7 @@ from .product_tools import (
     get_requirement_evidence, get_explanation_evidence, matching_provenance,
 )
 from .context import ConversationContext, ReplyContext, compact, depends_on_context, resolve_context
-from .presentation import NextAction, Presentation, present_product, render_answer
+from .presentation import attach_analysis_scope, NextAction, Presentation, present_product, render_answer
 from .source_map import SourceMap, cited_sources, source_identity
 
 Intent = Literal["QUALIFICATION_SUMMARY", "REQUIREMENT_EVIDENCE", "REQUIRED_CHECKS",
@@ -248,6 +248,13 @@ def _chat(db: Session, request: CopilotChatRequest) -> CopilotChatResponse:
         status="UNSUPPORTED" if intent == "UNKNOWN" else "RESOLVED",
     )
     control = _action_control(request)
+    scope_reference = any(term in compact(request.message).lower() for term in (
+        "판정밖", "판정에들어가지않", "판정대상이아닌", "구조화에서제외", "제외된요건", "공고확인사항", "notice_fact", "dropped_requirements",
+    ))
+    if scope_reference and (control in ("answer", "revalidate", "partial_scope") or request.user_input is not None):
+        result.answer = "판정 밖 확인사항은 답변 반영 대상이 아닙니다. 참가자격 화면에서 원문과 제외 사유를 확인해 주세요."
+        result.reply_context.status = "UNSUPPORTED"
+        return result
     if intent == "ACTION_REQUEST" and control in ("cancel", "explain"):
         result.answer = ("요청에 따라 새 작업 제안을 만들지 않았습니다." if control == "cancel" else
                          "재검증은 변경된 참가자격 요건 전체를 다시 검증하는 작업입니다. 실행을 요청하면 제안을 보여주고, 확인 버튼을 누른 뒤에만 실행합니다."
@@ -285,6 +292,7 @@ def _chat(db: Session, request: CopilotChatRequest) -> CopilotChatResponse:
         result.presentation = present_product(summary, _attach_evidence(result, bundles), focus)
         if control == "status":
             result.presentation.limitations.append("현재 저장된 판정을 조회했습니다. 작업 실행 이력은 조회하지 않으므로 반영·재검증의 실행 시각이나 미처리 이유는 단정할 수 없습니다.")
+        attach_analysis_scope(result.presentation, summary, result.sources)
     elif intent == "REQUIRED_CHECKS":
         checks = get_required_checks(db, case.id)
         keys = [q.requirement_key for q in checks.questions if not focus or q.requirement_key == focus]
@@ -294,6 +302,7 @@ def _chat(db: Session, request: CopilotChatRequest) -> CopilotChatResponse:
         result.product_state = checks
         result.reply_context.visible_requirement_keys = keys[:100]
         result.presentation = present_product(checks, _attach_evidence(result, bundles), focus, summary)
+        attach_analysis_scope(result.presentation, summary, result.sources)
     elif intent == "PROFILE_SNAPSHOT":
         result.product_state = get_judgment_profile_snapshot(db, case.id)
         if summary is not None and not matching_provenance(summary, result.product_state):

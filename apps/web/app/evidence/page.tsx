@@ -32,9 +32,22 @@ export default function EvidencePage() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get('caseId');
   const evidenceParam = searchParams.get('evidence');
+  const expectedAnalysis = searchParams.get('analysisRunId');
   const { workspace, error } = useCaseWorkspace(caseId);
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
   if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  // A historical Copilot chip must not silently open a reused key in a new run.
+  if (expectedAnalysis && expectedAnalysis !== workspace.currentAnalysisDetail?.id) {
+    return <main className="app-shell-container py-12">
+      <CaseHeader workspace={workspace} />
+      <CaseTabs caseId={caseId} active="evidence" />
+      <section role="alert" className="mt-5 rounded-xl border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] p-5">
+        <h2 className="font-bold">이 근거는 이전 분석 기준입니다</h2>
+        <p className="mt-2">현재 분석과 연결 기준이 달라 같은 근거 키로 자동 이동하지 않았습니다. 과거 인용문은 대화에서 확인할 수 있습니다.</p>
+        <Link href={workspaceHref('/evidence', caseId)} className="mt-3 inline-block underline">현재 분석의 근거 선택하기</Link>
+      </section>
+    </main>;
+  }
   return <EvidenceWorkspace key={`${caseId}:${workspace.currentAnalysis?.id}:${evidenceParam}`} workspace={workspace} evidenceParam={evidenceParam} />;
 }
 

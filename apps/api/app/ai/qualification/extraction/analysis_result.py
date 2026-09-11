@@ -18,6 +18,13 @@ from ...contracts import Evidence, QualificationRequirement
 AnalysisStatus = Literal["SUCCEEDED", "PARTIAL", "FAILED"]
 AnalysisKind = Literal["QUALIFICATION_REQUIREMENTS"]
 DiagnosticSeverity = Literal["INFO", "WARNING", "ERROR"]
+DroppedReasonCode = Literal[
+    "MISSING_RAW",
+    "RAW_NOT_FOUND_IN_SOURCE",
+    "DETAIL_NOT_FOUND_IN_SOURCE",
+    "SOURCE_VALIDATION_FAILED",
+]
+DiagnosticKind = Literal["PIPELINE", "NOTICE_FACT"]
 
 
 class AnalysisDiagnostic(BaseModel):
@@ -25,6 +32,15 @@ class AnalysisDiagnostic(BaseModel):
     severity: DiagnosticSeverity = "WARNING"
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+    kind: DiagnosticKind = "PIPELINE"
+    evidence_keys: list[str] = Field(default_factory=list)
+
+
+class DroppedRequirement(BaseModel):
+    """An extracted candidate rejected by deterministic source validation."""
+
+    raw: str
+    reason_code: DroppedReasonCode
 
 
 class RequirementAnalysisResult(BaseModel):
@@ -40,6 +56,7 @@ class RequirementAnalysisResult(BaseModel):
     requirements: list[QualificationRequirement] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)
+    dropped_requirements: list[DroppedRequirement] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_internal_links(self) -> "RequirementAnalysisResult":
@@ -84,7 +101,7 @@ class RequirementAnalysisResult(BaseModel):
 
 
 _DIAGNOSTIC_MESSAGES = {
-    "UNMAPPED_REQUIREMENT": "닫힌 Canonical 자격요건 유형으로 안전하게 매핑하지 못했습니다.",
+    "UNMAPPED_REQUIREMENT": "공고에서 확인했으나 회사 프로필과 대조할 자격요건이 아닙니다. 판정하지 않고 근거와 함께 기록합니다.",
     "UNMAPPED_PERFORMANCE": "실적요건을 판정 가능한 원자 조건으로 구조화하지 못했습니다.",
     "UNMAPPED_EXPERIENCE_FIELD": "경험분야 요건의 비교값을 구조화하지 못했습니다.",
     "UNMAPPED_INDUSTRY": "업종 요건의 비교값을 구조화하지 못했습니다.",
@@ -92,17 +109,26 @@ _DIAGNOSTIC_MESSAGES = {
     "UNMAPPED_STAFF": "인력 요건의 인원 또는 역할을 구조화하지 못했습니다.",
     "UNMAPPED_REGISTRATION_CERTIFICATION": "등록·면허·인증 요건의 명칭을 구조화하지 못했습니다.",
     "UNMAPPED_COMPANY_SIZE": "기업규모 요건의 비교값을 구조화하지 못했습니다.",
-    "UNKNOWN_LEGACY_TYPE": "지원하지 않는 기존 LLM 슬롯 유형입니다.",
+    "UNKNOWN_LEGACY_TYPE": "지원하지 않는 슬롯 유형이라 판정하지 않고 근거와 함께 기록합니다.",
 }
+
+_NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
 
 
 def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
     code = str(raw.get("code") or "CANONICALIZATION_WARNING")
+    is_notice_fact = code in _NOTICE_FACT_CODES
     return AnalysisDiagnostic(
         code=code,
-        severity="WARNING",
+        severity="INFO" if is_notice_fact else "WARNING",
         message=_DIAGNOSTIC_MESSAGES.get(code, "Canonical 변환 과정에서 확인이 필요합니다."),
-        details={key: value for key, value in raw.items() if key != "code"},
+        details={
+            key: value
+            for key, value in raw.items()
+            if key not in ("code", "evidence_keys")
+        },
+        kind="NOTICE_FACT" if is_notice_fact else "PIPELINE",
+        evidence_keys=list(raw.get("evidence_keys") or []),
     )
 
 
@@ -114,6 +140,7 @@ def build_requirement_analysis_result(
     canonicalized: dict[str, Any],
     extraction_status: str = "ok",
     extraction_notes: str = "",
+    extraction_dropped_requirements: list[dict[str, str]] | None = None,
     target_chunk_ids: list[str] | None = None,
 ) -> RequirementAnalysisResult:
     """Build the stable Backend-facing payload from current pipeline outputs."""
@@ -138,7 +165,7 @@ def build_requirement_analysis_result(
             ),
         )
         status: AnalysisStatus = "PARTIAL" if requirements or evidence else "FAILED"
-    elif diagnostics:
+    elif any(item.kind == "PIPELINE" for item in diagnostics):
         status = "PARTIAL"
     else:
         status = "SUCCEEDED"
@@ -166,4 +193,5 @@ def build_requirement_analysis_result(
         requirements=requirements,
         evidence=evidence,
         diagnostics=diagnostics,
+        dropped_requirements=list(extraction_dropped_requirements or []),
     )

@@ -12,6 +12,7 @@
 - E0 기준 commit: `993e5cf446e46c740503ec0840a5996d1f82dfe1`
 - 개선 작업 branch: `feature/ai-copilot-e1-ux-baseline`
 - Golden Set: `golden_fixtures_v02`, 공고 20건 / 현재 회사 상태 32 / 이전차수 입력 8 / 변경 비교 8
+- PR 운영: 중간 PR 없음. 개선·평가·최종 회귀 완료 후 한 번만 `develop` 대상 PR 생성
 
 ## 진행 순서
 
@@ -22,11 +23,11 @@
 4. E0 실패 유형 분석 ✅
 5. E1 UX·응답구조 개선 ✅
 6. E1 동일 평가 재측정 ✅
-7. E2 자연어 이해·대화 문맥 개선 ◀ 현재
-8. E2 동일 평가 재측정
-9. E3 근거 기반 RAG 설명 연결
-10. E3·RAG·Prompt 성능 비교
-11. 사용자 관점 Test Case
+7. E2 자연어 이해·대화 문맥 개선 ✅
+8. E2 동일 평가 재측정 ✅
+9. E3 근거 기반 RAG 설명 연결 ✅
+10. E3·RAG·Prompt 성능 비교 ✅
+11. 사용자 관점 Test Case ◀ 현재
 12. 최종 회귀·잠금 평가
 13. README·발표·데모 정리
 
@@ -37,40 +38,98 @@
 - [`e0-conversation-safety.md`](./e0-conversation-safety.md): I01~I20 대화·안전 시나리오와 E0 실패 유형
 - [`e1-routing-remeasurement.md`](./e1-routing-remeasurement.md): E1 제한적 alias 적용 후 동일 100문항 재측정
 - [`e1-evaluation-summary.md`](./e1-evaluation-summary.md): E0→E1 동일셋 전후 비교와 I01~I20 재분류
+- [`e2-routing-evaluation.md`](./e2-routing-evaluation.md): Semantic Router + 실제 resolver 정책 기반 E2 측정
+- [`e3-rag-evaluation.md`](./e3-rag-evaluation.md): Dense/Hybrid/Rerank, Grounded Answer v1~v4, 최종 E3 의사결정
+- [`stage11-user-test-plan.md`](./stage11-user-test-plan.md): 사용자 관점 Core 6 + Safety 2 테스트와 관찰 기록 템플릿
 
-## E2 구현 상태
+## 주요 결과 스냅샷
 
-현재 E2는 **구현 중 / 실측 전**이다.
+### Rule Engine Actual
 
-구현 완료:
-- `apps/api/app/copilot/semantic_router.py`: Structured Output 기반 `intent / subject / task / target_text / confidence / needs_context`
-- `apps/api/app/copilot/intent_resolver.py`: deterministic UNKNOWN 읽기만 semantic fallback 허용
-- `apps/api/app/copilot/router.py`: `X-Copilot-Semantic-Processing` opt-in header가 있을 때만 semantic classifier 사용
-- Frontend: `자연어 의미 이해 사용` 토글 기본 OFF
-- 개인정보 경계: semantic prompt에는 질문 문장과 최소 대화 메타만 사용. 회사 프로필/판정값/user_input은 전달하지 않음
-- write 경계: semantic 결과가 `ACTION_REQUEST`여도 deterministic UNKNOWN을 write로 승격하지 않음
+- canonical rows: 138
+- draft target exact match: **104/138 = 75.4%**
+- safe abstention: **34/138 = 24.6%**
+- dangerous determinate error: **0**
+- overall state match: **36/40 = 90.0%**
 
-평가 자산:
-- `apps/api/eval/copilot_e2_routing.json`: E0/E1과 비교할 고정 자유입력 100문항
-- `apps/api/app/scripts/evaluate_copilot_e2_routing.py`: 실제 Semantic Router의 intent 정확도와 p50/p95 지연시간 측정
+이 수치는 독립 holdout 정확도가 아니라 draft target 대비 고정 판정 엔진 결과다.
 
-아직 하지 않은 것:
-- 제품용 OpenAI API를 사용한 E2 100문항 실제 실행
-- 실제 결과 기반 E2 intent 정확도·subject/task 정확도 확정
-- E2 전체 API/DB/browser E2E 회귀 검증
+### E0 → E1
+
+- 자유입력 intent 일치: **1/100 → 41/100**
+- 판정 설명: `0/32 → 32/32`
+- 변경 비교: `0/8 → 8/8`
+- 대화·안전 완전 성공: **5/20 → 9/20**
+- 치명적 안전 위반 후보: **0 유지**
+
+### E2 Semantic Routing
+
+- Semantic-only Run1: `89/100`
+- Run2: `98/100`
+- Run3: `100/100`
+- 실제 제품 resolver 순서 combined v2: **100/100**
+- DOCUMENT_QA `60/60`, JUDGMENT_EXPLANATION `32/32`, CHANGE_COMPARISON `8/8`
+
+**주의:** 100/100은 고정 100문항 intent routing 결과다. 답변 정답률, RAG 품질, 사용자 업무 완료율이 아니다.
+
+### E3 Retrieval
+
+- Dense Recall@4: **29.17%**
+- Hybrid Recall@4: **50.00%**
+- Hybrid + LLM Rerank Recall@4: **55.56%**
+
+제품 기본 retrieval은 **Hybrid**로 잠갔다. Rerank는 품질 향상 대비 추가 모델 호출과 약 2.8초 p50 latency가 커 기본 제품 경로에 채택하지 않았다.
+
+### E3 Grounded Answer v4
+
+- evaluable cases: 59 / scope gap 1
+- generation success: **59/59**
+- generation failure: **0**
+- citation version integrity: **100%**
+- citation present: **57/59**
+- strict expected-evidence citation recall: **45.83%**
+- total latency p50: **2925.77ms**
+- total latency p95: **5449.73ms**
+
+45.83%는 답변 정답률이 아니라 frozen expected excerpt와 실제 citation source의 strict matcher 결과다.
+
+Grounded Answer 안전 계약:
+
+- 질문 핵심을 직접 뒷받침하는 SOURCE만 citation
+- 근거가 없으면 abstain / 억지 citation 금지
+- 일부 근거만 있으면 전체 결론 금지
+- 문서 충돌은 차이를 표시하고 임의 우선순위 금지
+- 회사 실제 참가 가능/불가를 LLM이 독자 판정하지 않음
+- SOURCE의 깨진 코드·자릿수·날짜·금액을 임의 복원하지 않음
+
+최신 관련 회귀: **251 passed / 1 non-blocking deprecation warning**.
+
+## 현재 단계 — Stage 11
+
+현재는 자동 평가 점수를 더 올리는 단계가 아니라 실제 사용성을 검증한다.
+
+[`stage11-user-test-plan.md`](./stage11-user-test-plan.md)의 Core 6개와 Safety 2개를 사용해 다음을 기록한다.
+
+- 과업 PASS / PARTIAL / FAIL
+- CRITICAL safety issue
+- 완료시간
+- 힌트 수
+- 잘못된 경로 이동
+- 사용자가 이해한 결론
+- 신뢰도
+- 반복 blocker
+
+최소 3명 × Core 6개를 실행하고, CRITICAL 0건과 반복 blocker triage를 확인한 뒤 Stage 12로 이동한다.
 
 ## 수치 해석 원칙
 
-서로 다른 수치를 하나의 `정확도`로 합치지 않습니다.
+서로 다른 수치를 하나의 `정확도`로 합치지 않는다.
 
-- `913/913`: Fixture 자료 정합성 검사
-- `104/138 = 75.4%`: 독립 검토 전 draft 기대값과 고정 판정 코드의 canonical exact match
-- `1/100 = 1.0%`: E0 자유입력 intent 정확 일치율
-- `41/100 = 41.0%`: E1 제한적 alias를 적용한 정적 라우팅 재측정
-- `5/20 → 9/20`: E0→E1 I01~I20 코드 계약 기준 완전 과업 성공 수
-- E2 실제 Semantic Router 정확도: **미측정**
-- 사용자 업무 완료율 / RAG 답변 정확도 / 실제 API·DB E2E는 별도 지표로 기록
+- Fixture 정합성
+- Rule engine draft-target exact match
+- Intent routing
+- Retrieval strict Recall@K
+- Grounded citation structural metrics
+- 사용자 task completion
 
-## PR 운영
-
-개선 중간 PR은 만들지 않습니다. E1→E2→E3와 최종 회귀검증이 끝난 뒤 하나의 최종 PR로 `develop`에 제안합니다.
+각각 평가 대상과 분모가 다르므로 발표에서도 별도 지표로 설명한다.

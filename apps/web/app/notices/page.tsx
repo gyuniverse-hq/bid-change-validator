@@ -189,7 +189,9 @@ export default function NoticesPage() {
   return (
     <main className="bg-white text-[var(--product-body)]">
       <section className="border-b border-[var(--product-line)] bg-[linear-gradient(120deg,#e6eeff_0%,#f0ebff_48%,#e8f4ff_100%)]">
-        <div className="app-shell-container py-8 md:py-[34px]">
+        {/* 아래 여백은 6타일 카드가 위로 올라와 걸칠 자리다.
+           여백에서 카드가 올라온 만큼(62px)을 뺀 값이 히어로 카드와 타일 사이의 실제 간격이 된다. */}
+        <div className="app-shell-container pt-8 pb-[96px] md:pt-[34px] md:pb-[124px]">
           <div className="inline-flex min-h-[50px] items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-3.5 py-2 shadow-sm backdrop-blur">
             <span className={`grid size-8 place-items-center rounded-full ${profileReady ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{profileReady ? <CheckCircle2 className="size-5" /> : <CircleHelp className="size-5" />}</span>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -220,7 +222,16 @@ export default function NoticesPage() {
           </div>
         </div>
 
-        <div className="app-shell-container -mb-[62px] translate-y-[62px]">
+      </section>
+
+      {/*
+        6타일 카드는 히어로 경계에 걸쳐 보이게 둔다.
+        이전에는 transform으로 아래로 밀고(-mb + translate-y) 다음 섹션이 고정 pt로 피하는 구조였는데,
+        transform은 레이아웃 높이를 바꾸지 않아 118 - 62 - 62 = -6px 만큼 항상 아래를 덮었다.
+        (「공고 조회」 라벨 윗부분이 잘려 보이던 원인)
+        이제는 섹션 밖에서 위로 당긴다. 카드의 실제 높이가 아래 내용을 밀어내므로 겹칠 수 없다.
+      */}
+      <div className="app-shell-container relative z-10 -mt-[62px]">
           <div className="grid overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-white shadow-[0_18px_46px_rgba(35,50,90,0.1)] sm:grid-cols-2 lg:grid-cols-6">
             {quickTiles.map(({ label, value, icon: Icon, filter }) => (
               <button key={label} type="button" onClick={() => setStatusFilter(filter)} className={`min-h-[124px] border-b border-r border-[var(--product-line)] px-4 py-5 text-center transition-colors hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#f4f6ff]' : ''}`}>
@@ -230,10 +241,9 @@ export default function NoticesPage() {
               </button>
             ))}
           </div>
-        </div>
-      </section>
+      </div>
 
-      <div className="app-shell-container pb-20 pt-[118px]">
+      <div className="app-shell-container pb-20 pt-14">
         {error && <div className="mb-6 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>{error}</span></div>}
 
         <section>

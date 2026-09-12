@@ -20,12 +20,20 @@ const ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
   {
-    match: (pathname) => pathname === '/' || pathname.startsWith('/notices'),
+    match: (pathname) => pathname.startsWith('/notices'),
     page: {
       title: '공고 찾기',
       description: '회사 프로필과 공고 원문 근거를 기준으로 검토할 공고를 찾습니다.',
       breadcrumb: '홈 › 공고 찾기',
       showTitleBand: false,
+    },
+  },
+  {
+    match: (pathname) => pathname.startsWith('/workbench'),
+    page: {
+      title: '검토 워크벤치',
+      description: '공고 원문과 제출 문서를 나란히 두고 검토 건을 만드는 작업 화면입니다.',
+      breadcrumb: '홈 › 검토 워크벤치',
     },
   },
   {
@@ -111,9 +119,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (remembered) router.replace(`${pathname}?caseId=${encodeURIComponent(remembered)}`);
   }, [caseId, pathname, router]);
 
+  // 화면이 자체 <header>를 그리는 라우트. 셸 헤더와 겹쳐서 product.css가 숨긴다.
   const legacyRouteClass =
-    pathname === '/'
-      ? 'app-shell-route-home'
+    pathname === '/workbench'
+      ? 'app-shell-route-workbench'
       : pathname === '/qualification'
         ? 'app-shell-route-qualification'
         : '';

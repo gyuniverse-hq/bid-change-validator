@@ -297,6 +297,19 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const pipelineDiagnostics = analysisDetail?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
   const droppedRequirements = analysisDetail?.dropped_requirements ?? [];
 
+  // 실행 전·실패는 「세어본 적이 없는」 상태다. 0으로 적으면 확인 후 0건으로 읽힌다 — #119 리뷰.
+  const countedAnalysis = analysisDetail && analysisDetail.status !== 'FAILED' ? analysisDetail : null;
+
+  // 분석이 실패했을 때 「없습니다」라고 하면 「확인했는데 없더라」로 읽힌다.
+  // 「확인하지 못했다」와 구분한다 — 화면필드명세 공통원칙 3.
+  const emptyRequirementCopy = busy === 'review'
+    ? '자격요건을 분석하고 있습니다. 잠시만 기다려 주세요.'
+    : !analysisDetail
+      ? '아직 자격검토를 실행하지 않았습니다.'
+      : analysisDetail.status === 'FAILED'
+        ? '분석이 완료되지 않아 자격요건을 표시할 수 없습니다. 위 안내를 확인해 주세요.'
+        : '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.';
+
   if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12">
     {requestedCaseId && <ActionCard caseId={requestedCaseId} />}
     <output>검토 데이터를 불러오고 있습니다.</output>
@@ -357,7 +370,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
                   return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
-                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{busy === 'review' ? '자격요건을 분석하고 있습니다. 잠시만 기다려 주세요.' : analysisDetail ? '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.' : '아직 자격검토를 실행하지 않았습니다.'}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
+                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
             {/* P0-5 · 위 표에 없는 조건을 말한다. 이걸 안 그리면 사용자는 빠진 조건이 있는 줄 모른 채 판정을 믿는다 (NFR-1). */}
@@ -414,7 +427,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {countedAnalysis ? countedAnalysis.requirements.length : '-'}</Badge><Badge variant="outline">Evidence {countedAnalysis ? countedAnalysis.evidence.length : '-'}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
 

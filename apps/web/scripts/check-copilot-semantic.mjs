@@ -1,4 +1,4 @@
-// Verify that semantic routing consent is explicit at the HTTP boundary.
+// Verify that semantic-routing and document-RAG consent are explicit HTTP boundaries.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -38,19 +38,30 @@ try {
   };
 
   const store = new ConversationStore();
-  await store.ask(id, '회사 허가와 제품 허가를 구분해줘', undefined, 'QUALIFICATION', false);
-  await store.ask(id, '평가점수와 필수 참가요건을 구분해줘', undefined, 'QUALIFICATION', true);
+  await store.ask(id, '회사 허가와 제품 허가를 구분해줘', undefined, 'QUALIFICATION', false, false);
+  await store.ask(id, '평가점수와 필수 참가요건을 구분해줘', undefined, 'QUALIFICATION', true, false);
+  await store.ask(id, '중소기업 확인서 제출 시점이 언제야?', undefined, 'QUALIFICATION', true, true);
 
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].url.endsWith('/api/v1/copilot/chat'), true);
+
+  // Semantic routing consent is a header, never a JSON product field.
   assert.equal(calls[0].init.headers['X-Copilot-Semantic-Processing'], undefined);
   assert.equal(calls[1].init.headers['X-Copilot-Semantic-Processing'], 'true');
-  assert.equal('semantic_processing' in calls[0].body, false);
-  assert.equal('semantic_processing' in calls[1].body, false);
-  assert.equal(calls[1].body.message, '평가점수와 필수 참가요건을 구분해줘');
-  assert.equal(calls[1].body.user_input, undefined);
+  assert.equal(calls[2].init.headers['X-Copilot-Semantic-Processing'], 'true');
+  for (const call of calls) assert.equal('semantic_processing' in call.body, false);
 
-  console.log('PASS semantic routing is opt-in by header; consent flag is not serialized into product payload');
+  // Document RAG is a separate explicit payload opt-in. Internal UI state is not serialized.
+  assert.equal(calls[0].body.public_document_question, undefined);
+  assert.equal(calls[0].body.allow_external_processing, undefined);
+  assert.equal(calls[1].body.public_document_question, undefined);
+  assert.equal(calls[1].body.allow_external_processing, undefined);
+  assert.equal(calls[2].body.public_document_question, '중소기업 확인서 제출 시점이 언제야?');
+  assert.equal(calls[2].body.allow_external_processing, true);
+  for (const call of calls) assert.equal('document_processing' in call.body, false);
+
+  assert.equal(calls[2].body.user_input, undefined);
+  console.log('PASS semantic and document-RAG consent stay separate; internal flags are not serialized');
 } finally {
   globalThis.fetch = originalFetch;
 }

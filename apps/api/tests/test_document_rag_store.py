@@ -232,14 +232,14 @@ def test_reranker_receives_only_scoped_candidates_and_keeps_original_metadata():
         assert all(set(passage) == {"id", "text"} for passage in payload["passages"])
         order = [passage["id"] for passage in reversed(payload["passages"])]
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
-            content=json.dumps({"ranked_chunk_ids": order})
+            content=json.dumps({"ranked_passage_ids": order})
         ))])
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     hits = retrieve(index, "냉각장치", method="hybrid_rerank", k=2, fetch_k=2, rerank_client=client)
     assert len(captured) == 1
-    assert [hit.metadata.chunk_id for hit in hits] == [
-        passage["id"] for passage in reversed(captured[0]["passages"])
+    assert [hit.text for hit in hits] == [
+        passage["text"] for passage in reversed(captured[0]["passages"])
     ]
     for hit in hits:
         original = next(r for r in index.records if r.metadata.chunk_id == hit.metadata.chunk_id)
@@ -248,22 +248,25 @@ def test_reranker_receives_only_scoped_candidates_and_keeps_original_metadata():
 
 
 @pytest.mark.parametrize("content", [
-    '{"ranked_chunk_ids": ["chunk-0", "other-version:chunk"]}',
-    '{"ranked_chunk_ids": ["chunk-0", "chunk-0"]}',
-    '{"ranked_chunk_ids": ["chunk-0"]}',
-    '{"ranked_chunk_ids": ["chunk-0", {}]}',
+    '{"ranked_passage_ids": ["P01", "other-version:chunk"]}',
+    '{"ranked_passage_ids": ["P01", "P01"]}',
+    '{"ranked_passage_ids": ["P01"]}',
+    '{"ranked_passage_ids": ["P01", {}]}',
     '[]',
     'not JSON',
 ])
-def test_reranker_rejects_unknown_duplicate_missing_or_malformed_ids(content):
+def test_reranker_malformed_ids_fall_back_without_inventing_sources(content):
     index = _ranked_index(["냉각장치 설치 의무", "냉각장치 보증 기간"])
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
         create=lambda **_: SimpleNamespace(choices=[SimpleNamespace(
             message=SimpleNamespace(content=content)
         )])
     )))
-    with pytest.raises(ValueError, match="reranker"):
-        retrieve(index, "냉각장치", method="hybrid_rerank", k=2, fetch_k=2, rerank_client=client)
+    hits = retrieve(index, "냉각장치", method="hybrid_rerank", k=2, fetch_k=2, rerank_client=client)
+    original_ids = {record.metadata.chunk_id for record in index.records}
+    result_ids = [hit.metadata.chunk_id for hit in hits]
+    assert len(result_ids) == len(set(result_ids)) == 2
+    assert set(result_ids) <= original_ids
 
 
 @pytest.mark.parametrize("method", ["dense_post", "hybrid", "hybrid_rerank"])

@@ -41,16 +41,17 @@ REASON_LABELS = {
     "NEEDS_REVIEW": "이 조건은 추가 검토가 필요합니다.",
     "UNSUPPORTED_REQUIREMENT": "이 조건은 현재 자동 판정이 지원되지 않습니다.",
 }
+STATUS_CONCLUSIONS = {
+    "eligible": "현재 저장된 판정은 참가 가능입니다.",
+    "ineligible": "현재 저장된 판정은 참가 불가입니다.",
+    "insufficient_data": "현재 저장된 판정만으로는 참가 가능 여부를 확정할 수 없습니다.",
+}
 
 
 def present_product(state, evidence_refs, focus=None, summary=None):
     presentation = Presentation(conclusion="현재 저장된 검토 결과입니다.")
     if isinstance(state, QualificationSummary):
-        presentation.conclusion = {
-            "eligible": "저장된 판정은 참가 가능입니다.",
-            "ineligible": "저장된 판정은 참가 불가입니다.",
-            "insufficient_data": "현재 저장된 판정만으로는 참가 가능 여부를 확정할 수 없습니다.",
-        }[state.overall_status]
+        presentation.conclusion = STATUS_CONCLUSIONS[state.overall_status]
         items = [j for j in state.judgments if not focus or j.requirement_key == focus]
         for item in items:
             presentation.reasons.append(Reason(
@@ -61,8 +62,15 @@ def present_product(state, evidence_refs, focus=None, summary=None):
         presentation.next_action = NextAction(kind="SELECT_REQUIREMENT", label="확인할 요건을 선택해 근거와 다음 할 일을 확인해 주세요.")
     elif isinstance(state, RequiredChecksResult):
         items = [q for q in state.questions if not focus or q.requirement_key == focus]
-        presentation.conclusion = (f"저장된 판정의 확인 대상 {len(items)}건입니다." if items
-                                   else "선택한 범위에 사용자 확인 질문이 없습니다.")
+        if summary:
+            status = STATUS_CONCLUSIONS[summary.overall_status]
+            presentation.conclusion = (
+                f"{status} 먼저 확인할 항목은 {len(items)}건입니다."
+                if items else f"{status} 현재 추가로 답변할 확인 항목은 없습니다."
+            )
+        else:
+            presentation.conclusion = (f"저장된 판정의 확인 대상 {len(items)}건입니다." if items
+                                       else "선택한 범위에 사용자 확인 질문이 없습니다.")
         judgments = {j.requirement_key: j for j in summary.judgments} if summary else {}
         for question in items:
             judgment = judgments.get(question.requirement_key)

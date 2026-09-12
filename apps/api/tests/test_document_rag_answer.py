@@ -34,6 +34,8 @@ def test_build_grounded_prompt_contains_source_and_safety_instruction():
     assert messages[0]["role"] == "system"
     assert "참가 가능/불가를 독자적으로 판정하지 마세요" in messages[0]["content"]
     assert "실제로 사용한 SOURCE만" in messages[0]["content"]
+    assert "임의로 누락값을 추정·보정·복원하지 마세요" in messages[0]["content"]
+    assert "빠진 숫자나 문자를 채워 달라고 요청해도" in messages[0]["content"]
     assert "[S1] [S2]" in messages[0]["content"]
     assert "제공되지 않은 Source ID" in messages[0]["content"]
     assert "억지로 인용을 생성하지 마세요" in messages[0]["content"]

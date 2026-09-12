@@ -17,12 +17,14 @@ python -m pip install -r apps/api/requirements-dev.txt > .ci-results/pip.log 2>&
 (cd apps/api && python -m alembic upgrade head) 2>&1 | tee .ci-results/migration.log
 python -m pytest -q apps/api/tests --junitxml=.ci-results/backend.xml 2>&1 | tee .ci-results/backend.log
 python -m apps.api.app.scripts.evaluate_copilot_v1 2>&1 | tee .ci-results/copilot-evaluation.log
+python -m apps.api.app.scripts.evaluate_copilot_e2_routing --validate-only 2>&1 | tee .ci-results/copilot-e2-routing-dataset.log
 cd apps/web
 pnpm install --frozen-lockfile > "$ROOT/.ci-results/pnpm.log" 2>&1
 pnpm exec tsc --noEmit 2>&1 | tee "$ROOT/.ci-results/typecheck.log"
 node scripts/check-copilot.mjs 2>&1 | tee "$ROOT/.ci-results/client.log"
 node scripts/check-copilot-actions.mjs 2>&1 | tee "$ROOT/.ci-results/actions.log"
 node scripts/check-copilot-integration.mjs 2>&1 | tee "$ROOT/.ci-results/integration.log"
+node scripts/check-copilot-semantic.mjs 2>&1 | tee "$ROOT/.ci-results/semantic-optin.log"
 mapfile -t changed < <(git -C "$ROOT" diff --name-only "${COPILOT_BASE_SHA:?Pinned baseline is required}" -- apps/web | grep -E '\.(ts|tsx|mjs|cjs)$' | sed 's#^apps/web/##')
 if [ "${#changed[@]}" -gt 0 ]; then pnpm exec oxlint "${changed[@]}" 2>&1 | tee "$ROOT/.ci-results/changed-lint.log"; fi
 # Existing unrelated debt remains visible, never counted as a clean repository.

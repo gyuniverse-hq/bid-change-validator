@@ -23,6 +23,8 @@ type Props = {
 
 export function QualificationSourceOverview({ caseItem, notice, version, analysis }: Props) {
   const unmapped = analysis?.diagnostics.filter((item) => item.code === 'UNMAPPED_REQUIREMENT') ?? [];
+  // 분석이 실패하면 진단을 「하지 못한」 것이지 「없는」 것이 아니다. 0건으로 표시하면 확인했다는 뜻이 된다.
+  const analysisFailed = analysis?.status === 'FAILED';
 
   const summary = [
     ['입찰공고번호', caseItem.bid_notice_no],
@@ -56,8 +58,8 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
         </div>
 
         <div className={`rounded-[20px] border p-6 ${unmapped.length ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
-          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">위험·예외 / 미구조화</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{unmapped.length}건</span></div>
-          {unmapped.length ? <div className="mt-4 space-y-2">{unmapped.slice(0, 8).map((item, index) => <div key={`${item.message}-${index}`} className="rounded-xl bg-white/75 px-3 py-2 text-[12px] leading-5 text-amber-900">{item.message}</div>)}<Link href={`/evidence?caseId=${caseItem.id}`} className="inline-block pt-2 text-[12.5px] font-bold text-[var(--product-accent-deep)]">근거 원문에서 확인 →</Link></div> : <p className="mt-5 text-[13px] text-[var(--product-muted)]">현재 분석에서 미구조화 진단이 없습니다.</p>}
+          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">위험·예외 / 미구조화</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{analysisFailed ? '확인 못 함' : `${unmapped.length}건`}</span></div>
+          {unmapped.length ? <div className="mt-4 space-y-2">{unmapped.slice(0, 8).map((item, index) => <div key={`${item.message}-${index}`} className="rounded-xl bg-white/75 px-3 py-2 text-[12px] leading-5 text-amber-900">{item.message}</div>)}<Link href={`/evidence?caseId=${caseItem.id}`} className="inline-block pt-2 text-[12.5px] font-bold text-[var(--product-accent-deep)]">근거 원문에서 확인 →</Link></div> : <p className="mt-5 text-[13px] text-[var(--product-muted)]">{analysisFailed ? '분석이 완료되지 않아 미구조화 진단을 확인하지 못했습니다.' : '현재 분석에서 미구조화 진단이 없습니다.'}</p>}
         </div>
       </section>
     </>

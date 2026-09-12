@@ -13,6 +13,7 @@ import {
   FileCheck2,
   FileText,
   LoaderCircle,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -244,7 +245,13 @@ export default function NoticesPage() {
       </div>
 
       <div className="app-shell-container pb-20 pt-14">
-        {error && <div className="mb-6 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><AlertCircle className="mt-0.5 size-4 shrink-0" /><span>{error}</span></div>}
+        {/* 실패를 알리기만 하면 사용자가 할 수 있는 일이 없다. 같은 조회를 바로 다시 걸 수 있게 둔다. */}
+        {error && <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-start gap-2"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</span>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-full border-rose-300 bg-white text-rose-700 hover:bg-rose-100" disabled={loading} onClick={() => void initialize(query)}>
+            {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />} 다시 시도
+          </Button>
+        </div>}
 
         <section>
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">

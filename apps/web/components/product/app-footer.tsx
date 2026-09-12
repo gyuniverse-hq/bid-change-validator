@@ -20,7 +20,7 @@ export function AppFooter() {
           <Link
             href="/workbench"
             className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-[var(--product-line)] bg-white px-4 py-1.5 text-[14px] font-bold text-[var(--product-accent-deep)] transition-colors hover:border-[var(--product-accent)] hover:bg-[var(--product-accent-soft)]"
-          >  
+          >
             검토 워크벤치
             <span aria-hidden="true">→</span>
           </Link>

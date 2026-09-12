@@ -399,12 +399,15 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             {/* ── 6 판정 밖 조건 — 위 표에 없는 것 ── */}
             {/* P0-5 · 위 표에 없는 조건을 말한다. 이걸 안 그리면 사용자는 빠진 조건이 있는 줄 모른 채 판정을 믿는다 (NFR-1). */}
-            <section id="analysis-scope" className={`mt-7 rounded-[20px] border px-6 py-5 ${unjudgedState === 'DONE' && unjudgedCount > 0 ? 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)]' : 'border-[var(--product-line)] bg-white'}`}>
-                <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건{unjudgedState === 'DONE' ? ` ${unjudgedCount}건` : ''}</h2>
+            <section id="analysis-scope" className={`mt-7 rounded-[20px] border px-6 py-5 ${unjudgedCount > 0 ? 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)]' : 'border-[var(--product-line)] bg-white'}`}>
+                <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건{unjudgedCount > 0 ? ` ${unjudgedCount}건` : ''}</h2>
                 <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{unjudgedState === 'NOT_RUN'
                   ? '아직 자격검토를 실행하지 않았습니다. 검토를 실행하면 판정에서 빠진 조건을 여기에 표시합니다.'
                   : unjudgedState === 'FAILED'
-                    ? '분석이 완료되지 않아 판정에서 빠진 조건을 확인하지 못했습니다.'
+                    ? unjudgedCount
+                      // 실패했어도 중단 전까지 잡힌 항목은 남는다. 「확인 못 했다」로 끝내면 아래 목록과 말이 어긋난다.
+                      ? '분석이 끝나지 않았습니다. 아래는 중단되기 전까지 확인된 항목이라 이 목록이 전부가 아닙니다.'
+                      : '분석이 완료되지 않아 판정에서 빠진 조건을 확인하지 못했습니다.'
                     : unjudgedCount
                       ? '아래 항목은 위 표의 판정에 반영되지 않았습니다. 제출 전에 공고 원문에서 직접 확인해 주세요.'
                       : '이번 분석에서 판정 밖으로 빠진 조건이 없습니다.'}</p>

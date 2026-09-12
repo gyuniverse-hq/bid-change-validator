@@ -108,6 +108,12 @@ function load(file) {
     assert.equal(await page.locator('.copilot-header-badges').getByText('확인 필요',{exact:true}).count(),1);
     await page.locator('.copilot-evidence-chip').first().click();await page.waitForURL('**/evidence?**');
     assert(await page.locator('.copilot-conclusion').isVisible());
+    assert.equal(await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).count(),0,'Evidence page must not show the changes suggestion');
+    assert.equal(await page.getByRole('button',{name:'내가 물어볼 수 있는 질문이 뭐야?',exact:true}).count(),1,'Evidence page should show the contextual help suggestion');
+    await page.goto(`${origin}/changes?caseId=${id}`);
+    await page.getByRole('heading',{name:caseItem.notice_title,exact:true}).waitFor();
+    await page.getByRole('button',{name:'AI Copilot',exact:true}).click();
+    await page.locator('#copilot-panel[open]').waitFor();
     await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).click();await page.locator('[data-state=CHANGED_NOTICE]').waitFor();await shoot('05-changed');
     await page.getByRole('link',{name:'변경사항 상세 보기 · 06'}).click();await page.waitForURL('**/changes?**');
     await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#copilot-panel').matches(':modal'));

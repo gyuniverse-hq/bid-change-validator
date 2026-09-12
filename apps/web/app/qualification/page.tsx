@@ -409,7 +409,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                       ? '아래 항목은 위 표의 판정에 반영되지 않았습니다. 제출 전에 공고 원문에서 직접 확인해 주세요.'
                       : '이번 분석에서 판정 밖으로 빠진 조건이 없습니다.'}</p>
 
-                {noticeFacts.length > 0 && (
+                {previewNoticeFacts.length > 0 && (
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">판정 대상이 아닌 확인사항 {noticeFacts.length}건</strong>
                     {sharedNoticeFactMessage && <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{sharedNoticeFactMessage}</p>}
@@ -433,7 +433,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   </div>
                 )}
 
-                {droppedRequirements.length > 0 && (
+                {previewDropped.length > 0 && (
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">구조화에서 제외된 요건 {droppedRequirements.length}건</strong>
                     <ul className="mt-2 space-y-2">

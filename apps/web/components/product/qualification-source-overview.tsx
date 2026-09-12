@@ -28,8 +28,20 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
   const noticeFactCount = analysis?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT').length ?? 0;
   const droppedCount = analysis?.dropped_requirements.length ?? 0;
   const unjudgedCount = noticeFactCount + droppedCount;
-  // 분석이 실패하면 진단을 「하지 못한」 것이지 「없는」 것이 아니다. 0건으로 표시하면 확인했다는 뜻이 된다.
-  const analysisFailed = analysis?.status === 'FAILED';
+  /**
+   * 분석 상태를 셋으로 나눈다.
+   *  - NOT_RUN : 아직 검토를 실행하지 않았다. 세어본 적이 없으므로 0건이 아니다.
+   *  - FAILED  : 실행했으나 첨부를 읽지 못했다. 확인하지 못한 것이지 없는 것이 아니다.
+   *  - DONE    : SUCCEEDED · PARTIAL. 이때의 0건만 「확인했더니 없다」는 뜻이다.
+   * 셋을 합치면 실행 전 화면이 「확인 후 0건」처럼 읽힌다.
+   */
+  const analysisState: 'NOT_RUN' | 'FAILED' | 'DONE' = !analysis
+    ? 'NOT_RUN'
+    : analysis.status === 'FAILED'
+      ? 'FAILED'
+      : 'DONE';
+  // 강조는 「완료됐고 실제로 빠진 조건이 있을 때」만. 실행 전에 경고색이 켜지면 그것도 오해다.
+  const highlight = analysisState === 'DONE' && unjudgedCount > 0;
 
   const summary = [
     ['입찰공고번호', caseItem.bid_notice_no],
@@ -62,16 +74,18 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
           </div>
         </div>
 
-        <div className={`rounded-[20px] border p-6 ${unjudgedCount ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
-          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">판정에 들어가지 않은 조건</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{analysisFailed ? '확인 못 함' : `${unjudgedCount}건`}</span></div>
+        <div className={`rounded-[20px] border p-6 ${highlight ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
+          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">판정에 들어가지 않은 조건</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className={`text-[12px] font-bold ${highlight ? 'text-amber-800' : 'text-[var(--product-muted)]'}`}>{analysisState === 'NOT_RUN' ? '분석 전' : analysisState === 'FAILED' ? '확인 못 함' : `${unjudgedCount}건`}</span></div>
           {/* 여기서는 건수만 알린다. 같은 항목을 아래 「판정에 들어가지 않은 조건」 섹션이
               공고 원문 인용·근거 위치·원문 보기와 함께 이미 그린다. 진단 message는 code가 같으면
               문장이 전부 동일해서, 여기에 나열하면 똑같은 문장만 N줄 반복된다. */}
-          {analysisFailed
-            ? <p className="mt-5 text-[13px] text-[var(--product-muted)]">분석이 완료되지 않아 판정 밖 조건을 확인하지 못했습니다.</p>
-            : unjudgedCount
-              ? <p className="mt-5 text-[13px] leading-6 text-amber-900">공고에서 확인했지만 회사 프로필과 대조할 수 없어 판정하지 않은 조건이 {unjudgedCount}건 있습니다. 아래에서 공고 원문과 함께 확인해 주세요.</p>
-              : <p className="mt-5 text-[13px] text-[var(--product-muted)]">이번 분석에서 판정 밖으로 빠진 조건이 없습니다.</p>}
+          {analysisState === 'NOT_RUN'
+            ? <p className="mt-5 text-[13px] leading-6 text-[var(--product-muted)]">아직 자격검토를 실행하지 않았습니다. 검토를 실행하면 판정에서 빠진 조건을 여기에 함께 표시합니다.</p>
+            : analysisState === 'FAILED'
+              ? <p className="mt-5 text-[13px] leading-6 text-[var(--product-muted)]">분석이 완료되지 않아 판정에서 빠진 조건을 확인하지 못했습니다.</p>
+              : unjudgedCount
+                ? <p className="mt-5 text-[13px] leading-6 text-amber-900">공고에서 확인했지만 회사 프로필과 대조할 수 없어 판정하지 않은 조건이 {unjudgedCount}건 있습니다. 아래에서 공고 원문과 함께 확인해 주세요.</p>
+                : <p className="mt-5 text-[13px] text-[var(--product-muted)]">이번 분석에서 판정 밖으로 빠진 조건이 없습니다.</p>}
         </div>
       </section>
     </>

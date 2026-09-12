@@ -36,9 +36,28 @@
 - [`e0-routing-baseline.md`](./e0-routing-baseline.md): 자유입력 100개 라우팅·작업 도달성 기준선
 - [`e0-conversation-safety.md`](./e0-conversation-safety.md): I01~I20 대화·안전 시나리오와 E0 실패 유형
 - [`e1-routing-remeasurement.md`](./e1-routing-remeasurement.md): E1 제한적 alias 적용 후 동일 100문항 재측정
-- [`e1-evaluation-summary.md`](./e1-evaluation-summary.md): E0↔E1 전후 비교, I01~I20 재분류, E2로 넘기는 실패 목록
+- [`e1-evaluation-summary.md`](./e1-evaluation-summary.md): E0→E1 동일셋 전후 비교와 I01~I20 재분류
 
-E2 구현 문서는 Semantic Router 연결과 재측정이 끝나는 시점에 `e2-*` 문서로 추가합니다.
+## E2 구현 상태
+
+현재 E2는 **구현 중 / 실측 전**이다.
+
+구현 완료:
+- `apps/api/app/copilot/semantic_router.py`: Structured Output 기반 `intent / subject / task / target_text / confidence / needs_context`
+- `apps/api/app/copilot/intent_resolver.py`: deterministic UNKNOWN 읽기만 semantic fallback 허용
+- `apps/api/app/copilot/router.py`: `X-Copilot-Semantic-Processing` opt-in header가 있을 때만 semantic classifier 사용
+- Frontend: `자연어 의미 이해 사용` 토글 기본 OFF
+- 개인정보 경계: semantic prompt에는 질문 문장과 최소 대화 메타만 사용. 회사 프로필/판정값/user_input은 전달하지 않음
+- write 경계: semantic 결과가 `ACTION_REQUEST`여도 deterministic UNKNOWN을 write로 승격하지 않음
+
+평가 자산:
+- `apps/api/eval/copilot_e2_routing.json`: E0/E1과 비교할 고정 자유입력 100문항
+- `apps/api/app/scripts/evaluate_copilot_e2_routing.py`: 실제 Semantic Router의 intent 정확도와 p50/p95 지연시간 측정
+
+아직 하지 않은 것:
+- 제품용 OpenAI API를 사용한 E2 100문항 실제 실행
+- 실제 결과 기반 E2 intent 정확도·subject/task 정확도 확정
+- E2 전체 API/DB/browser E2E 회귀 검증
 
 ## 수치 해석 원칙
 
@@ -48,18 +67,9 @@ E2 구현 문서는 Semantic Router 연결과 재측정이 끝나는 시점에 `
 - `104/138 = 75.4%`: 독립 검토 전 draft 기대값과 고정 판정 코드의 canonical exact match
 - `1/100 = 1.0%`: E0 자유입력 intent 정확 일치율
 - `41/100 = 41.0%`: E1 제한적 alias를 적용한 정적 라우팅 재측정
-- `5/20 → 9/20`: I01~I20 코드 계약 기준 완전 과업 성공 수 변화
+- `5/20 → 9/20`: E0→E1 I01~I20 코드 계약 기준 완전 과업 성공 수
+- E2 실제 Semantic Router 정확도: **미측정**
 - 사용자 업무 완료율 / RAG 답변 정확도 / 실제 API·DB E2E는 별도 지표로 기록
-
-## E2 안전 경계
-
-E2 Semantic Router는 자연어 의미를 `intent / subject / task / target / confidence`로 구조화하는 역할만 맡습니다.
-
-- 참가자격 판정은 기존 deterministic judgment가 담당
-- 저장·반영·재검증은 기존 proposal → 명시 확인 → confirm 경계를 유지
-- provider 없음/실패/낮은 confidence는 `UNKNOWN`으로 fail-closed
-- 회사 프로필의 민감한 상세 사실을 semantic routing 입력으로 넘기지 않음
-- 문서 QA와 생성형 설명은 E3에서 별도 근거성 평가
 
 ## PR 운영
 

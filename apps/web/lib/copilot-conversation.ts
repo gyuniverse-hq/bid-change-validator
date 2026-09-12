@@ -4,6 +4,7 @@ export type Turn = { id: number; question: string; response?: CopilotChatRespons
 export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
 export type Transport = (request: CopilotChatRequest) => Promise<CopilotChatResponse>;
+type FailedRead = { request: CopilotChatRequest; turnId: number };
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
@@ -28,7 +29,7 @@ export function validateSources(response: CopilotChatResponse) {
 export class ConversationStore {
   private states = new Map<string, Conversation>();
   private listeners = new Set<() => void>();
-  private failed = new Map<string, CopilotChatRequest>();
+  private failed = new Map<string, FailedRead>();
   constructor(private transport: Transport = sendCopilotMessage) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   get(caseId: string) {
@@ -49,10 +50,12 @@ export class ConversationStore {
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }
   async retry(caseId: string) {
-    const request = this.failed.get(caseId);
-    if (!request || this.get(caseId).busy) return;
+    const failed = this.failed.get(caseId);
+    if (!failed || this.get(caseId).busy) return;
+    const { request, turnId } = failed;
     const old = this.get(caseId), revision = old.revision + 1;
-    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question: request.message }] });
+    const turns = old.turns.map(turn => turn.id === turnId ? { ...turn, id: revision, response: undefined } : turn);
+    this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns });
     await this.perform(caseId, { ...request, conversation_context: request.conversation_context ? {
       ...request.conversation_context, context_revision: revision, request_id: crypto.randomUUID(),
     } : undefined }, revision);
@@ -81,7 +84,7 @@ export class ConversationStore {
         turns: this.get(caseId).turns.map(t => t.id === revision ? { ...t, response } : t) });
     } catch (error) {
       if (this.get(caseId).revision !== revision) return;
-      this.failed.set(caseId, structuredClone(request));
+      this.failed.set(caseId, { request: structuredClone(request), turnId: revision });
       this.update(caseId, { busy: false, error: error instanceof Error ? error.message : '조회하지 못했습니다.',
         errorCode: error && typeof error === 'object' && 'code' in error ? String(error.code) : '' });
     }

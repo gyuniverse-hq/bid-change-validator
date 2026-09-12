@@ -27,9 +27,21 @@ const id = m.eligible.product_state.provenance.case_id;
 const calls = [];
 const originalFetch = globalThis.fetch;
 
+function fetchUrl(input) {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  if (input instanceof Request) return input.url;
+  throw new TypeError('Unexpected fetch input');
+}
+
+function jsonBody(init) {
+  if (typeof init?.body !== 'string') throw new TypeError('Expected a string request body');
+  return JSON.parse(init.body);
+}
+
 try {
   globalThis.fetch = async (url, init) => {
-    calls.push({ url: String(url), init, body: JSON.parse(String(init.body)) });
+    calls.push({ url: fetchUrl(url), init, body: jsonBody(init) });
     return {
       ok: true,
       status: 200,

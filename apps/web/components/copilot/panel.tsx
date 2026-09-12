@@ -95,15 +95,15 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <p>AI는 판정을 대신하지 않아요.<br />저장된 결과와 원문 근거를 설명해 드려요.</p>
       </div>}
       {caseId && <div className="copilot-processing-options" aria-label="AI 외부 처리 옵션">
-        <label className="copilot-semantic-toggle">
-          <input type="checkbox" checked={semanticProcessing} disabled={state.busy}
+        <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="자연어 의미 이해 사용">
+          <input id="copilot-semantic-processing" type="checkbox" checked={semanticProcessing} disabled={state.busy}
             onChange={event => setSemanticProcessing(event.target.checked)} />
-          <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문 문장만 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+          <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문과 최소 대화 맥락(이전 요청 유형·선택 여부)을 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
         </label>
-        <label className="copilot-semantic-toggle">
-          <input type="checkbox" checked={documentProcessing} disabled={state.busy}
+        <label className="copilot-semantic-toggle" htmlFor="copilot-document-processing" aria-label="공고문 근거 답변 사용">
+          <input id="copilot-document-processing" type="checkbox" checked={documentProcessing} disabled={state.busy}
             onChange={event => setDocumentProcessing(event.target.checked)} />
-          <span><strong>공고문 근거 답변 사용</strong><small>켜면 현재 공개 공고문을 검색하고 질문과 검색 근거를 외부 AI에 보내 설명을 생성합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+          <span><strong>공고문 근거 답변 사용</strong><small>켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용해 근거 답변을 생성합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
         </label>
       </div>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>

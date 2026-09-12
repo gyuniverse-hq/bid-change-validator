@@ -56,6 +56,9 @@ REQUIRED_SECTIONS = (
 )
 
 CHECK_MARKER = "[담당자 확인 필요:"
+# 모델은 대괄호 대신 불릿으로도 쓴다 — "- 담당자 확인 필요: ...".
+# 대괄호만 세다가 표시를 13개나 단 초안을 "0개"로 읽었다. 초안을 직접 읽다 발견했다.
+_CHECK_MARKER_ANY = re.compile(r"담당자\s*확인\s*필요\s*:")
 
 # 화면 문구와 같은 3상태. 상태오기 검사는 이 세 낱말만 본다.
 STATUS_WORDS = ("충족", "미달", "확인 필요")
@@ -350,7 +353,7 @@ def check_draft(
             Violation("SECTIONS", None, f"누락 {missing}" if missing else "순서 어긋남")
         )
 
-    report.check_marker_count = draft_text.count(CHECK_MARKER)
+    report.check_marker_count = len(_CHECK_MARKER_ANY.findall(draft_text))
 
     supplied_numbers = {m.replace(",", "") for m in _NUMBER.findall(supplied_text)}
     for match in _NUMBER.findall(draft_text):

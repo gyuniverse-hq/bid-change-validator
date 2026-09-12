@@ -20,9 +20,9 @@
 2. E0 판정 엔진 Actual ✅
 3. E0 Copilot 기준선 측정 ✅
 4. E0 실패 유형 분석 ✅
-5. E1 UX·응답구조 개선 ◀ 현재
-6. E1 동일 평가 재측정
-7. E2 자연어 이해·대화 문맥 개선
+5. E1 UX·응답구조 개선 ✅
+6. E1 동일 평가 재측정 ✅
+7. E2 자연어 이해·대화 문맥 개선 ◀ 현재
 8. E2 동일 평가 재측정
 9. E3 근거 기반 RAG 설명 연결
 10. E3·RAG·Prompt 성능 비교
@@ -36,6 +36,9 @@
 - [`e0-routing-baseline.md`](./e0-routing-baseline.md): 자유입력 100개 라우팅·작업 도달성 기준선
 - [`e0-conversation-safety.md`](./e0-conversation-safety.md): I01~I20 대화·안전 시나리오와 E0 실패 유형
 - [`e1-routing-remeasurement.md`](./e1-routing-remeasurement.md): E1 제한적 alias 적용 후 동일 100문항 재측정
+- [`e1-evaluation-summary.md`](./e1-evaluation-summary.md): E0↔E1 전후 비교, I01~I20 재분류, E2로 넘기는 실패 목록
+
+E2 구현 문서는 Semantic Router 연결과 재측정이 끝나는 시점에 `e2-*` 문서로 추가합니다.
 
 ## 수치 해석 원칙
 
@@ -45,7 +48,18 @@
 - `104/138 = 75.4%`: 독립 검토 전 draft 기대값과 고정 판정 코드의 canonical exact match
 - `1/100 = 1.0%`: E0 자유입력 intent 정확 일치율
 - `41/100 = 41.0%`: E1 제한적 alias를 적용한 정적 라우팅 재측정
+- `5/20 → 9/20`: I01~I20 코드 계약 기준 완전 과업 성공 수 변화
 - 사용자 업무 완료율 / RAG 답변 정확도 / 실제 API·DB E2E는 별도 지표로 기록
+
+## E2 안전 경계
+
+E2 Semantic Router는 자연어 의미를 `intent / subject / task / target / confidence`로 구조화하는 역할만 맡습니다.
+
+- 참가자격 판정은 기존 deterministic judgment가 담당
+- 저장·반영·재검증은 기존 proposal → 명시 확인 → confirm 경계를 유지
+- provider 없음/실패/낮은 confidence는 `UNKNOWN`으로 fail-closed
+- 회사 프로필의 민감한 상세 사실을 semantic routing 입력으로 넘기지 않음
+- 문서 QA와 생성형 설명은 E3에서 별도 근거성 평가
 
 ## PR 운영
 

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { CopilotProvider } from '@/components/copilot/provider';
@@ -10,6 +11,7 @@ import { CopilotPanel } from '@/components/copilot/panel';
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
 import { TitleBand, type TitleBandProps } from '@/components/product/title-band';
+import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -108,6 +110,29 @@ export function AppShell({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const page = pageInfoFor(pathname);
   const caseId = searchParams.get('caseId');
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
+
+  useEffect(() => {
+    if (pathname === '/login') return;
+    let active = true;
+    void getCurrentUser()
+      .then((current) => {
+        if (active) setUser(current);
+      })
+      .catch(() => {
+        if (active) {
+          setUser(null);
+          router.replace('/login');
+        }
+      })
+      .finally(() => {
+        if (active) setCheckingAuth(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!WORKSPACE_ROUTES.has(pathname)) return;
@@ -119,6 +144,25 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (remembered) router.replace(`${pathname}?caseId=${encodeURIComponent(remembered)}`);
   }, [caseId, pathname, router]);
 
+  if (pathname === '/login') return children;
+
+  if (checkingAuth || user === null) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--product-tint)] text-sm text-[var(--product-muted)]">
+        로그인 상태를 확인하고 있습니다.
+      </main>
+    );
+  }
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      setUser(null);
+      router.replace('/login');
+    }
+  }
+
   // 화면이 자체 <header>를 그리는 라우트. 셸 헤더와 겹쳐서 product.css가 숨긴다.
   const legacyRouteClass =
     pathname === '/workbench'
@@ -128,14 +172,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         : '';
 
   return (
-    <CopilotProvider><div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
-      <AppHeader pathname={pathname} />
-      {page.showTitleBand !== false && (
-        <TitleBand title={page.title} description={page.description} breadcrumb={page.breadcrumb} variant={page.variant} />
-      )}
-      <div className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
-      <AppFooter />
-      <CopilotPanel />
-    </div></CopilotProvider>
+    <CopilotProvider>
+      <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
+        <AppHeader pathname={pathname} user={user} onLogout={() => void handleLogout()} />
+        {page.showTitleBand !== false && (
+          <TitleBand
+            title={page.title}
+            description={page.description}
+            breadcrumb={page.breadcrumb}
+            variant={page.variant}
+          />
+        )}
+        <div className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
+        <AppFooter />
+        <CopilotPanel />
+      </div>
+    </CopilotProvider>
   );
 }

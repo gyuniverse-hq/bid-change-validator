@@ -40,6 +40,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const response = await apiFetch(path, {
     ...init,
+    credentials: 'include',
     headers,
   });
   if (!response.ok) {

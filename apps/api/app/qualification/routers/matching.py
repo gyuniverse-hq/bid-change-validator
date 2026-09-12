@@ -5,6 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from ...auth import authorize_company_access, get_optional_current_user
+from ...auth_models import AppUser
 from ...database import get_db
 from ...errors import ApiError
 from ...matching_schemas import NoticeMatchSearchResponse
@@ -24,7 +26,9 @@ def list_notice_matches(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     reference_date: date | None = None,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> NoticeMatchSearchResponse:
+    authorize_company_access(user, company_id)
     try:
         return match_cached_notices(
             db,

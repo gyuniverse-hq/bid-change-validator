@@ -3,6 +3,8 @@ from apps.api.app.scripts.seed_product_golden_demo import (
     DEMO_BUSINESS_NO,
     DEMO_COMPANY_NAME,
     DEMO_CASE_TITLE,
+    DEMO_PASSWORD,
+    DEMO_USERNAME,
     PROPOSAL_TEXT,
 )
 
@@ -12,6 +14,8 @@ def test_product_golden_demo_contract_is_stable() -> None:
     assert DEMO_COMPANY_NAME
     assert len(DEMO_BUSINESS_NO) == 10
     assert DEMO_CASE_TITLE.startswith("Golden Demo")
+    assert DEMO_USERNAME == "golden-demo"
+    assert DEMO_PASSWORD == "golden-demo"
 
 
 def test_demo_proposal_covers_product_workflow() -> None:

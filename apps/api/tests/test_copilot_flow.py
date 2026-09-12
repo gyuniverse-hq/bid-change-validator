@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 
 from apps.api.app.analysis_models import QualificationAnalysisRun
+from apps.api.app.auth import get_optional_current_user
+from apps.api.app.auth_models import AppUser
 from apps.api.app.copilot import chat as flow
 from apps.api.app.copilot.actions import confirm_action, get_changed_notice, propose_answer
 from apps.api.app.copilot.contracts import ActionInput, ConfirmAction, RevalidationProposal
@@ -41,6 +43,40 @@ def ask(api, case_id, message, **extra):
     response = api.post('/api/v1/copilot/chat', json={'case_id': str(case_id), 'message': message, **extra})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_company_user_cannot_access_other_company_copilot_case(state, api):
+    db, case, _, _ = state
+    foreign_user = AppUser(
+        username="foreign-company-user",
+        password_hash="unused-in-dependency-override",
+        company_id=uuid4(),
+        role="USER",
+        active=True,
+    )
+    app.dependency_overrides[get_optional_current_user] = lambda: foreign_user
+    try:
+        chat_response = api.post(
+            "/api/v1/copilot/chat",
+            json={"case_id": str(case.id), "message": "현재 판정 요약"},
+        )
+        assert chat_response.status_code == 403
+        assert chat_response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+
+        proposal = propose_answer(
+            db,
+            case.id,
+            "REQ-REGISTRATION",
+            ActionInput(satisfies_requirement=True),
+        ).model_dump(mode="json")
+        confirm_response = api.post(
+            "/api/v1/copilot/actions/confirm",
+            json={"confirmed": True, "action": proposal},
+        )
+        assert confirm_response.status_code == 403
+        assert confirm_response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
 
 
 def test_golden_summary_evidence_proposal_confirm_replay(state, api):

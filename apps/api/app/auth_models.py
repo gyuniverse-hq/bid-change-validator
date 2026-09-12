@@ -18,6 +18,11 @@ class AppUser(Base):
     )
     username: Mapped[str] = mapped_column(Text, unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
+    company_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="RESTRICT"),
+        index=True,
+    )
     role: Mapped[str] = mapped_column(Text, default="USER")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -32,6 +37,7 @@ class AppUser(Base):
     sessions: Mapped[list["AuthSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    company = relationship("Company")
 
 
 class AuthSession(Base):

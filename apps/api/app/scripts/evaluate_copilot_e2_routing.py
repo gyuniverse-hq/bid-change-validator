@@ -6,8 +6,10 @@ write action.
 
 Usage:
     python -m apps.api.app.scripts.evaluate_copilot_e2_routing --validate-only
-    OPENAI_API_KEY=... python -m apps.api.app.scripts.evaluate_copilot_e2_routing
+    python -m apps.api.app.scripts.evaluate_copilot_e2_routing
 
+For local execution, the evaluator loads repository `.env` files before checking
+OPENAI_API_KEY. Existing process environment variables always win.
 The output is JSON so it can be archived without reformatting.
 """
 
@@ -26,8 +28,39 @@ from pathlib import Path
 from apps.api.app.copilot.semantic_router import SemanticRouter
 
 
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def load_local_env(root: Path) -> list[str]:
+    """Load known local env files without overriding exported environment values.
+
+    Provider classes intentionally read `os.environ`; loading belongs at an
+    executable entry point like this evaluator rather than inside provider code.
+    Never print secret values or file contents.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return []
+
+    loaded = []
+    # Lowest precedence first. `override=False` also preserves values that were
+    # already exported in the shell before this process started.
+    for path in (
+        root / ".env",
+        root / "apps/api/.env",
+        root / ".env.local",
+        root / "apps/api/.env.local",
+    ):
+        if path.is_file():
+            load_dotenv(path, override=False)
+            loaded.append(str(path.relative_to(root)))
+    return loaded
+
+
 def load_dataset() -> tuple[Path, dict]:
-    root = Path(__file__).resolve().parents[4]
+    root = repository_root()
     path = root / "apps/api/eval/copilot_e2_routing.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     cases = data.get("cases")
@@ -55,6 +88,8 @@ def main() -> int:
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
 
+    root = repository_root()
+    loaded_env_files = load_local_env(root)
     path, data = load_dataset()
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if args.validate_only:
@@ -64,16 +99,18 @@ def main() -> int:
             "fixture_sha256": digest,
             "count": 100,
             "model_calls": 0,
+            "local_env_files_found": loaded_env_files,
         }, ensure_ascii=False, indent=2))
         return 0
 
     if not os.getenv("OPENAI_API_KEY"):
         print(json.dumps({
             "status": "not_run",
-            "reason": "OPENAI_API_KEY is not configured",
+            "reason": "OPENAI_API_KEY is not configured after loading local env files",
             "fixture_sha256": digest,
             "count": 100,
             "model_calls": 0,
+            "local_env_files_found": loaded_env_files,
         }, ensure_ascii=False, indent=2))
         return 2
 

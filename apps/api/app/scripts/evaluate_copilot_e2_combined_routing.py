@@ -1,17 +1,17 @@
-"""Evaluate the actual E1 -> deterministic -> E2 semantic routing order.
+"""Evaluate the actual E1 -> deterministic -> E2 routing policy.
 
 This evaluator mirrors the product read-routing order for the frozen 100-question
-set, but intentionally does **not** call the model again. Instead it consumes a
-completed semantic-only evaluation result from the exact prompt/model run we want
-to combine:
+set and intentionally makes **zero model calls**. It consumes a completed
+semantic-only run and passes each request through the same `resolve_chat_payload`
+policy used by the HTTP endpoint:
 
     frontend bounded E1 alias
       -> backend deterministic route_intent
-      -> cached E2 semantic result only for UNKNOWN reads
+      -> weak-read recheck / UNKNOWN fallback through cached E2 semantic result
 
-This makes the combined result deterministic, cheaper, faster, and directly
-comparable with the semantic-only run. It does not connect to the DB, retrieve
-documents, run judgments, execute writes, or make network/model calls.
+This keeps the combined result deterministic, cheap and directly comparable with
+the exact semantic-only run. It does not connect to the DB, retrieve documents,
+run judgments, execute writes or make network/model calls.
 
 Usage:
     python -m apps.api.app.scripts.evaluate_copilot_e2_combined_routing \
@@ -32,7 +32,7 @@ from pathlib import Path
 from uuid import UUID
 
 from apps.api.app.copilot.chat import CopilotChatRequest, route_intent
-from apps.api.app.copilot.intent_resolver import resolve_intent
+from apps.api.app.copilot.router import resolve_chat_payload, semantic_recheck_candidate
 from apps.api.app.copilot.semantic_router import SemanticRoute
 from apps.api.app.scripts.evaluate_copilot_e2_routing import (
     emit,
@@ -63,7 +63,7 @@ def infer_e1_intent(question: str) -> str | None:
 
 
 class CachedClassifier:
-    """One-route classifier used to exercise the real resolver without a model call."""
+    """One-route classifier used by product routing policy without a model call."""
 
     available = True
 
@@ -138,6 +138,7 @@ def main() -> int:
     actual_distribution = Counter()
     semantic_fallback_count = 0
     semantic_fallback_latencies = []
+    weak_recheck_count = 0
 
     for case in data["cases"]:
         scenario_id = case["scenario_id"]
@@ -149,15 +150,15 @@ def main() -> int:
             intent=explicit,
         )
         deterministic = route_intent(request)
+        recheck_candidate = semantic_recheck_candidate(request, deterministic)
+        weak_recheck_count += int(recheck_candidate and deterministic != "UNKNOWN")
 
         semantic_row = semantic_by_id[scenario_id]
         classifier = CachedClassifier(cached_route(semantic_row))
-        result = resolve_intent(
-            deterministic_intent=deterministic,
-            message=question,
+        _, result = resolve_chat_payload(
+            request,
+            semantic_processing=True,
             classifier=classifier,
-            explicit_intent=explicit,
-            has_user_input=False,
         )
 
         used_semantic = classifier.calls > 0
@@ -180,6 +181,7 @@ def main() -> int:
             "expected_intent": case["expected_intent"],
             "e1_explicit_intent": explicit,
             "deterministic_intent": deterministic,
+            "semantic_recheck_candidate": recheck_candidate,
             "route_source": result.route_source,
             "actual_intent": actual,
             "matched": matched,
@@ -208,7 +210,7 @@ def main() -> int:
 
     payload = {
         "status": "completed",
-        "evaluation_scope": "combined E1 frontend alias + backend deterministic + cached E2 semantic fallback; routing only",
+        "evaluation_scope": "combined E1 alias + product deterministic/weak-read policy + cached E2 semantic; routing only",
         "model_calls": 0,
         "semantic_results_file": str(args.semantic_results),
         "semantic_source_evaluated_at": semantic_payload.get("evaluated_at"),
@@ -221,6 +223,7 @@ def main() -> int:
         "actual_distribution": dict(actual_distribution),
         "semantic_fallback_count": semantic_fallback_count,
         "semantic_fallback_rate": round(semantic_fallback_count / len(rows), 4),
+        "weak_deterministic_recheck_count": weak_recheck_count,
         "semantic_source_latency_ms": latency_summary,
         "rows": rows,
     }

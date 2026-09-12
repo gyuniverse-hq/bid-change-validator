@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from ..auth import authorize_company_access, get_optional_current_user
+from ..auth_models import AppUser
 from ..database import get_db
 from ..errors import ApiError
 from ..models import (
@@ -211,7 +213,13 @@ def _commit(db: Session, conflict_message: str) -> None:
 
 
 @router.post("", response_model=CompanyRead, status_code=status.HTTP_201_CREATED)
-def create_company(payload: CompanyCreate, db: Session = Depends(get_db)) -> CompanyRead:
+def create_company(
+    payload: CompanyCreate,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> CompanyRead:
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        raise ApiError(403, "COMPANY_CREATION_FORBIDDEN", "회사 생성 권한이 없습니다.")
     industries = _validate_industry_codes(db, payload.industry_codes)
     company = Company(
         name=payload.name,
@@ -249,22 +257,37 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)) -> Com
 
 
 @router.get("", response_model=list[CompanyRead])
-def list_companies(db: Session = Depends(get_db)) -> list[CompanyRead]:
-    companies = db.scalars(
-        select(Company).options(*COMPANY_LOAD_OPTIONS).order_by(Company.created_at.desc())
-    ).all()
+def list_companies(
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> list[CompanyRead]:
+    query = select(Company).options(*COMPANY_LOAD_OPTIONS).order_by(Company.created_at.desc())
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        if user.company_id is None:
+            return []
+        query = query.where(Company.id == user.company_id)
+    companies = db.scalars(query).all()
     return [_company_response(company) for company in companies]
 
 
 @router.get("/{company_id}", response_model=CompanyRead)
-def get_company(company_id: UUID, db: Session = Depends(get_db)) -> CompanyRead:
+def get_company(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> CompanyRead:
+    authorize_company_access(user, company_id)
     return _company_response(_load_company(db, company_id))
 
 
 @router.patch("/{company_id}", response_model=CompanyRead)
 def update_company(
-    company_id: UUID, payload: CompanyUpdate, db: Session = Depends(get_db)
+    company_id: UUID,
+    payload: CompanyUpdate,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CompanyRead:
+    authorize_company_access(user, company_id, write=True)
     company = _load_company(db, company_id)
     supplied = payload.model_fields_set
 
@@ -326,7 +349,14 @@ def update_company(
 
 
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_company(company_id: UUID, db: Session = Depends(get_db)) -> Response:
+def delete_company(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> Response:
+    authorize_company_access(user, company_id, write=True)
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        raise ApiError(403, "COMPANY_DELETION_FORBIDDEN", "회사 삭제 권한이 없습니다.")
     company = _load_company(db, company_id)
     db.delete(company)
     db.commit()
@@ -339,7 +369,9 @@ def set_company_industry_verification(
     industry_code: str,
     verified: bool,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CompanyRead:
+    authorize_company_access(user, company_id, write=True)
     company = _load_company(db, company_id)
     industry = next(
         (item for item in company.industries if item.industry_code == industry_code), None
@@ -357,8 +389,12 @@ def set_company_industry_verification(
     status_code=status.HTTP_201_CREATED,
 )
 def create_performance(
-    company_id: UUID, payload: PerformanceCreate, db: Session = Depends(get_db)
+    company_id: UUID,
+    payload: PerformanceCreate,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> PerformanceRead:
+    authorize_company_access(user, company_id, write=True)
     _load_company(db, company_id)
     _validate_institution_code(db, payload.client_institution_code)
     performance = CompanyPerformance(
@@ -389,7 +425,9 @@ def update_performance(
     performance_id: UUID,
     payload: PerformanceUpdate,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> PerformanceRead:
+    authorize_company_access(user, company_id, write=True)
     performance = _load_performance(db, company_id, performance_id)
     supplied = payload.model_fields_set
 
@@ -474,8 +512,12 @@ def update_performance(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_performance(
-    company_id: UUID, performance_id: UUID, db: Session = Depends(get_db)
+    company_id: UUID,
+    performance_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> Response:
+    authorize_company_access(user, company_id, write=True)
     performance = _load_performance(db, company_id, performance_id)
     db.delete(performance)
     db.commit()
@@ -488,8 +530,12 @@ def delete_performance(
     status_code=status.HTTP_201_CREATED,
 )
 def create_certification(
-    company_id: UUID, payload: CertificationCreate, db: Session = Depends(get_db)
+    company_id: UUID,
+    payload: CertificationCreate,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CertificationRead:
+    authorize_company_access(user, company_id, write=True)
     _load_company(db, company_id)
     certification = CompanyCertification(company_id=company_id, **payload.model_dump())
     db.add(certification)
@@ -507,7 +553,9 @@ def update_certification(
     certification_id: UUID,
     payload: CertificationUpdate,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> CertificationRead:
+    authorize_company_access(user, company_id, write=True)
     certification = _load_certification(db, company_id, certification_id)
     for field in payload.model_fields_set:
         value = getattr(payload, field)
@@ -539,7 +587,9 @@ def delete_certification(
     company_id: UUID,
     certification_id: UUID,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> Response:
+    authorize_company_access(user, company_id, write=True)
     certification = _load_certification(db, company_id, certification_id)
     db.delete(certification)
     db.commit()

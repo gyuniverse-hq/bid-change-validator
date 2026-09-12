@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, Menu } from 'lucide-react';
+import { Bell, LogOut, Menu } from 'lucide-react';
 
 import { PageContainer } from '@/components/product/page-container';
+import type { AuthUser } from '@/lib/auth';
 
 const PRIMARY_NAV = [
   { label: '공고 찾기', href: '/notices', disabled: false },
@@ -14,7 +15,7 @@ const PRIMARY_NAV = [
 ] as const;
 
 function isActive(pathname: string, href: string) {
-  if (href === '/notices') return pathname === '/' || pathname.startsWith('/notices');
+  if (href === '/notices') return pathname.startsWith('/notices');
   if (href === '/qualification') {
     return (
       pathname.startsWith('/cases') ||
@@ -27,18 +28,33 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export function AppHeader({ pathname }: { pathname: string }) {
+export function AppHeader({
+  pathname,
+  user,
+  onLogout,
+}: {
+  pathname: string;
+  user: AuthUser | null;
+  onLogout: () => void;
+}) {
   return (
     <header className="app-header">
       <div className="app-utility-bar">
         <PageContainer className="flex h-full items-center justify-between text-[12.5px] leading-[19px]">
+          {/* 우리가 쓰는 공고 데이터의 출처. 링크처럼 보이므로 실제 출처로 연결한다. */}
           <div className="flex items-center gap-4 text-[var(--product-muted)]">
-            <span>나라장터</span>
-            <span>조달청</span>
+            <a href="https://www.g2b.go.kr" target="_blank" rel="noreferrer noopener" className="app-utility-action" aria-label="나라장터 (새 창으로 열림)">나라장터</a>
+            <a href="https://www.pps.go.kr" target="_blank" rel="noreferrer noopener" className="app-utility-action" aria-label="조달청 (새 창으로 열림)">조달청</a>
           </div>
           <div className="flex items-center gap-4 text-[var(--product-muted)]">
-            <span>그린브릿지 글로벌 주식회사</span>
-            <button type="button" className="app-utility-action">로그아웃</button>
+            {user ? (
+              <>
+                <span>{user.company_name ?? user.username}</span>
+                <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
+              </>
+            ) : (
+              <Link href="/login" className="app-utility-action">로그인</Link>
+            )}
           </div>
         </PageContainer>
       </div>
@@ -57,7 +73,12 @@ export function AppHeader({ pathname }: { pathname: string }) {
             {PRIMARY_NAV.map((item) => {
               if (item.disabled) {
                 return (
-                  <span key={item.href} className="app-nav-link app-nav-link-disabled" aria-disabled="true">
+                  <span
+                    key={item.href}
+                    className="app-nav-link app-nav-link-disabled"
+                    aria-disabled="true"
+                    title="준비 중입니다"
+                  >
                     {item.label}
                   </span>
                 );
@@ -76,15 +97,25 @@ export function AppHeader({ pathname }: { pathname: string }) {
             })}
           </nav>
 
+          {/*
+            알림·전체메뉴는 아직 동작이 없다. 눌러도 아무 일이 없으면 고장난 것으로 읽히므로
+            준비 중임을 상태로 드러낸다. 기능이 붙으면 disabled와 title을 함께 걷어낸다.
+          */}
           <div className="app-header-actions">
-            <button type="button" className="app-header-action">
+            <button type="button" className="app-header-action" disabled title="준비 중입니다">
               <Bell className="size-[15px]" strokeWidth={1.7} />
               <span>알림</span>
             </button>
-            <button type="button" className="app-header-action">
+            <button type="button" className="app-header-action" disabled title="준비 중입니다">
               <Menu className="size-[15px]" strokeWidth={1.7} />
               <span>전체메뉴</span>
             </button>
+            {user && (
+              <button type="button" className="app-header-action" onClick={onLogout} aria-label="로그아웃">
+                <LogOut className="size-[15px]" strokeWidth={1.7} />
+                <span>로그아웃</span>
+              </button>
+            )}
           </div>
         </PageContainer>
       </div>

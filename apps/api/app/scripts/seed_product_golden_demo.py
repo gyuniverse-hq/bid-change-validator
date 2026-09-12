@@ -13,6 +13,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 from sqlalchemy.pool import NullPool
 
+from ..auth import hash_password
+from ..auth_models import AppUser
 from ..config import get_settings
 from ..judgment_models import CompanyQualificationProfileCompleteness
 from ..models import (
@@ -35,6 +37,8 @@ DEFAULT_NOTICE_NO = "R26BK01715087"
 DEMO_COMPANY_NAME = "그린브릿지 글로벌 주식회사"
 DEMO_BUSINESS_NO = "9909080908"
 DEMO_CASE_TITLE = "Golden Demo · 청년그린창업 해외진출 제안 검토"
+DEMO_USERNAME = "golden-demo"
+DEMO_PASSWORD = "golden-demo"
 
 PROPOSAL_TEXT = """2026년 청년그린창업 스프링캠프 해외진출 기획 및 운영 용역 제안서 초안
 
@@ -225,6 +229,9 @@ def seed_product_golden_demo(
     bid_notice_no: str = DEFAULT_NOTICE_NO,
     allow_notice_fallback: bool = False,
 ) -> dict[str, object]:
+    if get_settings().app_environment == "production":
+        raise RuntimeError("Product Golden demo seed cannot run in production")
+
     notice, versions, fallback_used = _get_notice_versions(
         db,
         bid_notice_no,
@@ -318,6 +325,23 @@ def seed_product_golden_demo(
         )
         db.flush()
 
+    user = db.scalar(select(AppUser).where(AppUser.username == DEMO_USERNAME))
+    created_user = user is None
+    if user is None:
+        user = AppUser(
+            username=DEMO_USERNAME,
+            password_hash=hash_password(DEMO_PASSWORD),
+            company_id=company.id,
+            role="ADMIN",
+            active=True,
+        )
+        db.add(user)
+    else:
+        user.password_hash = hash_password(DEMO_PASSWORD)
+        user.company_id = company.id
+        user.role = "ADMIN"
+        user.active = True
+
     case = db.scalar(
         select(PreflightCase).where(
             PreflightCase.company_id == company.id,
@@ -388,6 +412,11 @@ def seed_product_golden_demo(
             "fallback_used": fallback_used,
         },
         "company": {"id": str(company.id), "name": company.name, "created": created_company},
+        "login": {
+            "username": DEMO_USERNAME,
+            "password": DEMO_PASSWORD,
+            "created": created_user,
+        },
         "case": {
             "id": str(case.id),
             "title": case.title,
@@ -432,6 +461,7 @@ def main() -> None:
             print("fallback_notice_note: current extracted documents are available; meaningful qualification change is not implied")
         print(f"notice: {result['notice']['bid_notice_no']} / versions={result['notice']['versions']}")
         print(f"company: {result['company']['name']}")
+        print(f"login: {result['login']['username']} / {result['login']['password']}")
         print(f"case: {result['case']['title']}")
         print(f"case_id: {case_id}")
         baseline_version = result["case"]["baseline_version"]

@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..auth import authorize_case_access, get_optional_current_user
+from ..auth_models import AppUser
 from ..config import get_settings
 from ..database import get_db
 from ..errors import ApiError
@@ -131,7 +133,14 @@ def _serve_document(document: ProposalDocument, *, inline: bool) -> Response:
 def create_case(
     payload: PreflightCaseCreate,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> PreflightCaseRead:
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        if user.company_id is None:
+            raise ApiError(403, "COMPANY_PROFILE_REQUIRED", "소속 회사 프로필이 필요합니다.")
+        if payload.company_id is not None and payload.company_id != user.company_id:
+            raise ApiError(403, "COMPANY_ACCESS_DENIED", "다른 회사의 검토 건을 만들 수 없습니다.")
+        payload = payload.model_copy(update={"company_id": user.company_id})
     try:
         case = create_preflight_case(db, payload)
     except PreflightValidationError as error:
@@ -147,11 +156,18 @@ def list_cases(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> PreflightCaseSearchResponse:
     filters = []
     if notice_id is not None:
         filters.append(PreflightCase.notice_id == notice_id)
-    if company_id is not None:
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        if company_id is not None and company_id != user.company_id:
+            raise ApiError(403, "COMPANY_ACCESS_DENIED", "다른 회사의 검토 건에는 접근할 수 없습니다.")
+        if user.company_id is None:
+            raise ApiError(403, "COMPANY_PROFILE_REQUIRED", "소속 회사 프로필이 필요합니다.")
+        filters.append(PreflightCase.company_id == user.company_id)
+    elif company_id is not None:
         filters.append(PreflightCase.company_id == company_id)
     total = db.scalar(select(func.count()).select_from(PreflightCase).where(*filters)) or 0
     cases = db.scalars(
@@ -170,8 +186,12 @@ def list_cases(
 
 
 @router.get("/{case_id}", response_model=PreflightCaseRead)
-def get_case(case_id: UUID, db: Session = Depends(get_db)) -> PreflightCaseRead:
-    return _case_read(db, _get_case(db, case_id))
+def get_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> PreflightCaseRead:
+    return _case_read(db, authorize_case_access(db, user, case_id))
 
 
 @router.post("/{case_id}/documents", response_model=ProposalDocumentRead, status_code=201)
@@ -180,8 +200,9 @@ def upload_document(
     file: Annotated[UploadFile, File()],
     role: Annotated[ProposalDocumentRole, Form()] = ProposalDocumentRole.PROPOSAL,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> ProposalDocumentRead:
-    case = _get_case(db, case_id)
+    case = authorize_case_access(db, user, case_id)
     try:
         document = store_proposal_document(
             db,
@@ -204,7 +225,9 @@ def get_document_text(
     case_id: UUID,
     document_id: UUID,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> NoticeDocumentTextRead:
+    authorize_case_access(db, user, case_id)
     document = _get_document(db, case_id, document_id)
     return NoticeDocumentTextRead(
         document_id=document.id,
@@ -223,7 +246,9 @@ def get_document_source(
     case_id: UUID,
     document_id: UUID,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> Response:
+    authorize_case_access(db, user, case_id)
     return _serve_document(_get_document(db, case_id, document_id), inline=True)
 
 
@@ -232,7 +257,9 @@ def download_document(
     case_id: UUID,
     document_id: UUID,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> Response:
+    authorize_case_access(db, user, case_id)
     return _serve_document(_get_document(db, case_id, document_id), inline=False)
 
 
@@ -241,7 +268,9 @@ def preview_document(
     case_id: UUID,
     document_id: UUID,
     db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
 ) -> Response:
+    authorize_case_access(db, user, case_id)
     document = _get_document(db, case_id, document_id)
     if document.viewer_type != "PDF":
         raise ApiError(

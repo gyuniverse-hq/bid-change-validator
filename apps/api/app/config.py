@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import unquote
 
 from pydantic import Field
@@ -14,6 +15,12 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql://bidjigi:bidjigi_local_password@localhost:5432/bidjigi"
     )
+    migration_database_url: str | None = None
+    database_pool_mode: Literal["auto", "queue", "transaction"] = "auto"
+    database_pool_size: int = Field(default=2, ge=1, le=50)
+    database_max_overflow: int = Field(default=0, ge=0, le=50)
+    database_pool_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    database_pool_recycle_seconds: int = Field(default=900, ge=30, le=86_400)
     g2b_service_key: str | None = None
     g2b_base_url: str = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
     g2b_request_timeout_seconds: float = 30.0
@@ -45,9 +52,17 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str:
-        if self.database_url.startswith("postgresql://"):
-            return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-        return self.database_url
+        return self._as_sqlalchemy_url(self.database_url)
+
+    @property
+    def sqlalchemy_migration_database_url(self) -> str:
+        return self._as_sqlalchemy_url(self.migration_database_url or self.database_url)
+
+    @staticmethod
+    def _as_sqlalchemy_url(value: str) -> str:
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        return value
 
     @property
     def decoded_g2b_service_key(self) -> str | None:

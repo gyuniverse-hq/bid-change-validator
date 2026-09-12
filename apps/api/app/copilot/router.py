@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Header
 from openai import OpenAIError
 from sqlalchemy.orm import Session
 
+from ..auth import authorize_case_access, get_optional_current_user
+from ..auth_models import AppUser
 from ..ask_back_schemas import QualificationAnswerRead
 from ..database import get_db
 from ..errors import ApiError
@@ -97,7 +99,9 @@ def copilot_chat(
     payload: CopilotChatRequest,
     db: Session = Depends(get_db),
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
+    user: AppUser | None = Depends(get_optional_current_user),
 ):
+    authorize_case_access(db, user, payload.case_id)
     try:
         payload, _ = resolve_chat_payload(
             payload,
@@ -113,7 +117,12 @@ def copilot_chat(
 
 
 @router.post("/actions/confirm", response_model=QualificationAnswerRead | QualificationRevalidationRead)
-def copilot_confirm(payload: ConfirmAction, db: Session = Depends(get_db)):
+def copilot_confirm(
+    payload: ConfirmAction,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+):
+    authorize_case_access(db, user, payload.action.expected.case_id)
     try:
         return confirm_action(db, payload)
     except QualificationJudgmentError as error:

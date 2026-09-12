@@ -150,9 +150,21 @@ body {
   font-weight: 700;
 }
 
-.app-nav-link-disabled {
-  cursor: default;
-  opacity: 1;
+/*
+  비활성 메뉴는 비활성으로 보여야 한다. 이전에는 opacity가 1이라 활성 링크와 구분이
+  안 됐고, 눌러도 반응이 없으니 준비 중이 아니라 고장난 것으로 읽혔다.
+*/
+.app-nav-link-disabled,
+.app-nav-link-disabled:hover {
+  cursor: not-allowed;
+  color: var(--product-faint);
+  opacity: 0.5;
+}
+
+.app-header-action:disabled {
+  cursor: not-allowed;
+  color: var(--product-faint);
+  opacity: 0.5;
 }
 
 .app-header-actions {
@@ -193,7 +205,7 @@ body {
   border-top: 0;
 }
 
-.app-shell-route-home > main > header:first-child,
+.app-shell-route-workbench > main > header:first-child,
 .app-shell-route-qualification > main > div > header:first-child {
   display: none;
 }

@@ -78,10 +78,11 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
   const [semanticProcessing, setSemanticProcessing] = useState(false);
+  const [documentProcessing, setDocumentProcessing] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [state.turns, state.busy]);
   const ask = (text: string, intent?: CopilotIntent) => {
-    if (caseId) void store.ask(caseId, text, intent, page, semanticProcessing);
+    if (caseId) void store.ask(caseId, text, intent, page, semanticProcessing, documentProcessing);
   };
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
@@ -93,11 +94,18 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <h3>{caseId ? '판정 결과가 궁금하면 편하게 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
         <p>AI는 판정을 대신하지 않아요.<br />저장된 결과와 원문 근거를 설명해 드려요.</p>
       </div>}
-      {caseId && <label className="copilot-semantic-toggle">
-        <input type="checkbox" checked={semanticProcessing} disabled={state.busy}
-          onChange={event => setSemanticProcessing(event.target.checked)} />
-        <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문 문장만 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
-      </label>}
+      {caseId && <div className="copilot-processing-options" aria-label="AI 외부 처리 옵션">
+        <label className="copilot-semantic-toggle">
+          <input type="checkbox" checked={semanticProcessing} disabled={state.busy}
+            onChange={event => setSemanticProcessing(event.target.checked)} />
+          <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문 문장만 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+        </label>
+        <label className="copilot-semantic-toggle">
+          <input type="checkbox" checked={documentProcessing} disabled={state.busy}
+            onChange={event => setDocumentProcessing(event.target.checked)} />
+          <span><strong>공고문 근거 답변 사용</strong><small>켜면 현재 공개 공고문을 검색하고 질문과 검색 근거를 외부 AI에 보내 설명을 생성합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+        </label>
+      </div>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>
         <Button type="button" variant="ghost" className="copilot-quiet" key={text} disabled={state.busy} onClick={() => { store.focus(caseId, null); ask(text, intent); }}>{text}</Button>)}</div>}
       {state.focus && <button type="button" className="copilot-focus" onClick={() => store.focus(caseId, null)}>선택한 요건 해제 · 전체 보기</button>}
@@ -111,14 +119,14 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         </div>)}
       </div>
       {state.busy && <div className="copilot-answer copilot-loading" data-state="LOADING">
-        <output>현재 검토 결과를 확인하고 있어요…</output>
+        <output>{documentProcessing ? '공고문 근거를 확인하고 있어요…' : '현재 검토 결과를 확인하고 있어요…'}</output>
         <div className="copilot-skeleton" aria-hidden="true"><span /><span /><span /></div>
       </div>}
       {state.error && <div role="alert" className={noJudgment ? 'copilot-notice' : 'copilot-error'} data-state={noJudgment ? 'NO_JUDGMENT' : 'ERROR'}>
         <strong>{noJudgment ? '저장된 판정이 아직 없습니다' : '요청을 완료하지 못했습니다'}</strong>
         <p>{noJudgment ? '참가자격 화면에서 검토 상태를 확인해 주세요. 화면 이동만으로 분석이나 저장을 시작하지 않습니다.' : state.error}</p>
         {caseId && <Link className="copilot-detail-link" href={href('/qualification', caseId)}>참가자격 화면에서 확인</Link>}
-        <Button type="button" variant="outline" className="copilot-quiet" disabled={state.busy} onClick={() => void store.retry(caseId, semanticProcessing)}>실패한 질문 다시 조회</Button>
+        <Button type="button" variant="outline" className="copilot-quiet" disabled={state.busy} onClick={() => void store.retry(caseId, semanticProcessing, documentProcessing)}>실패한 질문 다시 조회</Button>
       </div>}
       <ActionCard caseId={caseId} compact />
       <div ref={end} />
@@ -168,8 +176,8 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
     {p ? <>
       <p className="copilot-conclusion">{p.conclusion}</p>
       {reasons.map(renderReason)}
-      {outside.length > 0 && <div className="copilot-scope"><strong>판정 밖 확인사항 · 답변 반영 대상 아님</strong>{outside.map(renderReason)}
-        <Link className="copilot-detail-link" href={`${href('/qualification', caseId)}#analysis-scope`}>참가자격 화면에서 함께 확인</Link>
+      {outside.length > 0 && <div className="copilot-scope"><strong>{response.intent === 'DOCUMENT_QA' ? '사용한 공고문 근거' : '판정 밖 확인사항 · 답변 반영 대상 아님'}</strong>{outside.map(renderReason)}
+        {response.intent !== 'DOCUMENT_QA' && <Link className="copilot-detail-link" href={`${href('/qualification', caseId)}#analysis-scope`}>참가자격 화면에서 함께 확인</Link>}
       </div>}
       {p.limitations.map((text, i) => <p className="copilot-limitation" key={i}>{text}</p>)}
       {p.next_action && <p>{p.next_action.label}</p>}

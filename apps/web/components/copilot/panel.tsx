@@ -62,7 +62,6 @@ export function CopilotPanel() {
 function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
   const { state } = useCopilot(caseId);
   const last = [...state.turns].reverse().find(turn => turn.response?.product_state)?.response?.product_state;
-  // Never pair a previous judgment's status with another response's version.
   const summary = last && 'overall_status' in last ? last : null;
   const version = last && ('version_number' in last.provenance ? last.provenance.version_number : last.provenance.current.version_number);
   return <header className="copilot-header">
@@ -78,9 +77,12 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
 function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof typeof pages] }) {
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
+  const [semanticProcessing, setSemanticProcessing] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [state.turns, state.busy]);
-  const ask = (text: string, intent?: CopilotIntent) => { if (caseId) void store.ask(caseId, text, intent, page); };
+  const ask = (text: string, intent?: CopilotIntent) => {
+    if (caseId) void store.ask(caseId, text, intent, page, semanticProcessing);
+  };
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
   const suggestions = suggestionsFor(page);
@@ -91,6 +93,11 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <h3>{caseId ? '판정 결과가 궁금하면 편하게 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
         <p>AI는 판정을 대신하지 않아요.<br />저장된 결과와 원문 근거를 설명해 드려요.</p>
       </div>}
+      {caseId && <label className="copilot-semantic-toggle">
+        <input type="checkbox" checked={semanticProcessing} disabled={state.busy}
+          onChange={event => setSemanticProcessing(event.target.checked)} />
+        <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문 문장만 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+      </label>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>
         <Button type="button" variant="ghost" className="copilot-quiet" key={text} disabled={state.busy} onClick={() => { store.focus(caseId, null); ask(text, intent); }}>{text}</Button>)}</div>}
       {state.focus && <button type="button" className="copilot-focus" onClick={() => store.focus(caseId, null)}>선택한 요건 해제 · 전체 보기</button>}
@@ -111,7 +118,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <strong>{noJudgment ? '저장된 판정이 아직 없습니다' : '요청을 완료하지 못했습니다'}</strong>
         <p>{noJudgment ? '참가자격 화면에서 검토 상태를 확인해 주세요. 화면 이동만으로 분석이나 저장을 시작하지 않습니다.' : state.error}</p>
         {caseId && <Link className="copilot-detail-link" href={href('/qualification', caseId)}>참가자격 화면에서 확인</Link>}
-        <Button type="button" variant="outline" className="copilot-quiet" disabled={state.busy} onClick={() => void store.retry(caseId)}>실패한 질문 다시 조회</Button>
+        <Button type="button" variant="outline" className="copilot-quiet" disabled={state.busy} onClick={() => void store.retry(caseId, semanticProcessing)}>실패한 질문 다시 조회</Button>
       </div>}
       <ActionCard caseId={caseId} compact />
       <div ref={end} />

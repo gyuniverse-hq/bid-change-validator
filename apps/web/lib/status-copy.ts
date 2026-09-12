@@ -49,18 +49,28 @@ export const REASON_CODE_LABEL: Record<ReasonCode, string> = {
 /**
  * 공고 첨부 분석이 어디까지 됐는가.
  * PARTIAL을 SUCCEEDED처럼 그리면 "못 읽은 조건"이 사용자에게 안 보인다 (S-9).
+ *
+ * label — 설명과 함께 놓이는 배너 자리. 문장형이어도 된다.
+ * badge — 카드 구석의 작은 이름표. 셋이 나란히 서므로 명사형으로 통일한다.
+ *         「전체 / 일부만 / 못」으로 갈려서 한눈에 읽힌다.
  */
-export const ANALYSIS_STATUS_COPY: Record<AnalysisStatus, { label: string; description: string }> = {
+export const ANALYSIS_STATUS_COPY: Record<
+  AnalysisStatus,
+  { label: string; badge: string; description: string }
+> = {
   SUCCEEDED: {
     label: '분석 완료',
+    badge: '첨부 전체 읽음',
     description: '공고 첨부를 읽고 참가자격을 추출했습니다.',
   },
   PARTIAL: {
     label: '일부만 읽었습니다',
+    badge: '첨부 일부만 읽음',
     description: '첨부 일부를 읽지 못했습니다. 아래 판정에 빠진 조건이 있을 수 있으니 원문을 함께 확인해 주세요.',
   },
   FAILED: {
     label: '첨부를 읽지 못했습니다',
+    badge: '첨부 못 읽음',
     description: '이 공고는 첨부를 읽지 못해 판정하지 않았습니다. 원문을 직접 확인해 주세요.',
   },
 };
@@ -184,6 +194,16 @@ export const EXTRACTION_STATUS_LABEL: Record<string, string> = {
 export function labelOf(map: Record<string, string>, code: string | null | undefined): string {
   if (!code) return '-';
   return map[code] ?? code;
+}
+
+/**
+ * 분석 상태 코드를 카드 배지 문구로 바꾼다.
+ * 목록 API의 analysis_status는 string이라 세 코드 밖의 값이 올 수 있다.
+ * 그때는 코드값을 그대로 돌려 화면이 빈칸이 되지 않게 한다 (labelOf와 같은 방침).
+ */
+export function analysisBadgeLabel(status: string): string {
+  const copy = (ANALYSIS_STATUS_COPY as Record<string, { badge: string }>)[status];
+  return copy?.badge ?? status;
 }
 
 /** 판정 배지에 쓸 문구. 답변 기준 판정은 근거를 라벨에 붙인다 (NFR-5). */

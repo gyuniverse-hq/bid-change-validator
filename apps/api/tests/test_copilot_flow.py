@@ -8,11 +8,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
 
 from apps.api.app.analysis_models import QualificationAnalysisRun
+from apps.api.app.auth import get_optional_current_user
+from apps.api.app.auth_models import AppUser
 from apps.api.app.copilot import chat as flow
+from apps.api.app.copilot import document_qa as grounded_flow
+from apps.api.app.copilot import router as copilot_router
 from apps.api.app.copilot.actions import confirm_action, get_changed_notice, propose_answer
 from apps.api.app.copilot.contracts import ActionInput, ConfirmAction, RevalidationProposal
 from apps.api.app.database import SessionLocal, get_db
-from apps.api.app.document_rag import answer as grounded_answer
+from apps.api.app.document_rag.answer import GroundedCitation, GroundedDocumentAnswer
 from apps.api.app.document_rag.store import VersionFaissIndex
 from apps.api.app.judgment_models import QualificationJudgmentRun
 from apps.api.app.main import app
@@ -41,6 +45,67 @@ def ask(api, case_id, message, **extra):
     response = api.post('/api/v1/copilot/chat', json={'case_id': str(case_id), 'message': message, **extra})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_company_user_cannot_access_other_company_copilot_case(state, api):
+    db, case, _, _ = state
+    foreign_user = AppUser(
+        username="foreign-company-user",
+        password_hash="unused-in-dependency-override",
+        company_id=uuid4(),
+        role="USER",
+        active=True,
+    )
+    app.dependency_overrides[get_optional_current_user] = lambda: foreign_user
+    try:
+        chat_response = api.post(
+            "/api/v1/copilot/chat",
+            json={"case_id": str(case.id), "message": "현재 판정 요약"},
+        )
+        assert chat_response.status_code == 403
+        assert chat_response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+
+        proposal = propose_answer(
+            db,
+            case.id,
+            "REQ-REGISTRATION",
+            ActionInput(satisfies_requirement=True),
+        ).model_dump(mode="json")
+        confirm_response = api.post(
+            "/api/v1/copilot/actions/confirm",
+            json={"confirmed": True, "action": proposal},
+        )
+        assert confirm_response.status_code == 403
+        assert confirm_response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
+
+
+def test_case_access_is_checked_before_semantic_processing(state, api, monkeypatch):
+    _, case, _, _ = state
+    foreign_user = AppUser(
+        username="foreign-semantic-user",
+        password_hash="unused-in-dependency-override",
+        company_id=uuid4(),
+        role="USER",
+        active=True,
+    )
+    app.dependency_overrides[get_optional_current_user] = lambda: foreign_user
+    monkeypatch.setattr(
+        copilot_router,
+        "SemanticRouter",
+        lambda: pytest.fail("semantic processing ran before case authorization"),
+    )
+    try:
+        response = api.post(
+            "/api/v1/copilot/chat",
+            headers={"X-Copilot-Semantic-Processing": "true"},
+            json={"case_id": str(case.id), "message": "모호한 문서 질문"},
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
 
 
 def test_golden_summary_evidence_proposal_confirm_replay(state, api):
@@ -164,7 +229,7 @@ def test_receipt_followup_and_stale_recovery_preserve_write_boundary(state, api)
         QualificationJudgmentRun.preflight_case_id == case.id)) == before
 
 
-def test_document_optin_privacy_hybrid_and_extractive_citations(state, api, monkeypatch):
+def test_document_optin_privacy_hybrid_and_grounded_citations(state, api, monkeypatch):
     db, case, _, source = state
     sent = []
     class Embeddings(FakeEmbeddings):
@@ -179,10 +244,25 @@ def test_document_optin_privacy_hybrid_and_extractive_citations(state, api, monk
         r.metadata.clause_label = '2'
         r.metadata.source_locations = ['p.2', 'p.3']
     index = VersionFaissIndex.build(records, embeddings=embeddings, embedding_model='fake')
-    monkeypatch.setattr(flow, 'create_openai_embeddings', lambda: embeddings)
-    monkeypatch.setattr(flow, 'load_or_build_version_index', lambda *a, **kw: index)
-    monkeypatch.setattr(grounded_answer, 'generate_grounded_answer',
-                        lambda *a, **kw: pytest.fail('Copilot V0 must not call the answer LLM'))
+    monkeypatch.setattr(grounded_flow, 'create_openai_embeddings', lambda: embeddings)
+    monkeypatch.setattr(grounded_flow, 'load_or_build_version_index', lambda *a, **kw: index)
+
+    def generate_grounded(question, hits):
+        citations = [GroundedCitation(
+            ref=f'S{position}', document_id=hit.metadata.document_id,
+            document_name=hit.metadata.document_name,
+            notice_version_id=hit.metadata.notice_version_id,
+            chunk_id=hit.metadata.chunk_id, clause_label=hit.metadata.clause_label,
+            page=hit.metadata.page, source_locations=hit.metadata.source_locations,
+            quote=hit.text,
+        ) for position, hit in enumerate(hits, start=1)]
+        return GroundedDocumentAnswer(
+            answer='실적 조건과 지역 제한의 공고문 근거입니다. [S1] [S2]',
+            citations=citations,
+            sources=citations,
+        )
+
+    monkeypatch.setattr(grounded_flow, 'generate_grounded_answer', generate_grounded)
     private = 'PRIVATE_PROFILE_AND_ASKBACK'
     for extra in ({}, {'public_document_question': '실적 조건 근거'}):
         response = ask(api, case.id, private, intent='DOCUMENT_QA', **extra)
@@ -192,12 +272,11 @@ def test_document_optin_privacy_hybrid_and_extractive_citations(state, api, monk
     assert sent[0] == '실적 조건 근거' and all(private not in text for text in sent)
     assert all('Golden Demo Systems' not in text for text in sent)
     assert sent == ['실적 조건 근거']
-    assert 'clause=2; location=p.2, p.3' in response['answer']
+    assert '실적 조건과 지역 제한의 공고문 근거입니다.' in response['answer']
     assert response['external_processing_used'] and response['product_state'] is None
     assert [s['ref'] for s in response['sources']] == ['S1', 'S2']
     assert [s['ref'] for s in response['citations']] == ['S1', 'S2']
     assert all(f"[{s['ref']}]" in response['answer'] for s in response['citations'])
-    assert response['answer'].startswith('검색된 공고문 원문 2건')
     assert all(s['notice_version_id'] == str(case.current_version_id) for s in response['sources'])
     sent.clear()
     response = ask(api, case.id, '우리 회사 참여 가능해?', intent='DOCUMENT_QA',
@@ -212,10 +291,11 @@ def test_document_optin_privacy_hybrid_and_extractive_citations(state, api, monk
                    'public_document_question': '실적 조건', 'allow_external_processing': True})
     assert bad.status_code == 502 and not sent
     index.notice_version_id = str(case.current_version_id)
-    monkeypatch.setattr(flow, 'retrieve', lambda *a, **kw: [])
+    monkeypatch.setattr(grounded_flow, 'retrieve', lambda *a, **kw: [])
     empty = ask(api, case.id, '공고문', public_document_question='실적 조건', allow_external_processing=True)
     assert empty['sources'] == empty['citations'] == []
-    assert empty['answer'] == '검색된 공고문 근거가 없습니다.'
+    assert '근거를 찾지 못했습니다' in empty['answer']
+    assert '생성형 답변은 실행하지 않았습니다' in empty['answer']
 
 
 def test_changed_notice_golden_and_revalidation_replay():

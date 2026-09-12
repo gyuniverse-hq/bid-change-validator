@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+/** 서버까지 닿지 못했을 때 화면에 나가는 문구. 어느 화면에서 실패하든 같은 말을 한다. */
+export const NETWORK_ERROR_MESSAGE = '서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+
 export function absoluteApiUrl(path: string) {
   return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`;
 }
@@ -18,11 +21,18 @@ export function absoluteApiUrl(path: string) {
 /** Share the existing HttpOnly session only with the configured API origin.
  * Does not persist tokens, retry writes, or send credentials to document hosts.
  */
-export function apiFetch(path: string, init: RequestInit = {}) {
+export async function apiFetch(path: string, init: RequestInit = {}) {
   const url = absoluteApiUrl(path);
   const base = new URL(API_BASE_URL, typeof window === 'undefined' ? 'http://localhost' : window.location.origin);
   const target = new URL(url, base);
-  return fetch(url, { ...init, credentials: target.origin === base.origin ? 'include' : 'omit' });
+  try {
+    return await fetch(url, { ...init, credentials: target.origin === base.origin ? 'include' : 'omit' });
+  } catch {
+    // fetch가 던지는 TypeError('Failed to fetch')는 서버까지 닿지 못했다는 뜻이다.
+    // 원문을 그대로 화면에 올리면 사용자가 읽을 수 없으므로 여기서 한 번만 바꾼다.
+    // status 0은 HTTP 응답 자체가 없었음을 뜻한다.
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0, 'NETWORK_ERROR');
+  }
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -30,6 +40,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const response = await apiFetch(path, {
     ...init,
+    credentials: 'include',
     headers,
   });
   if (!response.ok) {

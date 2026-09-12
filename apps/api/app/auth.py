@@ -75,7 +75,7 @@ def ensure_bootstrap_admin(db: Session) -> None:
         AppUser(
             username=username,
             password_hash=hash_password(password),
-            role="ADMIN",
+            role="SYSTEM_ADMIN",
             active=True,
         )
     )
@@ -170,6 +170,48 @@ def require_authentication_if_enabled(
 
 def get_current_user(session: AuthSession = Depends(get_current_session)) -> AppUser:
     return session.user
+
+
+def get_optional_current_user(
+    authorization: str | None = Header(default=None),
+    session_cookie: str | None = Cookie(default=None, alias="bidcheck_session"),
+    db: Session = Depends(get_db),
+) -> AppUser | None:
+    """Return the signed-in user while preserving unauthenticated local development."""
+
+    if authorization is None and session_cookie is None:
+        if get_settings().auth_required:
+            raise ApiError(401, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.")
+        return None
+    return _load_session(db, _extract_token(authorization, session_cookie)).user
+
+
+def authorize_company_access(
+    user: AppUser | None,
+    company_id,
+    *,
+    write: bool = False,
+) -> None:
+    """Enforce company tenancy whenever authentication is active for the request."""
+
+    if user is None or user.role == "SYSTEM_ADMIN":
+        return
+    if user.company_id != company_id:
+        raise ApiError(403, "COMPANY_ACCESS_DENIED", "다른 회사 정보에는 접근할 수 없습니다.")
+    if write and user.role != "ADMIN":
+        raise ApiError(403, "COMPANY_WRITE_FORBIDDEN", "회사 프로필 수정 권한이 없습니다.")
+
+
+def authorize_case_access(db: Session, user: AppUser | None, case_id):
+    from .models import PreflightCase
+
+    case = db.get(PreflightCase, case_id)
+    if case is None:
+        raise ApiError(404, "PREFLIGHT_CASE_NOT_FOUND", "검토 건을 찾을 수 없습니다.")
+    if user is not None and user.role != "SYSTEM_ADMIN":
+        if user.company_id is None or case.company_id != user.company_id:
+            raise ApiError(403, "COMPANY_ACCESS_DENIED", "다른 회사의 검토 건에는 접근할 수 없습니다.")
+    return case
 
 
 def revoke_session(db: Session, session: AuthSession) -> None:

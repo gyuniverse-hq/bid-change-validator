@@ -630,14 +630,19 @@ def test_profile_keeps_stored_snapshot_and_receipt(local, monkeypatch, message):
 
 
 def test_public_document_path_keeps_optin_privacy_and_extractive_metadata(local, monkeypatch):
+    from apps.api.app.copilot import document_qa as document_flow
+    from apps.api.app.document_rag.answer import GroundedCitation, GroundedDocumentAnswer
     from apps.api.app.document_rag.store import VersionFaissIndex
     from apps.api.tests.test_document_rag_store import FakeEmbeddings, _record
-    from apps.api.app.document_rag import answer as grounded_answer
+
     sent = []
+    generated_questions = []
+
     class Embeddings(FakeEmbeddings):
         def embed_query(self, text):
             sent.append(text)
             return super().embed_query(text)
+
     embeddings = Embeddings()
     records = [_record(str(local.summary.provenance.notice_version_id), "c1", "공개 실적 조건"),
                _record(str(local.summary.provenance.notice_version_id), "c2", "공개 지역 조건")]
@@ -645,27 +650,55 @@ def test_public_document_path_keeps_optin_privacy_and_extractive_metadata(local,
         record.metadata.clause_label = "2"
         record.metadata.source_locations = ["p.2", "p.3"]
     index = VersionFaissIndex.build(records, embeddings=embeddings, embedding_model="fake")
-    monkeypatch.setattr(flow, "create_openai_embeddings", lambda: embeddings)
-    monkeypatch.setattr(flow, "load_or_build_version_index", lambda *args, **kwargs: index)
-    monkeypatch.setattr(grounded_answer, "generate_grounded_answer", lambda *args, **kwargs: pytest.fail("answer LLM called"))
+
+    def fake_generate(question, hits, *args, **kwargs):
+        generated_questions.append(question)
+        citations = [GroundedCitation(
+            ref=f"S{i}",
+            document_id=hit.metadata.document_id,
+            document_name=hit.metadata.document_name,
+            notice_version_id=hit.metadata.notice_version_id,
+            chunk_id=hit.metadata.chunk_id,
+            clause_label=hit.metadata.clause_label,
+            page=hit.metadata.page,
+            source_locations=list(hit.metadata.source_locations),
+            quote=hit.text,
+        ) for i, hit in enumerate(hits, start=1)]
+        refs = " ".join(f"[{citation.ref}]" for citation in citations)
+        return GroundedDocumentAnswer(
+            answer=f"공개 공고문에서 지역 조건 근거를 확인했습니다. {refs}",
+            citations=citations,
+            sources=citations,
+        )
+
+    monkeypatch.setattr(document_flow, "create_openai_embeddings", lambda: embeddings)
+    monkeypatch.setattr(document_flow, "load_or_build_version_index", lambda *args, **kwargs: index)
+    monkeypatch.setattr(document_flow, "generate_grounded_answer", fake_generate)
+
     private = "PRIVATE_MESSAGE_AND_USER_ANSWER"
     for extra in ({}, {"public_document_question": "지역 조건"}):
         response = ask(local, private, intent="DOCUMENT_QA", **extra)
         assert not response["external_processing_used"] and not sent
+
     response = ask(local, private, intent="DOCUMENT_QA", public_document_question="지역 조건", allow_external_processing=True,
                    user_input={"satisfies_requirement": False, "normalized_value": private})
     assert sent == ["지역 조건"]
+    assert generated_questions == ["지역 조건"]
     assert response["sources"] == response["citations"] and len(response["sources"]) == 2
     assert all(source["source_locations"] == ["p.2", "p.3"] for source in response["sources"])
-    assert "clause=2; location=p.2, p.3" in response["answer"]
-    assert private not in response["answer"] and response["product_state"] is None
+    assert private not in response["answer"] and private not in generated_questions
+    assert response["product_state"] is None
+
     sent.clear()
     response = ask(local, "입찰 넣어도 돼?", intent="DOCUMENT_QA", public_document_question="지역 조건", allow_external_processing=True)
     assert response["intent"] == "QUALIFICATION_SUMMARY" and not sent
-    monkeypatch.setattr(flow, "retrieve", lambda *args, **kwargs: [])
+    assert generated_questions == ["지역 조건"]
+
+    monkeypatch.setattr(document_flow, "retrieve", lambda *args, **kwargs: [])
     empty = ask(local, "공고문", public_document_question="지역 조건", allow_external_processing=True)
-    assert empty["answer"] == "검색된 공고문 근거가 없습니다."
+    assert "근거를 찾지 못했습니다" in empty["answer"]
     assert empty["sources"] == empty["citations"] == []
+    assert generated_questions == ["지역 조건"]
 
 
 @pytest.mark.parametrize("message", ["다음에 뭘 해야 해?", "무엇을 해야 해?", "뭐가 부족해?", "다음 할 일 알려줘"])

@@ -5,6 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ...auth import authorize_case_access, authorize_company_access, get_optional_current_user
+from ...auth_models import AppUser
 from ...database import get_db
 from ...errors import ApiError
 from ...judgment_schemas import QualificationJudgmentRunRead, QualificationJudgmentRunSummary, QualificationJudgmentTrigger, QualificationProfileCompletenessRead, QualificationProfileCompletenessUpdate
@@ -20,7 +22,8 @@ def _as_api_error(error: QualificationJudgmentError) -> ApiError:
 
 
 @router.get("/companies/{company_id}/qualification-profile-completeness", response_model=QualificationProfileCompletenessRead)
-def read_profile_completeness(company_id: UUID, db: Session = Depends(get_db)) -> QualificationProfileCompletenessRead:
+def read_profile_completeness(company_id: UUID, db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user)) -> QualificationProfileCompletenessRead:
+    authorize_company_access(user, company_id)
     try:
         return get_profile_completeness(db, company_id)
     except QualificationJudgmentError as error:
@@ -28,7 +31,8 @@ def read_profile_completeness(company_id: UUID, db: Session = Depends(get_db)) -
 
 
 @router.patch("/companies/{company_id}/qualification-profile-completeness", response_model=QualificationProfileCompletenessRead)
-def patch_profile_completeness(company_id: UUID, payload: QualificationProfileCompletenessUpdate, db: Session = Depends(get_db)) -> QualificationProfileCompletenessRead:
+def patch_profile_completeness(company_id: UUID, payload: QualificationProfileCompletenessUpdate, db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user)) -> QualificationProfileCompletenessRead:
+    authorize_company_access(user, company_id, write=True)
     try:
         return update_profile_completeness(db, company_id, payload)
     except QualificationJudgmentError as error:
@@ -36,7 +40,8 @@ def patch_profile_completeness(company_id: UUID, payload: QualificationProfileCo
 
 
 @router.post("/preflight-cases/{case_id}/qualification-judgments", response_model=QualificationJudgmentRunRead)
-def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgmentTrigger | None = None, db: Session = Depends(get_db)) -> QualificationJudgmentRunRead:
+def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgmentTrigger | None = None, db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user)) -> QualificationJudgmentRunRead:
+    authorize_case_access(db, user, case_id)
     payload = payload or QualificationJudgmentTrigger()
     try:
         run = run_targeted_qualification_judgment(
@@ -51,7 +56,8 @@ def trigger_qualification_judgment(case_id: UUID, payload: QualificationJudgment
 
 
 @router.get("/preflight-cases/{case_id}/qualification-judgment-runs", response_model=list[QualificationJudgmentRunSummary])
-def list_case_qualification_judgments(case_id: UUID, db: Session = Depends(get_db)) -> list[QualificationJudgmentRunSummary]:
+def list_case_qualification_judgments(case_id: UUID, db: Session = Depends(get_db), user: AppUser | None = Depends(get_optional_current_user)) -> list[QualificationJudgmentRunSummary]:
+    authorize_case_access(db, user, case_id)
     try:
         return list_qualification_judgment_runs(db, case_id=case_id)
     except QualificationJudgmentError as error:
@@ -59,8 +65,14 @@ def list_case_qualification_judgments(case_id: UUID, db: Session = Depends(get_d
 
 
 @router.get("/qualification-judgment-runs/{run_id}", response_model=QualificationJudgmentRunRead)
-def read_qualification_judgment_run(run_id: UUID, db: Session = Depends(get_db)) -> QualificationJudgmentRunRead:
+def read_qualification_judgment_run(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> QualificationJudgmentRunRead:
     try:
-        return judgment_run_response(load_qualification_judgment_run(db, run_id))
+        run = load_qualification_judgment_run(db, run_id)
+        authorize_case_access(db, user, run.preflight_case_id)
+        return judgment_run_response(run)
     except QualificationJudgmentError as error:
         raise _as_api_error(error) from error

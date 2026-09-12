@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, Menu } from 'lucide-react';
+import { Bell, LogOut, Menu } from 'lucide-react';
 
 import { PageContainer } from '@/components/product/page-container';
+import type { AuthUser } from '@/lib/auth';
 
 const PRIMARY_NAV = [
   { label: '공고 찾기', href: '/notices', disabled: false },
@@ -27,7 +28,15 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export function AppHeader({ pathname }: { pathname: string }) {
+export function AppHeader({
+  pathname,
+  user,
+  onLogout,
+}: {
+  pathname: string;
+  user: AuthUser | null;
+  onLogout: () => void;
+}) {
   return (
     <header className="app-header">
       <div className="app-utility-bar">
@@ -38,8 +47,14 @@ export function AppHeader({ pathname }: { pathname: string }) {
             <a href="https://www.pps.go.kr" target="_blank" rel="noreferrer noopener" className="app-utility-action" aria-label="조달청 (새 창으로 열림)">조달청</a>
           </div>
           <div className="flex items-center gap-4 text-[var(--product-muted)]">
-            <span>그린브릿지 글로벌 주식회사</span>
-            <button type="button" className="app-utility-action">로그아웃</button>
+            {user ? (
+              <>
+                <span>{user.company_name ?? user.username}</span>
+                <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
+              </>
+            ) : (
+              <Link href="/login" className="app-utility-action">로그인</Link>
+            )}
           </div>
         </PageContainer>
       </div>
@@ -95,6 +110,12 @@ export function AppHeader({ pathname }: { pathname: string }) {
               <Menu className="size-[15px]" strokeWidth={1.7} />
               <span>전체메뉴</span>
             </button>
+            {user && (
+              <button type="button" className="app-header-action" onClick={onLogout} aria-label="로그아웃">
+                <LogOut className="size-[15px]" strokeWidth={1.7} />
+                <span>로그아웃</span>
+              </button>
+            )}
           </div>
         </PageContainer>
       </div>

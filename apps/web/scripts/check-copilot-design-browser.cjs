@@ -27,7 +27,7 @@ function load(file) {
   const company = { id: prov.company_id, name: '합성 검증 회사', industries: [], staff: null, performances: [], certifications: [], company_size: 'SMALL', region_code: null, region_name: null };
   const caseItem = { id, company_id: company.id, notice_id: prov.notice_id, bid_notice_no: 'TEST-COPILOT', notice_title: '합성 공고 · 디자인 검증', title: '통합 검증', status: 'DRAFT', baseline_version_number: 1, current_version_number: 2, documents: [], created_at: '2026-09-11T00:00:00Z' };
   const versions = [1,2].map(n => ({ id: n===2 ? prov.notice_version_id : 'baseline-version', version_number:n, documents:[], is_current:n===2, collected_at:'2026-09-11T00:00:00Z', bid_closed_at:null, estimated_price:null, allocated_budget:null, contract_method:null }));
-  let mode = 'summary', saved=false, failWorkspace=false, confirms=0, reads=0;
+  let mode = 'summary', authMode='anonymous', logoutMode='ok', saved=false, failWorkspace=false, confirms=0, reads=0;
   const errors=[];
   const summary = () => {
     const p = { ...prov, judgment_run_id: saved?'saved-judgment':prov.judgment_run_id };
@@ -52,6 +52,16 @@ function load(file) {
       const headers={'access-control-allow-origin':origin,'access-control-allow-credentials':'true','access-control-allow-headers':'Content-Type','access-control-allow-methods':'GET,POST,OPTIONS'};
       const reply=(body,status=200)=>route.fulfill({status,contentType:'application/json',headers,body:JSON.stringify(body)});
       if(request.method()==='OPTIONS') return route.fulfill({status:204,headers});
+      if(p==='/api/v1/auth/me'){
+        if(authMode==='unauthorized')return reply({error:{code:'AUTHENTICATION_REQUIRED',message:'로그인이 필요합니다.'}},401);
+        if(authMode==='error')return reply({error:{code:'AUTH_STATUS_FAILED',message:'인증 서버를 확인하지 못했습니다.'}},503);
+        if(authMode==='authenticated')return reply({id:'test-user',username:'golden-j01',role:'USER',company_id:company.id,company_name:company.name});
+        return reply(null);
+      }
+      if(p==='/api/v1/auth/logout'){
+        if(logoutMode==='error')return reply({error:{code:'LOGOUT_FAILED',message:'세션 해제에 실패했습니다.'}},503);
+        return route.fulfill({status:204,headers});
+      }
       if(p.endsWith('/copilot/actions/confirm')){
         confirms++;const action=request.postDataJSON().action;assert.equal(action.user_input.evidence_held,false);saved=true;failWorkspace=true;
         return reply({id:'answer',preflight_case_id:id,result_judgment_run_id:'saved-judgment',result:run(false)});
@@ -127,6 +137,15 @@ function load(file) {
     await page.getByRole('heading',{name:'이 근거는 이전 분석 기준입니다'}).waitFor();
     assert.equal(await page.locator('.app-shell-content blockquote').count(),0);
     await page.goto(`${origin}/evaluation?caseId=${id}`);assert.equal(await page.getByRole('button',{name:'AI Copilot',exact:true}).count(),0);
+    authMode='error';await page.goto(`${origin}/notices`);
+    await page.getByRole('heading',{name:'로그인 상태를 확인하지 못했습니다.',exact:true}).waitFor();
+    assert.equal(new URL(page.url()).pathname,'/notices','5xx must not masquerade as logout');
+    authMode='unauthorized';await page.goto(`${origin}/notices`);await page.waitForURL('**/login');
+    authMode='authenticated';logoutMode='error';await page.goto(`${origin}/notices`);
+    await page.getByText(company.name,{exact:true}).first().waitFor();
+    await page.getByRole('button',{name:'로그아웃',exact:true}).first().click();
+    await page.getByRole('alert').getByText(/로그아웃을 완료하지 못했습니다/).waitFor();
+    assert.equal(new URL(page.url()).pathname,'/notices','failed logout must keep the current session UI');
     assert.deepEqual(errors,[]);
     fs.writeFileSync(path.join(out,'browser-result.json'),JSON.stringify({result:'passed',sevenStates:true,mobile:true,confirmRequests:confirms,readRequests:reads,pageErrors:errors,mode:'actual UI + synthetic intercepted API, not real DB browser E2E'},null,2));
     console.log('PASS 7 display states, mascot, badges, source/detail navigation, Drawer, explicit detail confirm and workspace refresh failure');

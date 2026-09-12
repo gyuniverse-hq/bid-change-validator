@@ -13,6 +13,56 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+const compactQuestion = (text: string) => text.replace(/\s+/g, '').replace(/[?.!。？！]/g, '');
+
+export function isCopilotHelpQuestion(question: string) {
+  const text = compactQuestion(question);
+  return ['물어볼수있는질문', '뭘물어볼', '무엇을물어볼', '어떻게써', '사용법', '쓸수있는기능', '할수있는기능']
+    .some(term => text.includes(term)) || text.includes('그중에서지금할수있는것');
+}
+
+/**
+ * E1 deliberately adds only high-confidence aliases. Broad semantic routing stays
+ * in E2 so we can measure the value of meaning-based routing separately.
+ */
+export function inferE1Intent(question: string): CopilotIntent | undefined {
+  const text = compactQuestion(question);
+  const companySubject = ['우리', '저희', '당사'].some(term => text.includes(term));
+  if (companySubject && ['참가할수', '참여할수', '넣어도돼', '넣을수', '지원할수']
+      .some(term => text.includes(term))) return 'QUALIFICATION_SUMMARY';
+  if (['무엇이바뀌', '뭐가바뀌', '바뀐내용', '달라진내용', '변경내용']
+      .some(term => text.includes(term))) return 'CHANGED_NOTICE';
+  return undefined;
+}
+
+function localHelpResponse(contextRevision: number, reply?: ReplyContext): CopilotChatResponse {
+  const conclusion = '지금 보고 있는 공고에서 참가자격 결과, 확인할 사항, 선택한 요건의 원문 근거를 확인할 수 있어요.';
+  return {
+    answer: conclusion,
+    intent: 'UNKNOWN',
+    product_state: null,
+    citations: [], sources: [], actions: [], warnings: [],
+    external_processing_used: false, external_processing_scope: null,
+    presentation: {
+      conclusion,
+      reasons: [
+        { text: '예: “우리 회사가 참가할 수 있는지 알려줘”, “무엇을 확인해야 해?”, “첫 번째 조건 근거 보여줘”', requirement_key: null, evidence_refs: [] },
+        { text: '비교 가능한 이전 버전이 있는 공고라면 변경된 자격요건도 확인할 수 있어요.', requirement_key: null, evidence_refs: [] },
+        { text: '답변 반영이나 재검증은 대화만으로 실행하지 않고, 제안을 확인한 뒤 명시적인 실행 버튼을 눌러야 합니다.', requirement_key: null, evidence_refs: [] },
+      ],
+      limitations: [], next_action: null,
+    },
+    reply_context: {
+      request_id: null,
+      context_revision: contextRevision,
+      status: 'RESOLVED',
+      requirement_key: null,
+      visible_requirement_keys: reply?.visible_requirement_keys ?? [],
+      last_read_receipt: reply?.last_read_receipt ?? null,
+    },
+  };
+}
+
 export function validateSources(response: CopilotChatResponse) {
   const refs = response.sources.map(s => s.ref);
   const used = [...new Set([...response.answer.matchAll(/\[(S\d+)\]/g)].map(m => m[1]))];
@@ -65,8 +115,17 @@ export class ConversationStore {
     if (!caseId || old.busy || !question.trim()) return;
     const revision = old.revision + 1;
     this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns: [...old.turns, { id: revision, question }] });
+
+    if (!intent && isCopilotHelpQuestion(question)) {
+      const response = localHelpResponse(revision, old.reply);
+      this.failed.delete(caseId);
+      this.update(caseId, { revision, busy: false, error: '', errorCode: '', reply: response.reply_context ?? undefined,
+        focus: null, turns: this.get(caseId).turns.map(t => t.id === revision ? { ...t, response } : t) });
+      return;
+    }
+
     const request: CopilotChatRequest = {
-        case_id: caseId, message: question, intent, requirement_key: old.focus,
+        case_id: caseId, message: question, intent: intent ?? inferE1Intent(question), requirement_key: old.focus,
         conversation_context: { request_id: crypto.randomUUID(), context_revision: revision, source_page: page,
           visible_requirement_keys: old.reply?.visible_requirement_keys ?? [], last_read_receipt: old.reply?.last_read_receipt,
           last_response_intent: old.turns.at(-1)?.response?.intent },

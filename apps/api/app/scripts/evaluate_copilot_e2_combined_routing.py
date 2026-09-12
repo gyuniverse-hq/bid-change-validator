@@ -1,37 +1,43 @@
 """Evaluate the actual E1 -> deterministic -> E2 semantic routing order.
 
-Unlike `evaluate_copilot_e2_routing`, which measures the semantic classifier in
-isolation, this evaluator mirrors the product read-routing order for the frozen
-100-question set:
+This evaluator mirrors the product read-routing order for the frozen 100-question
+set, but intentionally does **not** call the model again. Instead it consumes a
+completed semantic-only evaluation result from the exact prompt/model run we want
+to combine:
 
     frontend bounded E1 alias
       -> backend deterministic route_intent
-      -> semantic resolver only for UNKNOWN reads
+      -> cached E2 semantic result only for UNKNOWN reads
 
-It does not connect to the DB, retrieve documents, run judgments or execute writes.
+This makes the combined result deterministic, cheaper, faster, and directly
+comparable with the semantic-only run. It does not connect to the DB, retrieve
+documents, run judgments, execute writes, or make network/model calls.
+
+Usage:
+    python -m apps.api.app.scripts.evaluate_copilot_e2_combined_routing \
+      --semantic-results e2-semantic-run3.json \
+      --output e2-combined-result.json
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import statistics
 import sys
-import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from uuid import UUID
 
 from apps.api.app.copilot.chat import CopilotChatRequest, route_intent
 from apps.api.app.copilot.intent_resolver import resolve_intent
-from apps.api.app.copilot.semantic_router import SemanticRouter
+from apps.api.app.copilot.semantic_router import SemanticRoute
 from apps.api.app.scripts.evaluate_copilot_e2_routing import (
     emit,
     load_dataset,
-    load_local_env,
     percentile,
-    repository_root,
 )
 
 DUMMY_CASE_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -42,11 +48,7 @@ def compact_question(text: str) -> str:
 
 
 def infer_e1_intent(question: str) -> str | None:
-    """Exact Python mirror of apps/web/lib/copilot-conversation.ts E1 aliases.
-
-    Keep intentionally bounded. If this grows, change the product implementation
-    and this evaluator in the same commit and protect both with regression tests.
-    """
+    """Exact Python mirror of apps/web/lib/copilot-conversation.ts E1 aliases."""
     text = compact_question(question)
     company_subject = any(term in text for term in ("우리", "저희", "당사"))
     if company_subject and any(term in text for term in (
@@ -60,46 +62,85 @@ def infer_e1_intent(question: str) -> str | None:
     return None
 
 
+class CachedClassifier:
+    """One-route classifier used to exercise the real resolver without a model call."""
+
+    available = True
+
+    def __init__(self, route: SemanticRoute | None):
+        self.route = route
+        self.calls = 0
+
+    def classify(self, message, *, last_intent=None, visible_targets=None):
+        self.calls += 1
+        return self.route
+
+
+def load_semantic_results(path: Path, dataset_path: Path, data: dict) -> tuple[dict[str, dict], dict]:
+    if not path.is_file():
+        raise RuntimeError(f"semantic results file not found: {path}")
+
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    if payload.get("status") != "completed":
+        raise RuntimeError("semantic results must have status=completed")
+    if payload.get("count") != 100:
+        raise RuntimeError("semantic results must contain exactly 100 cases")
+
+    expected_digest = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+    if payload.get("fixture_sha256") != expected_digest:
+        raise RuntimeError("semantic results fixture_sha256 does not match the frozen E2 dataset")
+
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or len(rows) != 100:
+        raise RuntimeError("semantic results rows must contain exactly 100 entries")
+
+    by_id = {}
+    for row in rows:
+        scenario_id = row.get("scenario_id")
+        if not scenario_id or scenario_id in by_id:
+            raise RuntimeError("semantic result scenario IDs must be unique and non-empty")
+        by_id[scenario_id] = row
+
+    dataset_ids = {case["scenario_id"] for case in data["cases"]}
+    if set(by_id) != dataset_ids:
+        raise RuntimeError("semantic result scenario IDs do not match the frozen E2 dataset")
+    return by_id, payload
+
+
+def cached_route(row: dict) -> SemanticRoute | None:
+    intent = row.get("actual_intent")
+    if not intent:
+        return None
+    return SemanticRoute(
+        intent=intent,
+        subject=row.get("subject") or "UNKNOWN",
+        task=row.get("task") or "UNKNOWN",
+        target_text=None,
+        confidence=float(row.get("confidence") or 0.0),
+        needs_context=bool(row.get("needs_context")),
+        reason="reused from frozen semantic evaluation run",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--semantic-results", type=Path, required=True,
+                        help="Completed semantic-only E2 JSON result to reuse; no model calls are made")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    root = repository_root()
-    loaded_env_files = load_local_env(root)
-    path, data = load_dataset()
-
-    if args.validate_only:
-        payload = {
-            "status": "dataset_valid",
-            "evaluation_scope": "combined E1 + deterministic + E2 semantic intent routing",
-            "dataset": str(path),
-            "count": 100,
-            "local_env_files_found": loaded_env_files,
-        }
-        emit(payload, args.output)
-        return 0
-
-    router = SemanticRouter()
-    if not router.available:
-        payload = {
-            "status": "not_run",
-            "reason": "semantic router provider is unavailable after loading local env files",
-            "count": 100,
-            "local_env_files_found": loaded_env_files,
-        }
-        emit(payload, args.output)
-        return 2
+    dataset_path, data = load_dataset()
+    semantic_by_id, semantic_payload = load_semantic_results(args.semantic_results, dataset_path, data)
 
     rows = []
-    latencies = []
     by_group: dict[str, Counter] = defaultdict(Counter)
     route_sources = Counter()
     actual_distribution = Counter()
-    semantic_calls = 0
+    semantic_fallback_count = 0
+    semantic_fallback_latencies = []
 
     for case in data["cases"]:
+        scenario_id = case["scenario_id"]
         question = case["question"]
         explicit = infer_e1_intent(question)
         request = CopilotChatRequest(
@@ -109,21 +150,22 @@ def main() -> int:
         )
         deterministic = route_intent(request)
 
-        started = time.perf_counter()
+        semantic_row = semantic_by_id[scenario_id]
+        classifier = CachedClassifier(cached_route(semantic_row))
         result = resolve_intent(
             deterministic_intent=deterministic,
             message=question,
-            classifier=router,
+            classifier=classifier,
             explicit_intent=explicit,
             has_user_input=False,
         )
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        latencies.append(elapsed_ms)
 
-        if result.route_source == "SEMANTIC" or (
-            deterministic == "UNKNOWN" and explicit is None and result.semantic is not None
-        ):
-            semantic_calls += 1
+        used_semantic = classifier.calls > 0
+        if used_semantic:
+            semantic_fallback_count += 1
+            latency = semantic_row.get("latency_ms")
+            if isinstance(latency, (int, float)):
+                semantic_fallback_latencies.append(float(latency))
 
         actual = result.intent
         matched = actual == case["expected_intent"]
@@ -132,7 +174,7 @@ def main() -> int:
         by_group[case["group"]]["total"] += 1
         by_group[case["group"]]["matched"] += int(matched)
         rows.append({
-            "scenario_id": case["scenario_id"],
+            "scenario_id": scenario_id,
             "group": case["group"],
             "question": question,
             "expected_intent": case["expected_intent"],
@@ -141,11 +183,12 @@ def main() -> int:
             "route_source": result.route_source,
             "actual_intent": actual,
             "matched": matched,
+            "semantic_fallback_used": used_semantic,
             "semantic_intent": result.semantic.intent if result.semantic else None,
             "semantic_confidence": result.semantic.confidence if result.semantic else None,
             "semantic_subject": result.semantic.subject if result.semantic else None,
             "semantic_task": result.semantic.task if result.semantic else None,
-            "latency_ms": round(elapsed_ms, 2),
+            "semantic_source_latency_ms": semantic_row.get("latency_ms") if used_semantic else None,
         })
 
     matched = sum(row["matched"] for row in rows)
@@ -157,26 +200,28 @@ def main() -> int:
             "accuracy": round(counts["matched"] / counts["total"], 4),
         }
 
-    semantic_latencies = [
-        row["latency_ms"] for row in rows
-        if row["route_source"] in ("SEMANTIC", "FALLBACK") and row["deterministic_intent"] == "UNKNOWN"
-    ]
+    latency_summary = {
+        "p50": round(statistics.median(semantic_fallback_latencies), 2) if semantic_fallback_latencies else None,
+        "p95": round(percentile(semantic_fallback_latencies, 0.95), 2) if semantic_fallback_latencies else None,
+        "mean": round(statistics.fmean(semantic_fallback_latencies), 2) if semantic_fallback_latencies else None,
+    }
+
     payload = {
         "status": "completed",
-        "evaluation_scope": "combined E1 frontend alias + backend deterministic + E2 semantic fallback; routing only",
+        "evaluation_scope": "combined E1 frontend alias + backend deterministic + cached E2 semantic fallback; routing only",
+        "model_calls": 0,
+        "semantic_results_file": str(args.semantic_results),
+        "semantic_source_evaluated_at": semantic_payload.get("evaluated_at"),
+        "fixture_sha256": semantic_payload.get("fixture_sha256"),
         "count": len(rows),
         "matched": matched,
         "accuracy": round(matched / len(rows), 4),
         "groups": groups,
         "route_sources": dict(route_sources),
         "actual_distribution": dict(actual_distribution),
-        "semantic_calls": semantic_calls,
-        "semantic_call_rate": round(semantic_calls / len(rows), 4),
-        "resolver_latency_ms": {
-            "all_p50": round(statistics.median(latencies), 2),
-            "semantic_p50": round(statistics.median(semantic_latencies), 2) if semantic_latencies else None,
-            "semantic_p95": round(percentile(semantic_latencies, 0.95), 2) if semantic_latencies else None,
-        },
+        "semantic_fallback_count": semantic_fallback_count,
+        "semantic_fallback_rate": round(semantic_fallback_count / len(rows), 4),
+        "semantic_source_latency_ms": latency_summary,
         "rows": rows,
     }
     emit(payload, args.output)

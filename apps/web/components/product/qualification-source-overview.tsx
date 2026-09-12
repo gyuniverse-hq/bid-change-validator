@@ -22,7 +22,12 @@ type Props = {
 };
 
 export function QualificationSourceOverview({ caseItem, notice, version, analysis }: Props) {
-  const unmapped = analysis?.diagnostics.filter((item) => item.code === 'UNMAPPED_REQUIREMENT') ?? [];
+  // 아래 「판정에 들어가지 않은 조건」 섹션과 같은 기준으로 센다.
+  // 여기만 code === 'UNMAPPED_REQUIREMENT'로 세면 UNKNOWN_LEGACY_TYPE이나 구조화에서 제외된 원문이
+  // 있는 공고에서 이 배지와 아래 섹션의 건수가 어긋난다.
+  const noticeFactCount = analysis?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT').length ?? 0;
+  const droppedCount = analysis?.dropped_requirements.length ?? 0;
+  const unjudgedCount = noticeFactCount + droppedCount;
   // 분석이 실패하면 진단을 「하지 못한」 것이지 「없는」 것이 아니다. 0건으로 표시하면 확인했다는 뜻이 된다.
   const analysisFailed = analysis?.status === 'FAILED';
 
@@ -57,9 +62,16 @@ export function QualificationSourceOverview({ caseItem, notice, version, analysi
           </div>
         </div>
 
-        <div className={`rounded-[20px] border p-6 ${unmapped.length ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
-          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">위험·예외 / 미구조화</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{analysisFailed ? '확인 못 함' : `${unmapped.length}건`}</span></div>
-          {unmapped.length ? <div className="mt-4 space-y-2">{unmapped.slice(0, 8).map((item, index) => <div key={`${item.message}-${index}`} className="rounded-xl bg-white/75 px-3 py-2 text-[12px] leading-5 text-amber-900">{item.message}</div>)}<Link href={`/evidence?caseId=${caseItem.id}`} className="inline-block pt-2 text-[12.5px] font-bold text-[var(--product-accent-deep)]">근거 원문에서 확인 →</Link></div> : <p className="mt-5 text-[13px] text-[var(--product-muted)]">{analysisFailed ? '분석이 완료되지 않아 미구조화 진단을 확인하지 못했습니다.' : '현재 분석에서 미구조화 진단이 없습니다.'}</p>}
+        <div className={`rounded-[20px] border p-6 ${unjudgedCount ? 'border-amber-200 bg-[#fffaf0]' : 'border-[var(--product-line-2)] bg-white'}`}>
+          <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[20px] font-extrabold">판정에 들어가지 않은 조건</h2><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">억지 판정하지 않은 조건을 숨기지 않습니다.</p></div><span className="text-[12px] font-bold text-amber-800">{analysisFailed ? '확인 못 함' : `${unjudgedCount}건`}</span></div>
+          {/* 여기서는 건수만 알린다. 같은 항목을 아래 「판정에 들어가지 않은 조건」 섹션이
+              공고 원문 인용·근거 위치·원문 보기와 함께 이미 그린다. 진단 message는 code가 같으면
+              문장이 전부 동일해서, 여기에 나열하면 똑같은 문장만 N줄 반복된다. */}
+          {analysisFailed
+            ? <p className="mt-5 text-[13px] text-[var(--product-muted)]">분석이 완료되지 않아 판정 밖 조건을 확인하지 못했습니다.</p>
+            : unjudgedCount
+              ? <p className="mt-5 text-[13px] leading-6 text-amber-900">공고에서 확인했지만 회사 프로필과 대조할 수 없어 판정하지 않은 조건이 {unjudgedCount}건 있습니다. 아래에서 공고 원문과 함께 확인해 주세요.</p>
+              : <p className="mt-5 text-[13px] text-[var(--product-muted)]">이번 분석에서 판정 밖으로 빠진 조건이 없습니다.</p>}
         </div>
       </section>
     </>

@@ -13,6 +13,7 @@ from .actions import confirm_action
 from .chat import CopilotChatRequest, CopilotChatResponse, chat, route_intent
 from .context import compact
 from .contracts import ConfirmAction
+from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
 from .semantic_router import SemanticRouter
 
@@ -102,6 +103,8 @@ def copilot_chat(
             payload,
             semantic_processing=semantic_processing,
         )
+        if route_intent(payload) == "DOCUMENT_QA":
+            return answer_grounded_document_question(db, payload)
         return chat(db, payload)
     except QualificationJudgmentError as error:
         raise ApiError(error.status_code, error.code, error.message) from error

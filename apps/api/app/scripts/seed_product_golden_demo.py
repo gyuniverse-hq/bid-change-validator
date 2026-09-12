@@ -268,12 +268,17 @@ def main() -> None:
     db = SessionLocal()
     try:
         result = seed_product_golden_demo(db, bid_notice_no=args.notice_no)
+        case_id = result["case"]["id"]
         print("Product Golden demo ready")
         print(f"notice: {result['notice']['bid_notice_no']} / versions={result['notice']['versions']}")
         print(f"company: {result['company']['name']}")
         print(f"case: {result['case']['title']}")
+        print(f"case_id: {case_id}")
         print(f"versions: v{result['case']['baseline_version']} -> v{result['case']['current_version']}")
         print(f"proposal: {result['proposal']['name']}")
+        print(f"qualification: http://localhost:3000/qualification?caseId={case_id}")
+        print(f"evidence: http://localhost:3000/evidence?caseId={case_id}")
+        print(f"changes: http://localhost:3000/changes?caseId={case_id}")
     finally:
         db.close()
 

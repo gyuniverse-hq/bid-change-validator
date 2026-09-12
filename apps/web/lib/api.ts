@@ -15,10 +15,20 @@ export function absoluteApiUrl(path: string) {
   return /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`;
 }
 
+/** Share the existing HttpOnly session only with the configured API origin.
+ * Does not persist tokens, retry writes, or send credentials to document hosts.
+ */
+export function apiFetch(path: string, init: RequestInit = {}) {
+  const url = absoluteApiUrl(path);
+  const base = new URL(API_BASE_URL, typeof window === 'undefined' ? 'http://localhost' : window.location.origin);
+  const target = new URL(url, base);
+  return fetch(url, { ...init, credentials: target.origin === base.origin ? 'include' : 'omit' });
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const response = await fetch(absoluteApiUrl(path), {
+  const response = await apiFetch(path, {
     ...init,
     headers,
   });

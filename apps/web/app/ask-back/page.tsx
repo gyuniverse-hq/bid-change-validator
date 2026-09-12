@@ -2,19 +2,20 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
-import { LoaderCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
 import type { EvidenceLocation } from '@/lib/qualification-api';
 import { REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { answerQualificationQuestion, type QualificationQuestion } from '@/lib/qualification-api';
+import { ActionCard } from '@/components/copilot/action-card';
+import { useActions } from '@/components/copilot/provider';
+import { isLocked } from '@/lib/copilot-actions';
+
 import { useCaseWorkspace, workspaceHref } from '@/lib/case-workspace';
 
-type AnswerChoice = 'yes' | 'no' | 'unknown';
+
 
 export default function AskBackPage() {
   const caseId = useSearchParams().get('caseId');
@@ -23,11 +24,10 @@ export default function AskBackPage() {
 
 function AskBackWorkspace({ caseId }: { caseId: string | null }) {
   const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
-  const [choice, setChoice] = useState<Record<string, AnswerChoice>>({});
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const { controller, action } = useActions(caseId ?? '');
+  useEffect(() => {
+    if (action.stage === 'COMPLETED') void reload();
+  }, [action.stage, action.result?.result_judgment_run_id, reload]);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [showSkipped, setShowSkipped] = useState(false);
 
@@ -69,35 +69,12 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
     });
   }
 
-  async function submit(question: QualificationQuestion) {
-    if (!workspace?.displayJudgment || !question.askable) return;
-    const selected = choice[question.requirement_key] ?? 'unknown';
-    if (selected === 'unknown') {
-      setMessage('이 항목은 답변 없이 확인 필요 상태로 남겨둡니다.');
-      return;
-    }
-    setBusyKey(question.requirement_key);
-    setError('');
-    setMessage('');
-    try {
-      await answerQualificationQuestion(workspace.caseItem.id, {
-        source_judgment_run_id: workspace.displayJudgment.id,
-        requirement_key: question.requirement_key,
-        satisfies_requirement: selected === 'yes',
-        normalized_value: values[question.requirement_key]?.trim() || undefined,
-        evidence_held: false,
-      });
-      await reload();
-      setMessage('답변한 항목만 다시 판정했습니다. 이 답은 이번 검토의 판정 근거로 남습니다.');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '답변 저장에 실패했습니다.');
-    } finally {
-      setBusyKey(null);
-    }
-  }
-
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
-  if (!workspace) return <main className="app-shell-container grid min-h-[420px] place-items-center py-12">{loadError || error || <LoaderCircle className="size-7 animate-spin" />}</main>;
+  if (!workspace) return <main className="app-shell-container py-12">
+    <ActionCard caseId={caseId} />
+    <p role="alert">{loadError || '검토 데이터를 불러오고 있습니다.'}</p>
+    {loadError && <Button variant="outline" onClick={() => void reload()}>화면 정보 다시 조회</Button>}
+  </main>;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -105,7 +82,11 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
         <CaseHeader workspace={workspace} />
         <CaseTabs caseId={workspace.caseItem.id} active="questions" />
 
-        {(error || message) && <div className={`mt-5 rounded-[14px] border px-4 py-3 text-[13px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error || message}</div>}
+        <ActionCard caseId={caseId} />
+        {loadError && <section role="alert" className="mt-4 rounded-xl border p-4">
+          <p>작업 상태는 위에 유지됩니다. 화면 정보 갱신에 실패하여 마지막 조회 결과를 표시합니다.</p>
+          <Button variant="outline" onClick={() => void reload()}>화면 정보 다시 조회</Button>
+        </section>}
 
         <section className="mt-5 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -125,7 +106,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
         <div className="mt-4 space-y-4">
           {askableVisible.map((question) => {
             const evidence = evidenceByRequirement.get(question.requirement_key);
-            const selected = choice[question.requirement_key] ?? 'unknown';
+
             return (
               <section key={question.requirement_key} className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
                 <div className="flex items-center justify-between gap-2">
@@ -136,27 +117,13 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
                   <button type="button" onClick={() => skip(question.requirement_key)} className="shrink-0 text-[12.5px] font-semibold text-[var(--product-muted)] underline underline-offset-2 hover:text-[var(--product-ink)]">이번 화면에서 건너뛰기</button>
                 </div>
                 <h3 className="mt-3 text-[19px] font-bold leading-8 tracking-[-0.03em] text-[var(--product-ink)]">{question.question}</h3>
-                <p className="mt-3 text-[13.5px] text-[var(--product-muted)]">회사 프로필에 비교할 값이 없어, 귀사 답변으로만 안전하게 판정할 수 있는 조건입니다.</p>
+                <p className="mt-3 text-[13.5px] text-[var(--product-muted)]">저장된 판정에서 사용자 답변을 요청한 요건입니다. 답변과 증빙 보유 여부를 선택한 뒤 제안 내용을 확인해 주세요.</p>
                 {evidence && <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>}
 
-                <div className="mt-5 space-y-2">
-                  {[
-                    ['yes', '있습니다 / 충족합니다', '입력한 답으로 이 항목만 다시 판정합니다'],
-                    ['no', '없습니다 / 충족하지 않습니다', '이 항목은 미달로 판정됩니다'],
-                    ['unknown', '모르겠습니다', '답변으로 저장하지 않고 확인 필요로 유지합니다'],
-                  ].map(([value, label, help]) => (
-                    <button key={value} type="button" onClick={() => setChoice((current) => ({ ...current, [question.requirement_key]: value as AnswerChoice }))} className={`flex w-full items-center gap-3 rounded-[20px] border px-[18px] py-[15px] text-left ${selected === value ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}>
-                      <span className={`grid size-[18px] place-items-center rounded-full border ${selected === value ? 'border-[var(--product-accent)]' : 'border-[var(--product-line)]'}`}>{selected === value && <span className="size-[9px] rounded-full bg-[var(--product-accent)]" />}</span>
-                      <strong className="text-[14.5px]">{label}</strong><span className="text-[12.5px] text-[var(--product-muted)]">{help}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-[18px] flex flex-wrap items-center gap-3">
-                  <Input value={values[question.requirement_key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [question.requirement_key]: event.target.value }))} className="h-[46px] max-w-[260px] rounded-full" placeholder="값이나 메모 입력" disabled={selected !== 'yes'} />
-                  <span className="text-[12.5px] text-[var(--product-muted)]">이 답은 이번 검토의 판정 근거로만 저장됩니다</span>
-                  <Button className="h-[46px] rounded-full px-[26px]" onClick={() => void submit(question)} disabled={busyKey !== null}>{busyKey === question.requirement_key && <LoaderCircle className="animate-spin" />} {selected === 'unknown' ? '확인 필요로 유지' : '저장하고 다시 판정'}</Button>
-                </div>
+                <Button className="mt-4 rounded-full" disabled={isLocked(action) || Boolean(loadError)}
+                  onClick={() => void controller.beginAnswer(caseId, question.requirement_key, workspace.displayJudgment?.id)}>
+                  이 요건 답변 입력 · 아직 저장 안 함
+                </Button>
               </section>
             );
           })}

@@ -1,9 +1,9 @@
-import { absoluteApiUrl, ApiError, type PreflightCase } from '@/lib/api';
+import { apiFetch, ApiError, type PreflightCase } from '@/lib/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const response = await fetch(absoluteApiUrl(path), { ...init, headers });
+  const response = await apiFetch(path, { ...init, headers });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       error?: { message?: string; code?: string };

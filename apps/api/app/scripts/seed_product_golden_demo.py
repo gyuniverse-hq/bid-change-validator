@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from ..config import get_settings
@@ -139,12 +139,74 @@ def choose_demo_industry(db: Session) -> IndustryCode | None:
     )
 
 
-def _get_notice_versions(db: Session, bid_notice_no: str) -> tuple[BidNotice, list[BidNoticeVersion]]:
-    notice = db.scalar(select(BidNotice).where(BidNotice.bid_notice_no == bid_notice_no))
-    if notice is None:
-        raise ValueError(
-            f"notice not found: {bid_notice_no}. Run bootstrap_product_data first."
+def _usable_fallback_notice(db: Session) -> tuple[BidNotice, list[BidNoticeVersion]] | None:
+    """Pick an existing service notice suitable for a local Stage 11 dry-run.
+
+    The frozen demo notice may not exist in every shared DB snapshot. A fallback
+    must have extracted text on its current version; multi-version notices are
+    preferred so the same case can exercise the Changes UI. This is only a
+    usability-test fixture selector, not a claim that the notice has a meaningful
+    qualification change.
+    """
+
+    notices = list(
+        db.scalars(
+            select(BidNotice)
+            .options(selectinload(BidNotice.versions).selectinload(BidNoticeVersion.documents))
+            .where(BidNotice.business_type == "SERVICE")
+            .order_by(BidNotice.last_seen_at.desc())
+            .limit(300)
+        ).all()
+    )
+    candidates: list[tuple[tuple[int, int, int, int], BidNotice, list[BidNoticeVersion]]] = []
+    for notice in notices:
+        versions = sorted(notice.versions, key=lambda item: item.version_number)
+        if not versions:
+            continue
+        current = next((item for item in versions if item.is_current), versions[-1])
+        current_extracted = [
+            document
+            for document in current.documents
+            if document.extraction_status == "EXTRACTED" and (document.extracted_text or "").strip()
+        ]
+        if not current_extracted:
+            continue
+        current_chars = sum(document.extracted_char_count or 0 for document in current_extracted)
+        score = (
+            1 if len(versions) >= 2 else 0,
+            len(versions),
+            len(current_extracted),
+            current_chars,
         )
+        candidates.append((score, notice, versions))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _, notice, versions = candidates[0]
+    return notice, versions
+
+
+def _get_notice_versions(
+    db: Session,
+    bid_notice_no: str,
+    *,
+    allow_fallback: bool = False,
+) -> tuple[BidNotice, list[BidNoticeVersion], bool]:
+    notice = db.scalar(select(BidNotice).where(BidNotice.bid_notice_no == bid_notice_no))
+    fallback_used = False
+    if notice is None:
+        if not allow_fallback:
+            raise ValueError(f"notice not found: {bid_notice_no}")
+        fallback = _usable_fallback_notice(db)
+        if fallback is None:
+            raise ValueError(
+                f"notice not found: {bid_notice_no}; no fallback SERVICE notice with extracted current documents was found"
+            )
+        notice, versions = fallback
+        fallback_used = True
+        return notice, versions, fallback_used
+
     versions = list(
         db.scalars(
             select(BidNoticeVersion)
@@ -154,13 +216,22 @@ def _get_notice_versions(db: Session, bid_notice_no: str) -> tuple[BidNotice, li
     )
     if not versions:
         raise ValueError(f"notice has no versions: {bid_notice_no}")
-    return notice, versions
+    return notice, versions, fallback_used
 
 
-def seed_product_golden_demo(db: Session, *, bid_notice_no: str = DEFAULT_NOTICE_NO) -> dict[str, object]:
-    notice, versions = _get_notice_versions(db, bid_notice_no)
+def seed_product_golden_demo(
+    db: Session,
+    *,
+    bid_notice_no: str = DEFAULT_NOTICE_NO,
+    allow_notice_fallback: bool = False,
+) -> dict[str, object]:
+    notice, versions, fallback_used = _get_notice_versions(
+        db,
+        bid_notice_no,
+        allow_fallback=allow_notice_fallback,
+    )
     baseline = versions[0]
-    current = versions[-1]
+    current = next((item for item in versions if item.is_current), versions[-1])
 
     company = db.scalar(
         select(Company).where(Company.business_registration_number == DEMO_BUSINESS_NO)
@@ -259,7 +330,7 @@ def seed_product_golden_demo(db: Session, *, bid_notice_no: str = DEFAULT_NOTICE
         case = PreflightCase(
             company_id=company.id,
             notice_id=notice.id,
-            baseline_version_id=baseline.id,
+            baseline_version_id=baseline.id if baseline.id != current.id else None,
             current_version_id=current.id,
             title=DEMO_CASE_TITLE,
             status="READY",
@@ -309,12 +380,18 @@ def seed_product_golden_demo(db: Session, *, bid_notice_no: str = DEFAULT_NOTICE
 
     db.commit()
     return {
-        "notice": {"bid_notice_no": notice.bid_notice_no, "title": notice.title, "versions": len(versions)},
+        "notice": {
+            "requested_bid_notice_no": bid_notice_no,
+            "bid_notice_no": notice.bid_notice_no,
+            "title": notice.title,
+            "versions": len(versions),
+            "fallback_used": fallback_used,
+        },
         "company": {"id": str(company.id), "name": company.name, "created": created_company},
         "case": {
             "id": str(case.id),
             "title": case.title,
-            "baseline_version": baseline.version_number,
+            "baseline_version": baseline.version_number if baseline.id != current.id else None,
             "current_version": current.version_number,
             "created": created_case,
         },
@@ -324,25 +401,44 @@ def seed_product_golden_demo(db: Session, *, bid_notice_no: str = DEFAULT_NOTICE
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed the Product Golden demo into the configured DB.")
-    parser.add_argument("--notice-no", default=DEFAULT_NOTICE_NO)
+    parser.add_argument(
+        "--notice-no",
+        default=None,
+        help=(
+            "Explicit notice number. When omitted, the frozen demo notice is tried first and a usable existing "
+            "SERVICE notice is selected if the frozen notice is absent."
+        ),
+    )
     args = parser.parse_args()
 
+    requested_notice_no = args.notice_no or DEFAULT_NOTICE_NO
     configured_url = get_settings().sqlalchemy_database_url
     engine, database_connection_mode, initial_connection_error = _prepare_seed_engine(configured_url)
     SessionMaker = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     db = SessionMaker()
     try:
-        result = seed_product_golden_demo(db, bid_notice_no=args.notice_no)
+        result = seed_product_golden_demo(
+            db,
+            bid_notice_no=requested_notice_no,
+            allow_notice_fallback=args.notice_no is None,
+        )
         case_id = result["case"]["id"]
         print("Product Golden demo ready")
         print(f"database_connection_mode: {database_connection_mode}")
         if initial_connection_error:
             print("session_pooler_preflight_failed: true")
+        if result["notice"]["fallback_used"]:
+            print(f"fallback_notice_selected: {result['notice']['bid_notice_no']}")
+            print("fallback_notice_note: current extracted documents are available; meaningful qualification change is not implied")
         print(f"notice: {result['notice']['bid_notice_no']} / versions={result['notice']['versions']}")
         print(f"company: {result['company']['name']}")
         print(f"case: {result['case']['title']}")
         print(f"case_id: {case_id}")
-        print(f"versions: v{result['case']['baseline_version']} -> v{result['case']['current_version']}")
+        baseline_version = result["case"]["baseline_version"]
+        if baseline_version is None:
+            print(f"versions: current=v{result['case']['current_version']} / baseline=none")
+        else:
+            print(f"versions: v{baseline_version} -> v{result['case']['current_version']}")
         print(f"proposal: {result['proposal']['name']}")
         print(f"qualification: http://localhost:3000/qualification?caseId={case_id}")
         print(f"evidence: http://localhost:3000/evidence?caseId={case_id}")

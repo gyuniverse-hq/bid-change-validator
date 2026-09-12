@@ -7,10 +7,12 @@ write action.
 Usage:
     python -m apps.api.app.scripts.evaluate_copilot_e2_routing --validate-only
     python -m apps.api.app.scripts.evaluate_copilot_e2_routing
+    python -m apps.api.app.scripts.evaluate_copilot_e2_routing --output e2-routing-result.json
 
 For local execution, the evaluator loads repository `.env` files before checking
 OPENAI_API_KEY. Existing process environment variables always win.
-The output is JSON so it can be archived without reformatting.
+When --output is used, the complete result is written as UTF-8 JSON and the
+console prints only a compact summary so long per-case rows are never truncated.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import statistics
 import sys
 import time
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from apps.api.app.copilot.semantic_router import SemanticRouter
@@ -33,20 +36,13 @@ def repository_root() -> Path:
 
 
 def load_local_env(root: Path) -> list[str]:
-    """Load known local env files without overriding exported environment values.
-
-    Provider classes intentionally read `os.environ`; loading belongs at an
-    executable entry point like this evaluator rather than inside provider code.
-    Never print secret values or file contents.
-    """
+    """Load known local env files without overriding exported environment values."""
     try:
         from dotenv import load_dotenv
     except ImportError:
         return []
 
     loaded = []
-    # Lowest precedence first. `override=False` also preserves values that were
-    # already exported in the shell before this process started.
     for path in (
         root / ".env",
         root / "apps/api/.env",
@@ -83,9 +79,25 @@ def percentile(values: list[float], q: float) -> float | None:
     return ordered[index]
 
 
+def emit(payload: dict, output: Path | None) -> None:
+    if output is None:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    summary = {key: payload.get(key) for key in (
+        "status", "evaluation_scope", "fixture_sha256", "count", "matched", "accuracy", "groups", "latency_ms"
+    ) if key in payload}
+    summary["output_file"] = str(output)
+    summary["rows_written"] = len(payload.get("rows", []))
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--output", type=Path, help="Write complete UTF-8 JSON result to this file and print only a summary")
     args = parser.parse_args()
 
     root = repository_root()
@@ -93,25 +105,25 @@ def main() -> int:
     path, data = load_dataset()
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if args.validate_only:
-        print(json.dumps({
+        emit({
             "status": "dataset_valid",
             "dataset": str(path),
             "fixture_sha256": digest,
             "count": 100,
             "model_calls": 0,
             "local_env_files_found": loaded_env_files,
-        }, ensure_ascii=False, indent=2))
+        }, args.output)
         return 0
 
     if not os.getenv("OPENAI_API_KEY"):
-        print(json.dumps({
+        emit({
             "status": "not_run",
             "reason": "OPENAI_API_KEY is not configured after loading local env files",
             "fixture_sha256": digest,
             "count": 100,
             "model_calls": 0,
             "local_env_files_found": loaded_env_files,
-        }, ensure_ascii=False, indent=2))
+        }, args.output)
         return 2
 
     router = SemanticRouter()
@@ -155,9 +167,10 @@ def main() -> int:
             "accuracy": round(counts["matched"] / counts["total"], 4),
         }
 
-    print(json.dumps({
+    payload = {
         "status": "completed",
         "evaluation_scope": "semantic intent classification only; not product task completion",
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
         "fixture_sha256": digest,
         "count": len(rows),
         "matched": matched,
@@ -170,7 +183,8 @@ def main() -> int:
             "mean": round(statistics.fmean(latencies), 2),
         },
         "rows": rows,
-    }, ensure_ascii=False, indent=2))
+    }
+    emit(payload, args.output)
     return 0
 
 

@@ -64,18 +64,22 @@ def build_grounded_prompt(question: str, hits: list[DocumentChunkHit]) -> list[d
             (
                 "system",
                 "당신은 나라장터 입찰 공고 문서의 근거를 설명하는 AI입니다. "
+                "답변은 한국어로 작성하되 공고의 고유명사, 코드, 원문 용어는 그대로 사용할 수 있습니다. "
                 "제공된 SOURCE 밖의 사실을 공고 근거처럼 만들지 마세요. "
-                "참가 가능/불가를 독자적으로 판정하지 마세요. "
-                "질문에 답할 근거가 부족하면 확인할 수 없다고 명시하세요. "
-                "실제로 사용한 SOURCE만 [S1] 형식으로 인용하세요. "
-                "여러 SOURCE를 사용하면 [S1] [S2]처럼 각각 표시하세요. "
+                "회사나 사용자의 실제 상태를 가정해 참가 가능/불가를 독자적으로 판정하지 마세요. "
+                "질문의 핵심 주장이나 조건을 직접 뒷받침하는 SOURCE만 [S1] 형식으로 인용하세요. "
+                "주변 문맥이 관련 있어 보인다는 이유만으로 SOURCE를 근거처럼 인용하지 마세요. "
+                "검색된 SOURCE에 질문에 직접 답하는 근거가 없으면 '검색된 근거만으로 확인할 수 없습니다.'라고 명시하고 SOURCE ID를 인용하지 마세요. "
+                "질문의 일부만 근거가 있으면 확인 가능한 부분과 확인할 수 없는 부분을 명확히 나누고, 확인 가능한 부분에만 SOURCE를 인용하세요. "
+                "문서 간 조건이 서로 다르거나 충돌하면 한쪽을 임의로 우선하지 말고 차이를 명시하세요. "
+                "여러 SOURCE를 실제로 사용하면 [S1] [S2]처럼 각각 표시하세요. "
                 "제공되지 않은 Source ID를 생성하지 마세요. "
                 "근거가 없으면 억지로 인용을 생성하지 마세요.",
             ),
             (
                 "human",
                 "질문:\n{question}\n\nSOURCE:\n{context}\n\n"
-                "근거에 기반해 간결하게 답변하세요.",
+                "질문에 직접 관련된 근거에 한정해 간결하게 답변하세요.",
             ),
         ]
     )
@@ -137,7 +141,7 @@ def generate_grounded_answer(
         )
         for index, hit in enumerate(hits, start=1)
     ]
-    answer = str(content)
+    answer = str(content).strip()
     refs = list(dict.fromkeys(re.findall(r"\[(S[0-9]+)\]", answer)))
     by_ref = {source.ref: source for source in sources}
     unknown_refs = [ref for ref in refs if ref not in by_ref]

@@ -65,6 +65,34 @@ STATUS_WORDS = ("충족", "미달", "확인 필요")
 _HEDGES = ("확인", "여부", "못", "않", "미충족", "불가", "필요", "예정", "검토")
 
 
+# '충족'이 서술어 자리에 있을 때만 단정이다.
+#   단정      "조건을 충족합니다" "요건을 충족한다"
+#   단정 아님  "충족하는 항목을 선택한다" "충족한다고 판단하는" "충족 항목 확보"
+# 관형형(충족하는·충족할)과 인용형(-고)은 담당자에게 고르라는 지시이지 주장이 아니다.
+_SATISFIED_CLAIM = re.compile(
+    r"충족(?:합니다|했|하였|한다(?!고)|됩니다|되었|된다(?!고)|함\b|임\b|으로\s*판정)"
+)
+
+
+def _segment_for(line: str, label: str, other_labels: list[str]) -> str:
+    """한 줄에 여러 요건이 적혔을 때, 이 라벨 몫만 잘라낸다.
+
+    "요건1 업종: 충족으로 판정되었으나, 요건2 실적 금액: 미달" 같은 줄에서 줄 전체를
+    보면 요건2 에도 '충족'이 붙어 모순으로 잡힌다. 실제로 그렇게 오검출됐다.
+    """
+    start = line.find(label)
+    if start < 0:
+        return line
+    end = len(line)
+    for other in other_labels:
+        if other == label:
+            continue
+        position = line.find(other, start + len(label))
+        if position >= 0:
+            end = min(end, position)
+    return line[start:end]
+
+
 def _claims(line: str, word: str) -> bool:
     """줄이 `word` 를 **단정**하는가. 글자가 있다고 단정은 아니다.
 
@@ -88,14 +116,20 @@ def unattributed_claims(
     "당사는 업계 1위이다" 라고 쓰면 검증되지 않은 주장이 사실이 된다.
     "당사는 업계 1위라고 제시하고 있으나 증빙이 필요하다" 면 구분한 것이다.
 
-    **분모를 함께 돌려준다.** 귀속은 표현의 문제라 낱말 목록으로 완벽히 가릴 수
-    없고, 실제로 이 숫자는 마커 하나에 크게 휘둘린다(측정해 보니 '제시'를 빼면
-    0건이 3건이 됐다). 그래서 "단정 0건" 만 내면 마커 목록을 잘 고른 덕인지
-    모델이 잘한 덕인지 구분되지 않는다. 주장을 담은 문장이 **몇 개나 있었는지**를
-    같이 내면, 마커 선택이 흔들려도 분모는 흔들리지 않는다.
+    이것은 지표가 아니라 **읽을 거리를 줄여 주는 장치**다. 정밀도를 재 봤고,
+    낮다는 것을 확인했다
+    -------------------------------------------------------------------
+    288건을 돌려 나온 후보 54건 중 11건을 직접 읽어 보니 최소 9건이 거짓 양성이었다.
+    모델은 마커 목록에 없는 방식으로 계속 귀속한다 — "회사 제공 계획에 따라",
+    "회사 설명을", "과도한 표현은 ... 조정" 같은 식이다. 마커를 더 붙이면 이 데이터에만
+    맞아 들어갈 뿐이다.
 
-    안전 지표가 아니라 사람이 볼 후보 목록이다. 초안 전체를 읽는 대신 의심스러운
-    문장만 보게 해 주는 것이 목적이다.
+    민감도도 크다. '제시' 한 낱말만 빼도 0건이 3건이 됐다. 그래서 **분모(주장을 담은
+    문장 수)를 함께 돌려준다.** 분모는 마커 선택에 흔들리지 않으므로, 후보 수가
+    마커를 잘 고른 덕인지 모델이 잘한 덕인지 구분하는 데 쓸 수 있다.
+
+    쓰는 법: 안전 지표처럼 "0 이어야 한다"고 읽지 말 것. 초안 288편을 다 읽는 대신
+    이 문장들만 훑어보라는 목록이다. 진짜 판단은 사람이 한다.
     """
     if not user_claims:
         return [], 0
@@ -103,31 +137,65 @@ def unattributed_claims(
     total = 0
     for sentence in _SENTENCE.findall(draft_text):
         text = sentence.strip()
-        if not text or not any(claim in text for claim in user_claims):
+        present = [claim for claim in user_claims if claim in text]
+        if not text or not present:
             continue
         total += 1
         if any(marker in text for marker in _ATTRIBUTIONS):
             continue
         if any(marker in text for marker in _DISTANCING):
             continue
+        # 따옴표 안의 표현은 **그 말을 다루는 것**이지 주장하는 것이 아니다.
+        # 실제로 초안들이 «"100% 성공 보장" 과 같은 표현은 ... 조정한다» 처럼
+        # 사용자의 과장을 인용해 고치라고 적었는데, 그것까지 단정으로 셌었다.
+        if all(_is_quoted(text, claim) for claim in present):
+            continue
         flagged.append(text[:120])
     return flagged, total
 
 
-def derive_user_claims(rendered_inputs: str, briefing_text: str) -> list[str]:
-    """사용자 입력에만 있고 브리핑에는 없는 주장 조각.
+_QUOTES = ('"', "'", "“", "”", "‘", "’", "「", "」", "«", "»")
 
-    브리핑에도 있는 말은 코드가 확정한 사실이므로 단정해도 된다. 걸러야 하는 것은
-    **사용자만 말한** 내용이다.
+
+def _is_quoted(text: str, claim: str) -> bool:
+    """`claim` 이 따옴표 안에 있는가 — 주장이 아니라 인용이라는 신호."""
+    position = text.find(claim)
+    if position < 0:
+        return False
+    before = text[:position]
+    after = text[position + len(claim) :]
+    return any(q in before for q in _QUOTES) and any(q in after for q in _QUOTES)
+
+
+# 검증할 수 없는데 단정하면 곤란한 말들. 최상급·절대·보장 표현이다.
+# "PM 1명" 같은 평범한 입력까지 주장으로 세면, 사업계획서 내용 대부분이 원래
+# 사용자가 준 것이라 분모가 초안 길이를 따라가 버린다. 실제로 그렇게 재 보니
+# FULL 입력에서만 1,049 문장이 잡혔다 — 그 숫자는 아무것도 말해 주지 않는다.
+_SUPERLATIVES = (
+    "1위", "최다", "최고", "최상", "최대", "유일", "독보",
+    "100%", "완벽", "보장", "압도", "무제한", "절반", "무결",
+    "국내 최", "업계 최", "경쟁사 대비", "모든 참가자격",
+)
+
+
+def derive_user_claims(rendered_inputs: str, briefing_text: str) -> list[str]:
+    """사용자만 말한 **검증 불가능한 주장**. 평범한 입력은 세지 않는다.
+
+    브리핑에도 있는 말은 코드가 확정한 사실이므로 단정해도 된다. 문제는 사용자가
+    자기 입으로만 한 말이고, 그 중에서도 확인할 길이 없는 최상급·절대 표현이다.
+
+    조각은 **짧아야 한다.** 문장을 통째로 담으면 초안에서 같은 문장을 찾을 일이
+    없어 아무것도 걸리지 않는다 — 실제로 그렇게 만들었다가 288건 전부 0 이 나왔다.
+    그래서 사용자가 실제로 쓴 최상급 표현 자체를 조각으로 삼는다.
     """
     claims: list[str] = []
-    for token in re.findall(r"[가-힣A-Za-z0-9%][가-힣A-Za-z0-9% ]{5,}", rendered_inputs):
-        piece = token.strip()
-        # 라벨("회사 및 보유 역량: ")이 아니라 값 쪽만 본다.
-        if len(piece) < 6 or piece in briefing_text:
+    for line in rendered_inputs.splitlines():
+        _, _, value = line.partition(": ")
+        value = value.strip()
+        if not value or value in briefing_text:
             continue
-        claims.append(piece)
-    return claims
+        claims.extend(word for word in _SUPERLATIVES if word in value)
+    return list(dict.fromkeys(claims))
 
 
 def derive_content_hints(value: object, raw: str) -> list[str]:
@@ -218,9 +286,12 @@ def check_draft(
     )
     lines = _lines(draft_text)
     hints = content_hints or {}
+    all_labels = [label for label, _ in items]
 
     for label, status in items:
         mentioning = [line for line in lines if label in line]
+        # 한 줄에 여러 요건이 적힌 경우가 흔하다. 이 라벨 몫만 떼어 놓고 본다.
+        segments = [_segment_for(line, label, all_labels) for line in mentioning]
 
         if not mentioning:
             if label not in flagged_labels:
@@ -244,13 +315,13 @@ def check_draft(
             continue
 
         # 상태오기 — 맞는 상태는 어디에도 없고, 다른 상태를 단정한 줄이 있는 경우.
-        if not any(status in line for line in mentioning):
+        if not any(status in segment for segment in segments):
             wrong = sorted(
                 {
                     word
-                    for line in mentioning
+                    for segment in segments
                     for word in STATUS_WORDS
-                    if word != status and _claims(line, word)
+                    if word != status and _claims(segment, word)
                 }
             )
             if wrong:
@@ -262,10 +333,12 @@ def check_draft(
 
         # 모순 — 미달·확인 필요인데 '충족'이라 단정한 줄이 있는 경우.
         if label in flagged_labels:
-            for line in mentioning:
-                if _claims(line, "충족"):
+            for segment in segments:
+                # 서술어 자리의 '충족'만 단정으로 센다. "충족하는 항목을 선택" 은
+                # 담당자에게 고르라는 지시이지 요건을 채웠다는 주장이 아니다.
+                if _SATISFIED_CLAIM.search(segment) and _claims(segment, "충족"):
                     report.violations.append(
-                        Violation("CONTRADICTION", label, f"'{status}'인데 충족 단정: {line[:70]}")
+                        Violation("CONTRADICTION", label, f"'{status}'인데 충족 단정: {segment[:70]}")
                     )
                     break
 

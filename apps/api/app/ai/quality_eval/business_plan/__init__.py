@@ -34,6 +34,8 @@ from .conformance import DraftReport
 from .conformance import Violation
 from .conformance import check_draft
 from .conformance import derive_content_hints
+from .conformance import derive_user_claims
+from .conformance import unattributed_claims
 from .inputs import INPUT_SETS
 
 __all__ = [
@@ -42,6 +44,8 @@ __all__ = [
     "verify_round_trip",
     "check_draft",
     "derive_content_hints",
+    "derive_user_claims",
+    "unattributed_claims",
     "DraftReport",
     "Violation",
     "INPUT_SETS",

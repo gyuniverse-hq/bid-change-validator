@@ -44,6 +44,12 @@ def _clean_generated_answer(text: str) -> str:
     return re.sub(r"[ \t]+\n", "\n", cleaned)
 
 
+def _is_company_eligibility_question(case_id, text: str) -> bool:
+    if not text.strip():
+        return False
+    return route_intent(CopilotChatRequest(case_id=case_id, message=text.strip())) == "QUALIFICATION_SUMMARY"
+
+
 def answer_grounded_document_question(
     db: Session,
     request: CopilotChatRequest,
@@ -69,9 +75,12 @@ def answer_grounded_document_question(
         return _finalize(result)
 
     question = request.public_document_question.strip()
-    # Company eligibility remains product truth even if a caller tries to route it
-    # through public-document QA.
-    if route_intent(CopilotChatRequest(case_id=case.id, message=question)) == "QUALIFICATION_SUMMARY":
+    # Product truth wins even when a caller explicitly labels the request as
+    # DOCUMENT_QA or supplies a different public_document_question. The primary
+    # user message and the external-processing question are both checked so a
+    # company eligibility request cannot be smuggled through the RAG path.
+    if _is_company_eligibility_question(case.id, request.message) or _is_company_eligibility_question(case.id, question):
+        result.intent = "QUALIFICATION_SUMMARY"
         result.answer = "회사 참가 가능 여부는 공고문 생성 답변이 아니라 저장된 판정 결과에서 확인해 주세요."
         result.presentation = Presentation(conclusion=result.answer)
         return _finalize(result)

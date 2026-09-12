@@ -78,6 +78,58 @@ def _claims(line: str, word: str) -> bool:
     return not any(hedge in rest for hedge in _HEDGES)
 
 
+def unattributed_claims(
+    draft_text: str, user_claims: list[str]
+) -> tuple[list[str], int]:
+    """사용자가 한 주장을 초안이 **자기 말로 단정**한 문장을 찾는다.
+
+    규칙 5 는 "공고 원문의 요구와 사용자 입력을 구분하고, 확정되지 않은 주장을
+    단정하지 마라" 이다. 담당자가 "업계 1위" 라고 써 넣었을 때, 초안이
+    "당사는 업계 1위이다" 라고 쓰면 검증되지 않은 주장이 사실이 된다.
+    "당사는 업계 1위라고 제시하고 있으나 증빙이 필요하다" 면 구분한 것이다.
+
+    **분모를 함께 돌려준다.** 귀속은 표현의 문제라 낱말 목록으로 완벽히 가릴 수
+    없고, 실제로 이 숫자는 마커 하나에 크게 휘둘린다(측정해 보니 '제시'를 빼면
+    0건이 3건이 됐다). 그래서 "단정 0건" 만 내면 마커 목록을 잘 고른 덕인지
+    모델이 잘한 덕인지 구분되지 않는다. 주장을 담은 문장이 **몇 개나 있었는지**를
+    같이 내면, 마커 선택이 흔들려도 분모는 흔들리지 않는다.
+
+    안전 지표가 아니라 사람이 볼 후보 목록이다. 초안 전체를 읽는 대신 의심스러운
+    문장만 보게 해 주는 것이 목적이다.
+    """
+    if not user_claims:
+        return [], 0
+    flagged: list[str] = []
+    total = 0
+    for sentence in _SENTENCE.findall(draft_text):
+        text = sentence.strip()
+        if not text or not any(claim in text for claim in user_claims):
+            continue
+        total += 1
+        if any(marker in text for marker in _ATTRIBUTIONS):
+            continue
+        if any(marker in text for marker in _DISTANCING):
+            continue
+        flagged.append(text[:120])
+    return flagged, total
+
+
+def derive_user_claims(rendered_inputs: str, briefing_text: str) -> list[str]:
+    """사용자 입력에만 있고 브리핑에는 없는 주장 조각.
+
+    브리핑에도 있는 말은 코드가 확정한 사실이므로 단정해도 된다. 걸러야 하는 것은
+    **사용자만 말한** 내용이다.
+    """
+    claims: list[str] = []
+    for token in re.findall(r"[가-힣A-Za-z0-9%][가-힣A-Za-z0-9% ]{5,}", rendered_inputs):
+        piece = token.strip()
+        # 라벨("회사 및 보유 역량: ")이 아니라 값 쪽만 본다.
+        if len(piece) < 6 or piece in briefing_text:
+            continue
+        claims.append(piece)
+    return claims
+
+
 def derive_content_hints(value: object, raw: str) -> list[str]:
     """요건을 라벨 없이도 알아볼 수 있는 조각. 라벨이탈과 진짜 누락을 가르는 데 쓴다.
 
@@ -98,6 +150,17 @@ def derive_content_hints(value: object, raw: str) -> list[str]:
 
 _NUMBER = re.compile(r"\d[\d,]*")
 
+# 문장 단위로 본다. 귀속은 문장 안에서 이루어지기 때문이다.
+_SENTENCE = re.compile(r"[^.!?\n]+[.!?\n]?")
+
+# "사용자가 그렇게 말했다"고 밝히는 표현. 이 말이 있으면 단정이 아니다.
+_ATTRIBUTIONS = (
+    "제시", "밝히", "주장", "라고 함", "설명하", "따르면", "계획이", "하고자",
+    "예정", "목표", "방침", "의견", "요청", CHECK_MARKER,
+)
+# 확정하지 않겠다고 말하는 표현.
+_DISTANCING = ("확인 필요", "확인이 필요", "확정", "구체화", "검증", "증빙", "다만", "그러나")
+
 
 @dataclass
 class Violation:
@@ -114,6 +177,8 @@ class DraftReport:
     section_ok: bool = True
     check_marker_count: int = 0
     number_candidates: list[str] = field(default_factory=list)
+    claim_sentences: int = 0
+    unattributed: list[str] = field(default_factory=list)
     draft_chars: int = 0
 
     def count(self, kind: str) -> int:
@@ -137,6 +202,7 @@ def check_draft(
     flagged_labels: set[str],
     supplied_text: str,
     content_hints: dict[str, list[str]] | None = None,
+    user_claims: list[str] | None = None,
 ) -> DraftReport:
     """초안 하나를 검사한다.
 
@@ -219,4 +285,7 @@ def check_draft(
         if len(normalized) >= 2 and normalized not in supplied_numbers:
             report.number_candidates.append(match)
 
+    report.unattributed, report.claim_sentences = unattributed_claims(
+        draft_text, user_claims or []
+    )
     return report

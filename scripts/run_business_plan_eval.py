@@ -46,6 +46,7 @@ sys.path.insert(0, str(API_ROOT))
 from app.ai.quality_eval.business_plan import INPUT_SETS  # noqa: E402
 from app.ai.quality_eval.business_plan import check_draft  # noqa: E402
 from app.ai.quality_eval.business_plan import derive_content_hints  # noqa: E402
+from app.ai.quality_eval.business_plan import derive_user_claims  # noqa: E402
 from app.ai.quality_eval.business_plan import parse_qualification_items  # noqa: E402
 from app.ai.quality_eval.business_plan import render_briefing  # noqa: E402
 from app.ai.quality_eval.business_plan import verify_round_trip  # noqa: E402
@@ -101,6 +102,14 @@ def main() -> int:
     ap.add_argument("--input-sets", default=",".join(INPUT_SETS))
     ap.add_argument("--model", default=None)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--ablate-rule",
+        default=None,
+        help=(
+            "시스템 프롬프트에서 이 문구가 든 줄을 빼고 돌린다. 규칙이 실제로 일을 하는지"
+            " 통제 실험으로 확인할 때 쓴다 (예: --ablate-rule '글자 그대로 복사')."
+        ),
+    )
     ap.add_argument("--out", type=Path, default=None,
                     help="결과 JSON 을 쓸 폴더 (기본: --golden-root/results)")
     args = ap.parse_args()
@@ -120,6 +129,20 @@ def main() -> int:
     module = load_generator(args.narration_root)
     generate = module.generate_business_plan_draft
     make_inputs = module.BusinessPlanInputs
+
+    ablated_rule = None
+    if args.ablate_rule:
+        # 파일을 고치지 않고 실행 중에만 뺀다 — 다른 세션이 그 파일을 쓰고 있을 수 있다.
+        original = module.BUSINESS_PLAN_SYSTEM_PROMPT
+        kept = [line for line in original.splitlines() if args.ablate_rule not in line]
+        removed = [line for line in original.splitlines() if args.ablate_rule in line]
+        if not removed:
+            raise SystemExit(f"프롬프트에서 '{args.ablate_rule}' 를 찾지 못했습니다.")
+        ablated_rule = removed[0]
+        module.BUSINESS_PLAN_SYSTEM_PROMPT = "
+".join(kept)
+        print(f"[제거한 규칙] {ablated_rule}
+")
 
     cases = load_cases(baseline_path=baseline_path, bundle_path=bundle_path)
     if args.limit:
@@ -176,7 +199,7 @@ def main() -> int:
                 report = check_draft(
                     draft.text, case_id=case.case_id, items=items,
                     flagged_labels=flagged_labels, supplied_text=supplied,
-                    content_hints=content_hints,
+                    content_hints=content_hints, user_claims=user_claims,
                 )
                 records.append({
                     "case_id": case.case_id,
@@ -193,6 +216,8 @@ def main() -> int:
                     "sections_ok": report.section_ok,
                     "check_markers": report.check_marker_count,
                     "number_candidates": report.number_candidates,
+                    "claim_sentences": report.claim_sentences,
+                    "unattributed": report.unattributed,
                     "draft_chars": report.draft_chars,
                     "violations": [
                         {"kind": v.kind, "label": v.requirement_label, "detail": v.detail}
@@ -216,6 +241,9 @@ def main() -> int:
         "misstated_total": sum(r["misstated"] for r in records),
         "contradiction_total": sum(r["contradiction"] for r in records),
         "label_deviation_total": sum(r["label_deviation"] for r in records),
+        # 분모를 함께 낸다. 단정 0건이 마커 목록 덕인지 모델 덕인지 가르려면 필요하다.
+        "claim_sentences_total": sum(r["claim_sentences"] for r in records),
+        "unattributed_total": sum(len(r["unattributed"]) for r in records),
         "omission_rate": (
             sum(r["omission"] for r in records) / flagged_sum if flagged_sum else None
         ),
@@ -258,6 +286,7 @@ def main() -> int:
                 "baseline": str(baseline_path),
                 "narration_root": str(args.narration_root),
                 "model": args.model or os.getenv("OPENAI_MODEL_DEFAULT"),
+                "ablated_rule": ablated_rule,
                 "summary": summary,
                 "records": records,
             },

@@ -9,6 +9,7 @@
 
 from apps.api.app.ai.quality_eval.business_plan import check_draft
 from apps.api.app.ai.quality_eval.business_plan import derive_content_hints
+from apps.api.app.ai.quality_eval.business_plan.conformance import unattributed_claims
 from apps.api.app.ai.quality_eval.business_plan import parse_qualification_items
 from apps.api.app.ai.quality_eval.business_plan import render_briefing
 from apps.api.app.ai.quality_eval.business_plan import verify_round_trip
@@ -225,3 +226,29 @@ def test_the_briefing_format_is_a_contract_the_generator_can_read_back() -> None
         ("요건2 지역", "확인 필요"),
         ("요건3 인력", "미달"),
     ]
+
+
+def test_repeating_a_user_claim_as_fact_is_told_apart_from_attributing_it() -> None:
+    """규칙 5 — 사용자 입력과 확정된 사실을 구분하라.
+
+    담당자가 "업계 1위"라고 써 넣었을 때 초안이 그대로 단정하면 검증되지 않은
+    주장이 사실이 된다. "제시하고 있으나 증빙이 필요하다" 면 구분한 것이다.
+    """
+    claims = ["업계 1위", "100% 성공"]
+
+    asserted, total_a = unattributed_claims("당사는 업계 1위 기업이다.", claims)
+    attributed, total_b = unattributed_claims("당사는 업계 1위라고 제시하고 있다.", claims)
+    distanced, total_c = unattributed_claims("업계 1위 주장은 증빙 확인이 필요하다.", claims)
+
+    assert len(asserted) == 1
+    assert attributed == [] and distanced == []
+    # 분모는 표현과 무관하게 셋 다 1 이다 — 마커 목록이 흔들려도 분모는 안 흔들린다.
+    assert total_a == total_b == total_c == 1
+
+
+def test_claim_counting_needs_the_denominator_to_be_meaningful() -> None:
+    """주장이 아예 없는 초안의 '단정 0건' 은 성적이 아니다. 분모가 그것을 드러낸다."""
+    flagged, total = unattributed_claims("폐기물 반출 동선을 확인한다.", ["업계 1위"])
+
+    assert flagged == []
+    assert total == 0

@@ -4,24 +4,29 @@ import type { CopilotChatRequest, CopilotChatResponse, CopilotIntent, ReplyConte
 export type Turn = { id: number; question: string; response?: CopilotChatResponse };
 export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
-type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean };
+type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean; document_processing?: boolean };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
 type FailedRead = { request: ConversationRequest; turnId: number };
 
 async function sendConversationMessage(request: ConversationRequest): Promise<CopilotChatResponse> {
-  const { semantic_processing, ...payload } = request;
+  const { semantic_processing, document_processing, ...payload } = request;
+  const body: CopilotChatRequest = document_processing ? {
+    ...payload,
+    public_document_question: payload.public_document_question ?? payload.message,
+    allow_external_processing: true,
+  } : payload;
   const response = await apiFetch('/api/v1/copilot/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
-    throw new ApiError(body?.error?.message ?? `요청에 실패했습니다. (${response.status})`,
-      response.status, body?.error?.code ?? 'HTTP_ERROR');
+    const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(responseBody?.error?.message ?? `요청에 실패했습니다. (${response.status})`,
+      response.status, responseBody?.error?.code ?? 'HTTP_ERROR');
   }
   return response.json() as Promise<CopilotChatResponse>;
 }
@@ -63,6 +68,7 @@ export function copilotReadErrorMessage(error: unknown) {
     BASELINE_JUDGMENT_REQUIRED: '이전 버전 기준의 회사 판정이 없어 회사 영향까지 비교할 수 없습니다. 이전 버전 판정을 먼저 확인해 주세요.',
     QUALIFICATION_ANALYSIS_FAILED: '비교에 필요한 공고 분석이 완료되지 않았습니다. 분석 상태를 확인해 주세요.',
     STALE_ACTION_CONTEXT: '공고·분석·판정 기준이 바뀌었습니다. 현재 결과를 다시 확인해 주세요.',
+    DOCUMENT_QA_FAILED: '공고문 근거 답변을 안전하게 만들지 못했습니다. 원문을 직접 확인하거나 다시 시도해 주세요.',
   };
   return messages[error.code] ?? error.message;
 }
@@ -81,6 +87,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
         { text: '예: “우리 회사가 참가할 수 있는지 알려줘”, “무엇을 확인해야 해?”, “첫 번째 조건 근거 보여줘”', requirement_key: null, evidence_refs: [] },
         { text: '비교 가능한 이전 버전이 있는 공고라면 변경된 자격요건도 확인할 수 있어요.', requirement_key: null, evidence_refs: [] },
         { text: '자연어 의미 이해를 켜면 질문 텍스트만 외부 AI 분류기에 보내 더 다양한 표현을 이해할 수 있어요. 회사 프로필과 저장 입력은 보내지 않아요.', requirement_key: null, evidence_refs: [] },
+        { text: '공고문 근거 답변을 켜면 현재 공개 공고문을 검색하고, 실제 인용 근거가 있는 경우에만 생성형 설명을 보여줘요.', requirement_key: null, evidence_refs: [] },
         { text: '답변 반영이나 재검증은 대화만으로 실행하지 않고, 제안을 확인한 뒤 명시적인 실행 버튼을 눌러야 합니다.', requirement_key: null, evidence_refs: [] },
       ],
       limitations: [], next_action: null,
@@ -132,7 +139,7 @@ export class ConversationStore {
     this.update(caseId, { revision, busy: false, focus: null, reply: response.reply_context ?? undefined,
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }
-  async retry(caseId: string, semanticProcessing?: boolean) {
+  async retry(caseId: string, semanticProcessing?: boolean, documentProcessing?: boolean) {
     const failed = this.failed.get(caseId);
     if (!failed || this.get(caseId).busy) return;
     const { request, turnId } = failed;
@@ -141,6 +148,7 @@ export class ConversationStore {
     this.update(caseId, { revision, busy: true, error: '', errorCode: '', turns });
     await this.perform(caseId, { ...request,
       semantic_processing: semanticProcessing ?? request.semantic_processing,
+      document_processing: documentProcessing ?? request.document_processing,
       conversation_context: request.conversation_context ? {
         ...request.conversation_context, context_revision: revision, request_id: crypto.randomUUID(),
       } : undefined }, revision);
@@ -151,6 +159,7 @@ export class ConversationStore {
     intent?: CopilotIntent,
     page?: 'QUALIFICATION' | 'ASK_BACK' | 'EVIDENCE' | 'CHANGES',
     semanticProcessing = false,
+    documentProcessing = false,
   ) {
     const old = this.get(caseId);
     if (!caseId || old.busy || !question.trim()) return;
@@ -168,6 +177,7 @@ export class ConversationStore {
     const request: ConversationRequest = {
         case_id: caseId, message: question, intent: intent ?? inferE1Intent(question), requirement_key: old.focus,
         semantic_processing: semanticProcessing || undefined,
+        document_processing: documentProcessing || undefined,
         conversation_context: { request_id: crypto.randomUUID(), context_revision: revision, source_page: page,
           visible_requirement_keys: old.reply?.visible_requirement_keys ?? [], last_read_receipt: old.reply?.last_read_receipt,
           last_response_intent: old.turns.at(-1)?.response?.intent },

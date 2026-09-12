@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
+import { ActionCard } from '@/components/copilot/action-card';
+import { useActions } from '@/components/copilot/provider';
+import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
@@ -30,7 +33,6 @@ import {
   listQualificationQuestions,
   runQualificationAnalysis,
   runQualificationJudgment,
-  runQualificationRevalidation,
   type CanonicalRequirement,
   type CompanyProfile,
   type QualificationAnalysisRun,
@@ -38,10 +40,9 @@ import {
   type QualificationJudgment,
   type QualificationJudgmentRun,
   type QualificationQuestion,
-  type QualificationRevalidation,
 } from '@/lib/qualification-api';
 
-type Busy = 'load' | 'create' | 'review' | 'revalidation' | null;
+type Busy = 'load' | 'create' | 'review' | null;
 type ReviewStep = 'idle' | 'analysis' | 'judgment' | 'done';
 type RequirementView = {
   requirement: CanonicalRequirement;
@@ -107,7 +108,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const [sourceJudgment, setSourceJudgment] = useState<QualificationJudgmentRun | null>(null);
   const [displayJudgment, setDisplayJudgment] = useState<QualificationJudgmentRun | null>(null);
   const [questions, setQuestions] = useState<QualificationQuestion[]>([]);
-  const [revalidation, setRevalidation] = useState<QualificationRevalidation | null>(null);
+  const { controller, action } = useActions(requestedCaseId ?? '');
+  const actionLocked = isLocked(action);
+  const revalidation = currentRevalidation(action.result, {
+    caseId: requestedCaseId ?? '', baselineAnalysisId: baselineAnalysis?.id,
+    currentAnalysisId: currentAnalysis?.id, judgmentId: displayJudgment?.id,
+  });
   const [selectedEvidenceKey, setSelectedEvidenceKey] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>('load');
   const [reviewStep, setReviewStep] = useState<ReviewStep>('idle');
@@ -143,7 +149,6 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setDisplayJudgment(workspace.displayJudgment);
       setQuestions(workspace.questions);
       setReviewStep(workspace.displayJudgment ? 'done' : 'idle');
-      setRevalidation(null);
       setSelectedEvidenceKey(null);
     }
 
@@ -179,6 +184,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     return () => { window.clearTimeout(timer); generation.current += 1; };
   }, [initialize]);
 
+  useEffect(() => {
+    if (action.stage !== 'COMPLETED') return;
+    const timer = window.setTimeout(() => void initialize(), 0);
+    return () => window.clearTimeout(timer);
+  }, [action.stage, action.result?.result_judgment_run_id, initialize]);
+
   async function createCase() {
     if (!selectedNotice || !companyId) return;
     setBusy('create');
@@ -206,7 +217,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   }
 
   async function runFullReview(force = false) {
-    if (!activeCase) return;
+    if (!activeCase || busy !== null || isLocked(controller.get(activeCase.id))) return;
+    if (!controller.acquireReview(activeCase.id)) return;
     setBusy('review');
     setError('');
     setMessage('');
@@ -214,7 +226,6 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setDisplayJudgment(null);
     setSourceJudgment(null);
     setQuestions([]);
-    setRevalidation(null);
     setReviewStep('analysis');
     try {
       const [baseline, current] = await Promise.all([
@@ -248,24 +259,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setReviewStep('idle');
       setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');
     } finally {
+      controller.releaseReview(activeCase.id);
       if (request === generation.current) setBusy(null);
-    }
-  }
-
-  async function revalidate() {
-    if (!activeCase || !sourceJudgment || !baselineAnalysis || !currentAnalysis) return;
-    setBusy('revalidation');
-    setError('');
-    try {
-      const result = await runQualificationRevalidation(activeCase.id, { source_judgment_run_id: sourceJudgment.id, baseline_analysis_run_id: sourceJudgment.analysis_run_id, current_analysis_run_id: currentAnalysis.id });
-      setRevalidation(result);
-      setDisplayJudgment(result.result);
-      setQuestions(await listQualificationQuestions(activeCase.id, result.result.id));
-      setMessage(`변경 조건 ${result.revalidated_keys.length}개를 다시 판정했습니다.`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '변경공고 재검증에 실패했습니다.');
-    } finally {
-      setBusy(null);
     }
   }
 
@@ -302,8 +297,16 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const pipelineDiagnostics = analysisDetail?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
   const droppedRequirements = analysisDetail?.dropped_requirements ?? [];
 
-  if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12"><output>검토 데이터를 불러오고 있습니다.</output></main>;
-  if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12" role="alert">{error || '검토 건을 찾을 수 없습니다.'}<Link href="/notices" className="ml-4 underline">공고 찾기</Link></main>;
+  if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12">
+    {requestedCaseId && <ActionCard caseId={requestedCaseId} />}
+    <output>검토 데이터를 불러오고 있습니다.</output>
+  </main>;
+  if (requestedCaseId && !activeCase) return <main className="app-shell-container py-12">
+    <ActionCard caseId={requestedCaseId} />
+    <p role="alert">{error || '검토 건을 찾을 수 없습니다.'}</p>
+    <Button variant="outline" className="mt-4" onClick={() => void initialize()}>화면 정보 다시 조회</Button>
+    <Link href="/notices" className="ml-4 underline">공고 찾기</Link>
+  </main>;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -325,6 +328,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             </section>
 
             <CaseTabs caseId={activeCase.id} active="qualification" />
+            <ActionCard caseId={activeCase.id} />
             <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} analysis={analysisDetail} />
 
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
@@ -343,7 +347,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
               <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{unknown}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p></div>
             </section>
 
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
 
             <section className="mt-9">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
@@ -352,13 +356,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
-                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { window.location.href = askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref; } : undefined} />;
-                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{busy === 'review' ? '자격요건을 분석하고 있습니다. 잠시만 기다려 주세요.' : analysisDetail ? '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.' : '아직 자격검토를 실행하지 않았습니다.'}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
+                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
+                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{busy === 'review' ? '자격요건을 분석하고 있습니다. 잠시만 기다려 주세요.' : analysisDetail ? '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.' : '아직 자격검토를 실행하지 않았습니다.'}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
             {/* P0-5 · 위 표에 없는 조건을 말한다. 이걸 안 그리면 사용자는 빠진 조건이 있는 줄 모른 채 판정을 믿는다 (NFR-1). */}
             {(noticeFacts.length > 0 || droppedRequirements.length > 0) && (
-              <section className="mt-7 rounded-[20px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-6 py-5">
+              <section id="analysis-scope" className="mt-7 rounded-[20px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-6 py-5">
                 <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건 {noticeFacts.length + droppedRequirements.length}건</h2>
                 <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">아래 항목은 위 표의 판정에 반영되지 않았습니다. 제출 전에 공고 원문에서 직접 확인해 주세요.</p>
 
@@ -411,7 +415,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {analysisDetail?.requirements.length ?? 0}</Badge><Badge variant="outline">Evidence {analysisDetail?.evidence.length ?? 0}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void revalidate()} disabled={!canRevalidate || busy !== null}>{busy === 'revalidation' ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 변경 재검증</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
 
             <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>

@@ -4,6 +4,9 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 
+import { CopilotProvider } from '@/components/copilot/provider';
+import { CopilotPanel } from '@/components/copilot/panel';
+
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
 import { TitleBand, type TitleBandProps } from '@/components/product/title-band';
@@ -116,13 +119,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         : '';
 
   return (
-    <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
+    <CopilotProvider><div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
       <AppHeader pathname={pathname} />
       {page.showTitleBand !== false && (
         <TitleBand title={page.title} description={page.description} breadcrumb={page.breadcrumb} variant={page.variant} />
       )}
       <div className={`app-shell-content ${legacyRouteClass}`}>{children}</div>
       <AppFooter />
-    </div>
+      <CopilotPanel />
+    </div></CopilotProvider>
   );
 }

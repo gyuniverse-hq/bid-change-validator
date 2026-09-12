@@ -132,7 +132,7 @@ export function useCaseWorkspace(caseId: string | null) {
       if (request === generation.current) setLoaded(value);
     } catch (cause) {
       if (request === generation.current) {
-        setLoaded(null);
+        // Preserve last verified content; the caller displays the refresh failure.
         setError(cause instanceof Error ? cause.message : '검토 데이터를 불러오지 못했습니다.');
       }
     }

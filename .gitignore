@@ -39,3 +39,10 @@ Thumbs.db
 data/demo/
 docs/llm-rag/*.zip
 *.7z
+
+# Generated document indexes (not source code)
+data/rag/
+data/document-rag/
+
+# Ephemeral CI evidence
+.ci-results/

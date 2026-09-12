@@ -45,6 +45,7 @@ sys.path.insert(0, str(API_ROOT))
 
 from app.ai.quality_eval.business_plan import INPUT_SETS  # noqa: E402
 from app.ai.quality_eval.business_plan import check_draft  # noqa: E402
+from app.ai.quality_eval.business_plan import derive_content_hints  # noqa: E402
 from app.ai.quality_eval.business_plan import parse_qualification_items  # noqa: E402
 from app.ai.quality_eval.business_plan import render_briefing  # noqa: E402
 from app.ai.quality_eval.business_plan import verify_round_trip  # noqa: E402
@@ -151,6 +152,14 @@ def main() -> int:
             for (label, _status), judgment in zip(items, case.judgments)
             if judgment["status"] in ("UNSATISFIED", "UNKNOWN")
         }
+        # 라벨을 안 쓰고 내용으로만 적은 경우를 '숨김'과 가르려면 힌트가 필요하다.
+        content_hints = {
+            label: derive_content_hints(
+                case.value_by_key.get(judgment["requirement_key"]),
+                case.raw_by_key.get(judgment["requirement_key"], ""),
+            )
+            for (label, _status), judgment in zip(items, case.judgments)
+        }
 
         for input_name in input_names:
             payload = make_inputs(**INPUT_SETS[input_name])
@@ -167,6 +176,7 @@ def main() -> int:
                 report = check_draft(
                     draft.text, case_id=case.case_id, items=items,
                     flagged_labels=flagged_labels, supplied_text=supplied,
+                    content_hints=content_hints,
                 )
                 records.append({
                     "case_id": case.case_id,
@@ -179,6 +189,7 @@ def main() -> int:
                     "omission": report.count("OMISSION"),
                     "misstated": report.count("MISSTATED"),
                     "contradiction": report.count("CONTRADICTION"),
+                    "label_deviation": report.count("LABEL_DEVIATION"),
                     "sections_ok": report.section_ok,
                     "check_markers": report.check_marker_count,
                     "number_candidates": report.number_candidates,
@@ -204,6 +215,7 @@ def main() -> int:
         "omission_total": sum(r["omission"] for r in records),
         "misstated_total": sum(r["misstated"] for r in records),
         "contradiction_total": sum(r["contradiction"] for r in records),
+        "label_deviation_total": sum(r["label_deviation"] for r in records),
         "omission_rate": (
             sum(r["omission"] for r in records) / flagged_sum if flagged_sum else None
         ),
@@ -223,6 +235,7 @@ def main() -> int:
                 "omission": sum(r["omission"] for r in records if r["input_set"] == name),
                 "misstated": sum(r["misstated"] for r in records if r["input_set"] == name),
                 "contradiction": sum(r["contradiction"] for r in records if r["input_set"] == name),
+                "label_deviation": sum(r["label_deviation"] for r in records if r["input_set"] == name),
                 "flagged": sum(r["flagged_total"] for r in records if r["input_set"] == name),
             }
             for name in input_names

@@ -33,6 +33,7 @@ from .briefing_format import verify_round_trip
 from .conformance import DraftReport
 from .conformance import Violation
 from .conformance import check_draft
+from .conformance import derive_content_hints
 from .inputs import INPUT_SETS
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "parse_qualification_items",
     "verify_round_trip",
     "check_draft",
+    "derive_content_hints",
     "DraftReport",
     "Violation",
     "INPUT_SETS",

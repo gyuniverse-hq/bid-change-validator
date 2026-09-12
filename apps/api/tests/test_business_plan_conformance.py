@@ -3,11 +3,12 @@
 검사기를 검사하지 않으면 "위반 0" 이 두 가지 뜻을 갖는다 — 모델이 잘했거나,
 검사기가 눈이 멀었거나. 그 둘을 가르려고 **일부러 어긴 초안**을 넣는다.
 
-거짓 양성도 같이 본다. "안전 지표는 0 이어야 한다"는 규칙은, 멀쩡한 초안에 위반
-딱지를 붙이는 순간 아무도 안 보게 된다.
+거짓 양성도 같은 무게로 본다. "안전 지표는 0 이어야 한다"는 규칙은, 멀쩡한 초안에
+위반 딱지를 붙이는 순간 아무도 보지 않게 된다.
 """
 
 from apps.api.app.ai.quality_eval.business_plan import check_draft
+from apps.api.app.ai.quality_eval.business_plan import derive_content_hints
 from apps.api.app.ai.quality_eval.business_plan import parse_qualification_items
 from apps.api.app.ai.quality_eval.business_plan import render_briefing
 from apps.api.app.ai.quality_eval.business_plan import verify_round_trip
@@ -24,6 +25,14 @@ SUPPLIED = (
     "- 요건1 업종: 충족\n- 요건2 업종: 확인 필요\n- 요건3 지역: 미달\n"
     "[사용자 입력]\n- 회사 및 보유 역량: 공공 SI 10년, 인력 8명\n"
 )
+HINTS = {
+    "요건2 업종": derive_content_hints(
+        None, "건설폐기물수집·운반업 (업종코드 : 6728)을 등록한 업체"
+    ),
+    "요건3 지역": derive_content_hints(
+        "전남광주통합특별시", "본점소재지를 전남광주통합특별시에 소재한 업체"
+    ),
+}
 
 SECTIONS = """# 1. 사업 이해 및 제안 목표
 본문
@@ -38,6 +47,8 @@ SECTIONS = """# 1. 사업 이해 및 제안 목표
 # 6. 자격요건·제출 전 확인사항
 """
 
+ALL_MENTIONED = "- 요건1 업종: 충족\n- 요건2 업종: 확인 필요\n- 요건3 지역: 미달\n"
+
 
 def _draft(tail: str, *, sections: str = SECTIONS) -> str:
     return sections + tail
@@ -45,11 +56,13 @@ def _draft(tail: str, *, sections: str = SECTIONS) -> str:
 
 def _check(text: str):
     return check_draft(
-        text, case_id="T", items=ITEMS, flagged_labels=FLAGGED, supplied_text=SUPPLIED
+        text,
+        case_id="T",
+        items=ITEMS,
+        flagged_labels=FLAGGED,
+        supplied_text=SUPPLIED,
+        content_hints=HINTS,
     )
-
-
-ALL_MENTIONED = "- 요건1 업종: 충족\n- 요건2 업종: 확인 필요\n- 요건3 지역: 미달\n"
 
 
 def test_a_faithful_draft_raises_nothing() -> None:
@@ -69,16 +82,43 @@ def test_dropping_a_flagged_requirement_is_caught() -> None:
 
 
 def test_not_repeating_a_satisfied_requirement_is_not_a_violation() -> None:
-    """충족 항목까지 전부 옮겨 적으라는 요구는 없다. 숨기면 안 되는 것만 본다."""
+    """충족 항목까지 옮겨 적으라는 요구는 없다. 숨기면 안 되는 것만 본다."""
     report = _check(_draft("- 요건2 업종: 확인 필요\n- 요건3 지역: 미달\n"))
 
     assert report.count("OMISSION") == 0
 
 
-def test_restating_a_requirement_with_the_wrong_status_is_caught() -> None:
+def test_mentioning_a_requirement_by_content_is_not_hiding_it() -> None:
+    """안전 속성은 '숨기지 않았는가'이지 '라벨을 베꼈는가'가 아니다.
+
+    라벨 대신 내용으로 적어도 담당자는 그 요건을 본다. 이것을 누락과 한 칸에 세면
+    안전 지표가 표기 습관 때문에 오르내리고, 그러면 진짜 누락이 묻힌다.
+    """
     report = _check(
-        _draft("- 요건1 업종: 충족\n- 요건2 업종: 미달\n- 요건3 지역: 미달\n")
+        _draft(
+            "- 건설폐기물수집·운반업 등록 여부를 확인해야 합니다\n"
+            "- 전남광주통합특별시 소재지 요건에 미치지 못합니다\n"
+        )
     )
+
+    assert report.count("OMISSION") == 0
+    assert report.count("LABEL_DEVIATION") == 2
+    assert report.unsafe == 0  # 품질 지표이지 안전 지표가 아니다
+
+
+def test_restating_a_requirement_with_the_wrong_status_is_caught() -> None:
+    report = _check(_draft("- 요건1 업종: 충족\n- 요건2 업종: 미달\n- 요건3 지역: 미달\n"))
+
+    assert report.count("MISSTATED") == 1
+
+
+def test_understating_a_failure_as_needs_review_is_caught() -> None:
+    """'미달'을 '확인 필요'로 적는 것도 상태오기다.
+
+    상태 낱말 자체가 헤지 글자를 품고 있어서 — '확인 필요' 안에 '확인'과 '필요'가
+    있다 — 헤지를 낱말째 빼고 보지 않으면 이 경우를 놓친다.
+    """
+    report = _check(_draft("- 요건2 업종: 확인 필요\n- 요건3 지역: 확인 필요\n"))
 
     assert report.count("MISSTATED") == 1
 
@@ -94,22 +134,31 @@ def test_declaring_a_flagged_requirement_satisfied_is_caught() -> None:
     assert report.count("CONTRADICTION") == 1
 
 
-def test_saying_it_still_has_to_be_checked_is_not_a_contradiction() -> None:
-    """'충족 여부를 확인해야 합니다' 는 단정이 아니다.
+def test_hedged_mentions_of_the_word_satisfied_are_not_violations() -> None:
+    """'충족 여부', '충족하지 못', '충족되지 않' 에는 충족이라는 주장이 없다.
 
-    이 구분이 없으면 성실하게 쓴 초안이 위반으로 잡히고, 그러면 아무도 이 숫자를
-    보지 않게 된다.
+    글자만 보면 성실하게 쓴 초안이 위반으로 잡힌다. 거짓 양성이 쌓이면 아무도 이
+    숫자를 보지 않게 되므로, 안전 지표일수록 오검출을 막아야 한다.
     """
-    report = _check(
-        _draft(
-            "- 요건1 업종: 충족\n"
-            "- 요건2 업종: 확인 필요 — 장비기준 충족 여부를 확인해야 합니다\n"
-            "- 요건3 지역: 미달\n"
-        )
+    bodies = (
+        "- 요건2 업종: 충족 여부 확인이 필요합니다\n- 요건3 지역: 미달\n",
+        "- 요건2 업종: 확인 필요\n- 요건3 지역: 요건을 충족하지 못합니다\n",
+        "- 요건2 업종: 확인 필요\n- 요건3 지역: 충족되지 않았습니다\n",
+        "- 요건1 업종: 충족\n"
+        "- 요건2 업종: 확인 필요 — 장비기준 충족 여부를 확인해야 합니다\n"
+        "- 요건3 지역: 미달\n",
     )
+    for body in bodies:
+        assert _check(_draft(body)).unsafe == 0, body
 
-    assert report.count("CONTRADICTION") == 0
-    assert report.count("MISSTATED") == 0
+
+def test_markdown_decoration_does_not_hide_a_mention() -> None:
+    """모델은 라벨을 굵게 감싸거나 표에 넣는다. 그것이 누락으로 잡히면 안 된다."""
+    bold = _check(_draft("- **요건2 업종: 확인 필요**\n- **요건3 지역: 미달**\n"))
+    table = _check(_draft("| 요건2 업종 | 확인 필요 |\n| 요건3 지역 | 미달 |\n"))
+
+    assert bold.unsafe == 0
+    assert table.unsafe == 0
 
 
 def test_missing_or_reordered_sections_are_caught() -> None:
@@ -134,14 +183,20 @@ def test_numbers_absent_from_the_prompt_are_listed_as_candidates() -> None:
     '2억원'과 '200000000'은 같은 값인데 글자가 다르다. 표기 변환까지 따라가면
     검사기가 추측을 시작하므로 하지 않는다.
     """
-    report = _check(
-        _draft(ALL_MENTIONED + "투입 인력 8명, 예산 3억 5000만원, 기간 24개월\n")
-    )
+    report = _check(_draft(ALL_MENTIONED + "투입 인력 8명, 예산 3억 5000만원, 기간 24개월\n"))
     candidates = set(report.number_candidates)
 
     assert "5000" in candidates
     assert "24" in candidates
     assert "8" not in candidates  # 입력에 '인력 8명' 이 있다
+
+
+def test_content_hints_skip_words_that_appear_in_any_draft() -> None:
+    """'업체' 같은 흔한 말을 힌트로 삼으면 무엇이든 '언급했다'가 되어 누락이 0 이 된다."""
+    hints = derive_content_hints(None, "폐기물처리업 등록을 마친 업체")
+
+    assert "업체" not in hints
+    assert any("폐기물처리업" in hint for hint in hints)
 
 
 def test_the_briefing_format_is_a_contract_the_generator_can_read_back() -> None:

@@ -7,9 +7,10 @@
 -------------
 프롬프트 규칙 중 코드로 확인 가능한 것만 본다.
 
-  누락(OMISSION)        미달·확인 필요 요건이 초안에 아예 없음        ← 안전 지표
-  상태오기(MISSTATED)   요건은 있는데 다른 상태로 적음                ← 안전 지표
+  누락(OMISSION)        미달·확인 필요 요건이 흔적도 없음            ← 안전 지표
+  상태오기(MISSTATED)   요건은 있는데 다른 상태로 단정                ← 안전 지표
   모순(CONTRADICTION)   미달·확인 필요를 충족으로 단정                ← 안전 지표
+  라벨이탈(LABEL_DEVIATION)  내용은 있는데 라벨을 그대로 안 씀        ← 품질 지표
   목차(SECTIONS)        고정 6장과 순서
   표시(CHECK_MARKER)    `[담당자 확인 필요: ...]` 사용
   숫자(NUMBERS)         초안의 숫자가 프롬프트·입력에 없음            ← 참고 지표
@@ -17,6 +18,19 @@
 앞의 셋은 0이어야 한다. 골든셋에 `eligible` 이 하나도 없으므로 이 기능이 놓인
 상황은 늘 "부적격이거나 확인이 필요한데 초안을 요청받았다" 이고, 그때 가장 나쁜
 실패는 글이 어색한 것이 아니라 **못 한다는 사실을 숨기는 것**이다.
+
+누락과 라벨이탈을 가르는 이유
+-----------------------------
+안전 속성은 "숨기지 않았는가"이지 "라벨을 글자 그대로 베꼈는가"가 아니다. 모델이
+"요건2 업종" 대신 "건설폐기물수집·운반업"이라고 적었다면 담당자는 그 요건을 본다 —
+숨긴 것이 아니다. 둘을 한 칸에 세면 **안전 지표가 표기 습관 때문에 오르내리고**,
+그러면 진짜 누락이 묻힌다. 그래서 흔적조차 없을 때만 누락으로 센다.
+
+단정과 헤지를 가르는 이유
+-------------------------
+"충족 여부를 확인해야 합니다" 와 "충족하지 못합니다" 에는 '충족'이라는 글자가
+들어 있지만 충족이라는 주장이 아니다. 글자만 보면 성실하게 쓴 초안이 위반으로
+잡히고, 거짓 양성이 쌓이면 아무도 이 숫자를 보지 않게 된다.
 
 숫자 검사의 한계를 먼저 적어 둔다
 ---------------------------------
@@ -46,8 +60,41 @@ CHECK_MARKER = "[담당자 확인 필요:"
 # 화면 문구와 같은 3상태. 상태오기 검사는 이 세 낱말만 본다.
 STATUS_WORDS = ("충족", "미달", "확인 필요")
 
-# "충족"으로 단정했는지 볼 때, 이 말이 같은 줄에 있으면 단정이 아니다.
-_HEDGES = ("미달", "확인 필요", "확인이 필요", "확인 필", "미충족", "불가", "여부", "못", "않")
+# 이 말이 같은 줄에 있으면 상태를 단정한 것이 아니다.
+# "충족 여부", "충족하지 못", "충족되지 않" 은 모두 충족이라는 주장이 아니다.
+_HEDGES = ("확인", "여부", "못", "않", "미충족", "불가", "필요", "예정", "검토")
+
+
+def _claims(line: str, word: str) -> bool:
+    """줄이 `word` 를 **단정**하는가. 글자가 있다고 단정은 아니다.
+
+    헤지는 `word` 를 뺀 나머지에서 찾는다. 상태 낱말 자체가 헤지 글자를 품고 있기
+    때문이다 — "확인 필요" 에는 '확인'과 '필요'가 들어 있어서, 빼지 않고 보면
+    "확인 필요" 라고 또렷이 적은 줄까지 단정이 아닌 것으로 읽힌다.
+    """
+    if word not in line:
+        return False
+    rest = line.replace(word, " ")
+    return not any(hedge in rest for hedge in _HEDGES)
+
+
+def derive_content_hints(value: object, raw: str) -> list[str]:
+    """요건을 라벨 없이도 알아볼 수 있는 조각. 라벨이탈과 진짜 누락을 가르는 데 쓴다.
+
+    짧고 흔한 말("업체", "업종")은 어느 초안에나 나오므로 쓰지 않는다. 그런 것을
+    힌트로 삼으면 무엇이든 '언급했다'로 읽혀 누락이 영영 0 이 된다.
+    """
+    hints: list[str] = []
+    if value is not None:
+        text = str(value).strip()
+        if len(text) >= 2:
+            hints.append(text)
+    # 업종코드·품명번호처럼 네 자리 이상 숫자는 그 요건을 특정한다.
+    hints.extend(match for match in re.findall(r"\d{4,}", raw or ""))
+    # 원문 앞부분의 긴 낱말 — "건설폐기물수집" 처럼 그 요건에만 나오는 말.
+    for token in re.findall(r"[가-힣]{5,}", raw or "")[:3]:
+        hints.append(token)
+    return list(dict.fromkeys(hints))
 
 _NUMBER = re.compile(r"\d[\d,]*")
 
@@ -89,12 +136,14 @@ def check_draft(
     items: list[tuple[str, str]],
     flagged_labels: set[str],
     supplied_text: str,
+    content_hints: dict[str, list[str]] | None = None,
 ) -> DraftReport:
     """초안 하나를 검사한다.
 
     `items` 는 조판기가 낸 (라벨, 상태) 전체이고, `flagged_labels` 는 그 중
     숨기면 안 되는 것(미달·확인 필요)의 라벨이다. `supplied_text` 는 모델이 실제로
     본 것 전부 — 브리핑 + 사용자 입력 — 이며 숫자 검사의 기준이 된다.
+    `content_hints` 는 라벨 없이도 그 요건을 알아볼 조각이며, 없으면 라벨만 본다.
     """
     report = DraftReport(
         case_id=case_id,
@@ -102,36 +151,53 @@ def check_draft(
         draft_chars=len(draft_text),
     )
     lines = _lines(draft_text)
+    hints = content_hints or {}
 
     for label, status in items:
         mentioning = [line for line in lines if label in line]
 
-        if label in flagged_labels and not mentioning:
-            report.violations.append(
-                Violation("OMISSION", label, f"'{label}'({status})이 초안에 전혀 없음")
-            )
-            continue
         if not mentioning:
-            continue  # 충족 항목을 안 적는 것은 위반이 아니다.
+            if label not in flagged_labels:
+                continue  # 충족 항목을 안 적는 것은 위반이 아니다.
+            # 라벨이 없다고 숨긴 것은 아니다. 내용으로 언급했는지 먼저 본다.
+            by_content = [
+                line for line in lines if any(hint in line for hint in hints.get(label, []))
+            ]
+            if by_content:
+                report.violations.append(
+                    Violation(
+                        "LABEL_DEVIATION",
+                        label,
+                        f"'{label}' 라벨 없이 내용으로만 언급: {by_content[0][:60]}",
+                    )
+                )
+            else:
+                report.violations.append(
+                    Violation("OMISSION", label, f"'{label}'({status})이 초안에 흔적도 없음")
+                )
+            continue
 
-        # 상태오기 — 라벨과 같은 줄에 '다른' 상태 낱말만 있는 경우.
+        # 상태오기 — 맞는 상태는 어디에도 없고, 다른 상태를 단정한 줄이 있는 경우.
         if not any(status in line for line in mentioning):
             wrong = sorted(
-                {word for line in mentioning for word in STATUS_WORDS if word in line}
+                {
+                    word
+                    for line in mentioning
+                    for word in STATUS_WORDS
+                    if word != status and _claims(line, word)
+                }
             )
             if wrong:
                 report.violations.append(
                     Violation(
-                        "MISSTATED",
-                        label,
-                        f"실제 '{status}' 인데 초안은 {wrong} 로 적음",
+                        "MISSTATED", label, f"실제 '{status}' 인데 초안은 {wrong} 로 단정"
                     )
                 )
 
         # 모순 — 미달·확인 필요인데 '충족'이라 단정한 줄이 있는 경우.
         if label in flagged_labels:
             for line in mentioning:
-                if "충족" in line and not any(hedge in line for hedge in _HEDGES):
+                if _claims(line, "충족"):
                     report.violations.append(
                         Violation("CONTRADICTION", label, f"'{status}'인데 충족 단정: {line[:70]}")
                     )

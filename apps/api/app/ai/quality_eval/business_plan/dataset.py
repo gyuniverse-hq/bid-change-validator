@@ -30,6 +30,7 @@ class GoldenCase:
     judgments: list[dict[str, Any]]
     raw_by_key: dict[str, str]
     type_by_key: dict[str, str]
+    value_by_key: dict[str, object]
 
     @property
     def flagged(self) -> list[dict[str, Any]]:
@@ -65,10 +66,12 @@ def load_cases(
             continue
         raw_by_key: dict[str, str] = {}
         type_by_key: dict[str, str] = {}
+        value_by_key: dict[str, object] = {}
         for item in fixture["canonical_inputs"]:
             requirement = item["requirement"]
             raw_by_key[requirement["requirement_key"]] = requirement.get("raw") or ""
             type_by_key[requirement["requirement_key"]] = requirement["type"]
+            value_by_key[requirement["requirement_key"]] = requirement.get("value")
         cases.append(
             GoldenCase(
                 case_id=entry["case_id"],
@@ -78,6 +81,7 @@ def load_cases(
                 judgments=entry["result"]["judgments"],
                 raw_by_key=raw_by_key,
                 type_by_key=type_by_key,
+                value_by_key=value_by_key,
             )
         )
     if not cases:

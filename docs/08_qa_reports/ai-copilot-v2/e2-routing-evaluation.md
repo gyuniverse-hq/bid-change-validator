@@ -24,7 +24,7 @@ Run 2→3 주요 보정:
 
 ## 2. 최초 Combined 제품 경로 평가
 
-실제 제품 순서:
+초기 제품 순서:
 
 ```text
 E1 frontend bounded alias
@@ -42,7 +42,7 @@ E1 frontend bounded alias
 - cached Semantic source latency: p50 1.98s / p95 2.78s / mean 2.06s
 - model calls in combined evaluator: **0**
 
-## 3. Combined 실패 10건 원인
+## 3. 최초 Combined 실패 10건 원인
 
 실패 10건은 **Run 3 Semantic Router가 틀린 사례가 아니다.** 동일 질문을 Semantic Router 단독으로는 10/10 모두 맞췄다. 앞단 deterministic router가 keyword substring을 먼저 확정해 semantic fallback까지 도달하지 못했다.
 
@@ -79,9 +79,29 @@ Semantic 실패/UNKNOWN/낮은 confidence인 경우:
 - `apps/api/app/copilot/router.py::resolve_chat_payload`
 - `apps/api/tests/test_copilot_semantic_optin.py`
 
-## 5. 평가 재현성 개선
+## 5. 최종 Combined v2 결과
 
-Combined evaluator는 더 이상 모델을 다시 호출하지 않는다.
+동일 Semantic Run 3 결과를 캐시로 재사용하고, 실제 제품 정책 함수 `resolve_chat_payload()`를 사용해 다시 계산했다.
+
+| 지표 | Combined v2 |
+|---|---:|
+| 전체 | **100/100 (100%)** |
+| Document QA | **60/60 (100%)** |
+| Judgment Explanation | **32/32 (100%)** |
+| Change Comparison | **8/8 (100%)** |
+| route source | Semantic 64 / Deterministic 36 |
+| semantic fallback | 64/100 (64%) |
+| weak deterministic recheck | **10건** |
+| cached semantic latency p50 | 1.98s |
+| cached semantic latency p95 | 2.84s |
+| cached semantic latency mean | 2.07s |
+| combined evaluator model calls | **0** |
+
+최종 10개 weak deterministic false positive는 모두 Semantic 재검토로 교정됐다.
+
+## 6. 평가 재현성
+
+Combined evaluator는 모델을 다시 호출하지 않는다.
 
 ```text
 completed Semantic Run JSON
@@ -91,18 +111,22 @@ completed Semantic Run JSON
 
 따라서:
 - model calls = 0
-- Semantic Run과 Combined Run의 모델 샘플이 정확히 동일
+- Semantic Run과 Combined Run의 모델 샘플이 동일
 - 비용/네트워크 변동 제거
-- 제품 코드와 evaluator가 `resolve_chat_payload()` 정책을 공유
+- 제품 코드와 evaluator가 `resolve_chat_payload()` 정책 공유
 
-## 6. 다음 검증
+## 7. E2 종료 해석
 
-동일 `e2-semantic-run3.json`을 사용해 새 combined policy를 재측정한다.
+E2에서 확정할 수 있는 것은 **고정 100문항의 intent routing**이다.
 
-```powershell
-python -m apps.api.app.scripts.evaluate_copilot_e2_combined_routing `
-  --semantic-results e2-semantic-run3.json `
-  --output e2-combined-result-v2.json
-```
+- E0 자유입력 routing: **1/100 (1%)**
+- E1 bounded alias routing: **41/100 (41%)**
+- E2 combined routing: **100/100 (100%)**
 
-그 다음 I01~I20을 E2 코드 계약 기준으로 다시 분류해 task completion / safety 변화를 기록한다.
+이 값은 다음을 의미하지 않는다.
+- 답변 내용 정답률 100%
+- RAG retrieval/grounded answer 정확도 100%
+- 사용자 과업 완료율 100%
+- 독립 holdout 일반화 성능 100%
+
+특히 I01~I20의 문서 의미 과업은 E2에서 intent를 올바르게 골라도 실제 DOCUMENT_QA 생성 답변 연결이 없으면 업무 완료가 되지 않는다. 따라서 **E3에서 retrieval + grounded answer를 연결한 뒤 task completion을 다시 평가**한다.

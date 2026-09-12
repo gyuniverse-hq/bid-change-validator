@@ -1,3 +1,4 @@
+import { ApiError } from './api';
 import { sendCopilotMessage, type CopilotChatRequest, type CopilotChatResponse, type CopilotIntent, type ReplyContext } from './copilot-api';
 
 export type Turn = { id: number; question: string; response?: CopilotChatResponse };
@@ -33,6 +34,18 @@ export function inferE1Intent(question: string): CopilotIntent | undefined {
   if (['무엇이바뀌', '뭐가바뀌', '바뀐내용', '달라진내용', '변경내용']
       .some(term => text.includes(term))) return 'CHANGED_NOTICE';
   return undefined;
+}
+
+export function copilotReadErrorMessage(error: unknown) {
+  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : '조회하지 못했습니다.';
+  const messages: Record<string, string> = {
+    CHANGED_NOTICE_REQUIRED: '변경사항을 비교하려면 비교할 이전 버전과 회사 기준이 필요합니다. 현재 공고의 버전과 선택한 회사를 확인해 주세요.',
+    QUALIFICATION_ANALYSIS_REQUIRED: '비교할 공고 버전 중 분석이 준비되지 않은 버전이 있습니다. 분석이 완료된 뒤 다시 비교해 주세요.',
+    BASELINE_JUDGMENT_REQUIRED: '이전 버전 기준의 회사 판정이 없어 회사 영향까지 비교할 수 없습니다. 이전 버전 판정을 먼저 확인해 주세요.',
+    QUALIFICATION_ANALYSIS_FAILED: '비교에 필요한 공고 분석이 완료되지 않았습니다. 분석 상태를 확인해 주세요.',
+    STALE_ACTION_CONTEXT: '공고·분석·판정 기준이 바뀌었습니다. 현재 결과를 다시 확인해 주세요.',
+  };
+  return messages[error.code] ?? error.message;
 }
 
 function localHelpResponse(contextRevision: number, reply?: ReplyContext): CopilotChatResponse {
@@ -144,7 +157,7 @@ export class ConversationStore {
     } catch (error) {
       if (this.get(caseId).revision !== revision) return;
       this.failed.set(caseId, { request: structuredClone(request), turnId: revision });
-      this.update(caseId, { busy: false, error: error instanceof Error ? error.message : '조회하지 못했습니다.',
+      this.update(caseId, { busy: false, error: copilotReadErrorMessage(error),
         errorCode: error && typeof error === 'object' && 'code' in error ? String(error.code) : '' });
     }
   }

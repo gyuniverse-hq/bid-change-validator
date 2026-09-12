@@ -11,6 +11,7 @@ import { CopilotPanel } from '@/components/copilot/panel';
 import { AppFooter } from '@/components/product/app-footer';
 import { AppHeader } from '@/components/product/app-header';
 import { TitleBand, type TitleBandProps } from '@/components/product/title-band';
+import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
 
 type PageInfo = TitleBandProps & {
@@ -112,6 +113,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const caseId = searchParams.get('caseId');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
+  const [authFailure, setAuthFailure] = useState<string | null>(null);
+  const [logoutFailure, setLogoutFailure] = useState<string | null>(null);
+  const [authAttempt, setAuthAttempt] = useState(0);
 
   useEffect(() => {
     if (pathname === '/login') return;
@@ -120,11 +124,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       .then((current) => {
         if (active) setUser(current);
       })
-      .catch(() => {
-        if (active) {
+      .catch((cause) => {
+        if (!active) return;
+        if (cause instanceof ApiError && cause.status === 401) {
           setUser(null);
           router.replace('/login');
+          return;
         }
+        setAuthFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);
       })
       .finally(() => {
         if (active) setCheckingAuth(false);
@@ -132,7 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [pathname, router]);
+  }, [authAttempt, pathname, router]);
 
   useEffect(() => {
     if (!WORKSPACE_ROUTES.has(pathname)) return;
@@ -146,7 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (pathname === '/login') return children;
 
-  if (checkingAuth || user === null) {
+  if (checkingAuth) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--product-tint)] text-sm text-[var(--product-muted)]">
         로그인 상태를 확인하고 있습니다.
@@ -154,12 +161,41 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
+  if (authFailure) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--product-tint)] px-5 text-center text-[var(--product-body)]">
+        <div className="max-w-md rounded-2xl border border-red-200 bg-white p-7 shadow-sm">
+          <h1 className="text-lg font-bold">로그인 상태를 확인하지 못했습니다.</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--product-muted)]">{authFailure}</p>
+          <button
+            type="button"
+            className="mt-5 rounded-lg bg-[var(--product-accent)] px-4 py-2 text-sm font-semibold text-white"
+            onClick={() => {
+              setAuthFailure(null);
+              setCheckingAuth(true);
+              setAuthAttempt((attempt) => attempt + 1);
+            }}
+          >
+            다시 시도
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   async function handleLogout() {
+    setLogoutFailure(null);
     try {
       await logout();
-    } finally {
       setUser(null);
       router.replace('/login');
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) {
+        setUser(null);
+        router.replace('/login');
+        return;
+      }
+      setLogoutFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);
     }
   }
 
@@ -175,6 +211,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     <CopilotProvider>
       <div className="app-shell min-h-screen bg-[var(--product-tint)] text-[var(--product-body)]">
         <AppHeader pathname={pathname} user={user} onLogout={() => void handleLogout()} />
+        {logoutFailure && (
+          <div role="alert" className="border-b border-red-200 bg-red-50 px-5 py-3 text-center text-sm text-red-700">
+            로그아웃을 완료하지 못했습니다. {logoutFailure}
+          </div>
+        )}
         {page.showTitleBand !== false && (
           <TitleBand
             title={page.title}

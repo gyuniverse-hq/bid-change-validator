@@ -16,6 +16,13 @@ from apps.api.app.models import Company
 pytestmark = pytest.mark.usefixtures("seed_required_master_codes")
 
 
+def test_current_user_allows_anonymous_when_authentication_is_optional() -> None:
+    response = TestClient(app).get("/api/v1/auth/me")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
 def test_development_admin_login_session_and_logout() -> None:
     client = TestClient(app)
     login_response = client.post(
@@ -91,6 +98,9 @@ def test_business_apis_require_session_when_enabled(monkeypatch) -> None:
     unauthorized = protected_client.get("/api/v1/companies")
     assert unauthorized.status_code == 401
     assert unauthorized.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+    me_response = protected_client.get("/api/v1/auth/me")
+    assert me_response.status_code == 401
+    assert me_response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
     assert protected_client.get("/health").status_code == 200
 
     login_response = protected_client.post(

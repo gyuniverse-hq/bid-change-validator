@@ -5,7 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_session, get_current_user, hash_password, login, revoke_session
+from ..auth import (
+    get_current_session,
+    get_current_user,
+    get_optional_current_user,
+    hash_password,
+    login,
+    revoke_session,
+)
 from ..auth_models import AppUser, AuthSession
 from ..auth_schemas import AuthUserCreate, AuthUserRead, LoginRequest, LoginResponse
 from ..config import get_settings
@@ -53,9 +60,13 @@ def login_user(
     )
 
 
-@router.get("/me", response_model=AuthUserRead)
-def current_user(user: AppUser = Depends(get_current_user)) -> AuthUserRead:
-    return _user_response(user)
+@router.get("/me", response_model=AuthUserRead | None)
+def current_user(
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> AuthUserRead | None:
+    # Optional-auth 개발 환경에서는 비로그인도 정상 상태다. 200/null로
+    # 응답해 프론트가 인증 만료(401), API 장애(5xx)와 구분할 수 있게 한다.
+    return _user_response(user) if user is not None else None
 
 
 @router.get("/users", response_model=list[AuthUserRead])

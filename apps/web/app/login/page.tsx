@@ -26,7 +26,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     void getCurrentUser()
-      .then(() => router.replace('/company'))
+      .then((current) => {
+        if (current) router.replace('/company');
+      })
       .catch(() => undefined);
   }, [router]);
 

@@ -34,7 +34,7 @@ export function AppHeader({
   onLogout,
 }: {
   pathname: string;
-  user: AuthUser;
+  user: AuthUser | null;
   onLogout: () => void;
 }) {
   return (
@@ -47,8 +47,14 @@ export function AppHeader({
             <a href="https://www.pps.go.kr" target="_blank" rel="noreferrer noopener" className="app-utility-action" aria-label="조달청 (새 창으로 열림)">조달청</a>
           </div>
           <div className="flex items-center gap-4 text-[var(--product-muted)]">
-            <span>{user.company_name ?? user.username}</span>
-            <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
+            {user ? (
+              <>
+                <span>{user.company_name ?? user.username}</span>
+                <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
+              </>
+            ) : (
+              <Link href="/login" className="app-utility-action">로그인</Link>
+            )}
           </div>
         </PageContainer>
       </div>
@@ -104,10 +110,12 @@ export function AppHeader({
               <Menu className="size-[15px]" strokeWidth={1.7} />
               <span>전체메뉴</span>
             </button>
-            <button type="button" className="app-header-action" onClick={onLogout} aria-label="로그아웃">
-              <LogOut className="size-[15px]" strokeWidth={1.7} />
-              <span>로그아웃</span>
-            </button>
+            {user && (
+              <button type="button" className="app-header-action" onClick={onLogout} aria-label="로그아웃">
+                <LogOut className="size-[15px]" strokeWidth={1.7} />
+                <span>로그아웃</span>
+              </button>
+            )}
           </div>
         </PageContainer>
       </div>

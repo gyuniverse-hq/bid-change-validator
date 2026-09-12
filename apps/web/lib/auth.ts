@@ -1,4 +1,4 @@
-import { absoluteApiUrl, ApiError } from '@/lib/api';
+import { apiFetch, ApiError } from '@/lib/api';
 
 export type AuthUser = {
   id: string;
@@ -18,7 +18,7 @@ export type LoginResponse = {
 async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set('Content-Type', 'application/json');
-  const response = await fetch(absoluteApiUrl(path), {
+  const response = await apiFetch(path, {
     ...init,
     credentials: 'include',
     headers,
@@ -45,7 +45,7 @@ export function login(username: string, password: string) {
 }
 
 export function getCurrentUser() {
-  return authRequest<AuthUser>('/api/v1/auth/me');
+  return authRequest<AuthUser | null>('/api/v1/auth/me');
 }
 
 export function logout() {

@@ -41,6 +41,7 @@
 - [`e2-routing-evaluation.md`](./e2-routing-evaluation.md): Semantic Router + 실제 resolver 정책 기반 E2 측정
 - [`e3-rag-evaluation.md`](./e3-rag-evaluation.md): Dense/Hybrid/Rerank, Grounded Answer v1~v4, 최종 E3 의사결정
 - [`stage11-user-test-plan.md`](./stage11-user-test-plan.md): 사용자 관점 Core 6 + Safety 2 테스트와 관찰 기록 템플릿
+- [`stage11-moderator-runbook.md`](./stage11-moderator-runbook.md): P00 환경 검증, Demo seed, 사전 판정 준비, P01~ 실행 절차
 
 ## 주요 결과 스냅샷
 
@@ -108,7 +109,9 @@ Grounded Answer 안전 계약:
 
 현재는 자동 평가 점수를 더 올리는 단계가 아니라 실제 사용성을 검증한다.
 
-[`stage11-user-test-plan.md`](./stage11-user-test-plan.md)의 Core 6개와 Safety 2개를 사용해 다음을 기록한다.
+먼저 [`stage11-moderator-runbook.md`](./stage11-moderator-runbook.md)로 **P00 Moderator Dry-run**을 수행해 Demo Case/저장 판정/UI를 검증한다. P00은 사용자 완료율에 포함하지 않는다.
+
+이후 [`stage11-user-test-plan.md`](./stage11-user-test-plan.md)의 Core 6개와 Safety 2개를 사용해 다음을 기록한다.
 
 - 과업 PASS / PARTIAL / FAIL
 - CRITICAL safety issue

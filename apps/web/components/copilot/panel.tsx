@@ -14,11 +14,16 @@ import type { CopilotChatResponse, CopilotIntent, CopilotSource } from '@/lib/co
 import './panel.css';
 
 const pages = { '/qualification': 'QUALIFICATION', '/ask-back': 'ASK_BACK', '/evidence': 'EVIDENCE', '/changes': 'CHANGES' } as const;
-const suggestions: [string, CopilotIntent][] = [
+type Suggestion = [string, CopilotIntent?];
+const baseSuggestions: Suggestion[] = [
   ['우리 회사, 참여 가능해?', 'QUALIFICATION_SUMMARY'],
   ['무엇을 확인해야 해?', 'REQUIRED_CHECKS'],
-  ['변경된 요건 보여줘', 'CHANGED_NOTICE'],
 ];
+function suggestionsFor(page: typeof pages[keyof typeof pages]): Suggestion[] {
+  return page === 'CHANGES'
+    ? [...baseSuggestions, ['변경된 요건 보여줘', 'CHANGED_NOTICE']]
+    : [...baseSuggestions, ['내가 물어볼 수 있는 질문이 뭐야?']];
+}
 const noJudgmentCodes = ['CURRENT_JUDGMENT_REQUIRED', 'QUALIFICATION_JUDGMENT_NOT_FOUND', 'JUDGMENT_NOT_FOUND'];
 const href = (page: string, caseId: string) => `${page}?caseId=${encodeURIComponent(caseId)}`;
 
@@ -78,6 +83,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
   const ask = (text: string, intent?: CopilotIntent) => { if (caseId) void store.ask(caseId, text, intent, page); };
   const noJudgment = noJudgmentCodes.includes(state.errorCode);
   const empty = !state.turns.length;
+  const suggestions = suggestionsFor(page);
   return <>
     <div className={`copilot-content${empty ? ' copilot-content-empty' : ''}`}>
       {empty && <div className="copilot-empty" data-state="EMPTY">
@@ -86,7 +92,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <p>AI는 판정을 대신하지 않아요.<br />저장된 결과와 원문 근거를 설명해 드려요.</p>
       </div>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>
-        <Button type="button" variant="ghost" className="copilot-quiet" key={intent} disabled={state.busy} onClick={() => { store.focus(caseId, null); ask(text, intent); }}>{text}</Button>)}</div>}
+        <Button type="button" variant="ghost" className="copilot-quiet" key={text} disabled={state.busy} onClick={() => { store.focus(caseId, null); ask(text, intent); }}>{text}</Button>)}</div>}
       {state.focus && <button type="button" className="copilot-focus" onClick={() => store.focus(caseId, null)}>선택한 요건 해제 · 전체 보기</button>}
       <div role="log" aria-label="공고 도우미 대화" aria-live="polite">
         {state.turns.map(turn => <div key={turn.id} className="copilot-turn">

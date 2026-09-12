@@ -22,7 +22,7 @@ function load(file) {
 }
 
 const { ActionController, currentRevalidation } = load(resolve(root, 'lib/copilot-actions.ts'));
-const { ConversationStore, inferE1Intent, isCopilotHelpQuestion } = load(resolve(root, 'lib/copilot-conversation.ts'));
+const { ConversationStore, inferE1Intent, isCopilotHelpQuestion, copilotReadErrorMessage } = load(resolve(root, 'lib/copilot-conversation.ts'));
 const { ApiError, apiFetch } = load(resolve(root, 'lib/api.ts'));
 const { copilotMocks: m } = load(resolve(root, 'lib/copilot-mocks.ts'));
 const action = m.answerProposal.actions[0], id = action.expected.case_id;
@@ -76,6 +76,18 @@ const aliased=[];const aliasStore=new ConversationStore(async request=>{aliased.
 await aliasStore.ask(id,'우리 회사가 이 공고에 참가할 수 있는지 알려줘');
 assert.equal(aliased[0].intent,'QUALIFICATION_SUMMARY');
 
+// Common read failures should explain the cause rather than exposing backend wording.
+for (const [code, pattern] of [
+  ['CHANGED_NOTICE_REQUIRED', /이전 버전과 회사 기준/],
+  ['QUALIFICATION_ANALYSIS_REQUIRED', /분석이 준비되지 않은/],
+  ['BASELINE_JUDGMENT_REQUIRED', /이전 버전 기준의 회사 판정/],
+  ['QUALIFICATION_ANALYSIS_FAILED', /공고 분석이 완료되지/],
+  ['STALE_ACTION_CONTEXT', /기준이 바뀌었습니다/],
+]) {
+  assert.match(copilotReadErrorMessage(new ApiError('raw backend message',409,code)),pattern);
+}
+assert.equal(copilotReadErrorMessage(new ApiError('fallback',500,'OTHER')),'fallback');
+
 const fetches=[],originalFetch=globalThis.fetch;
 try{globalThis.fetch=async(url,init)=>{fetches.push([url,init]);return {};};
  await apiFetch('/api/v1/copilot/chat',{method:'POST',body:'{}'});
@@ -83,4 +95,4 @@ try{globalThis.fetch=async(url,init)=>{fetches.push([url,init]);return {};};
  assert.equal(fetches[0][1].credentials,'include');assert.equal(fetches[1][1].credentials,'omit');
  assert.equal(fetches.length,2);
 }finally{globalThis.fetch=originalFetch;}
-console.log('PASS auth/write safety, shared review lock, provenance, in-place retry, E1 local help, bounded aliases, API-origin cookie boundary');
+console.log('PASS auth/write safety, shared review lock, provenance, in-place retry, E1 local help, bounded aliases, read error guidance, API-origin cookie boundary');

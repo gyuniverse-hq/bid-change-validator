@@ -7,11 +7,13 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from ..config import get_settings
-from ..database import SessionLocal
 from ..judgment_models import CompanyQualificationProfileCompleteness
 from ..models import (
     BidNotice,
@@ -60,6 +62,66 @@ PROPOSAL_TEXT = """2026년 청년그린창업 스프링캠프 해외진출 기�
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _is_connection_limit(error: Exception) -> bool:
+    text_value = str(error).upper()
+    return "EMAXCONNSESSION" in text_value or (
+        "MAX CLIENTS" in text_value and "POOL_SIZE" in text_value
+    )
+
+
+def _supabase_transaction_pooler_url(database_url: str) -> str | None:
+    """Switch the same Supabase pooler from session mode 5432 to transaction mode 6543."""
+
+    url = make_url(database_url)
+    host = (url.host or "").lower()
+    if not host.endswith(".pooler.supabase.com") or url.port != 5432:
+        return None
+    return url.set(port=6543).render_as_string(hide_password=False)
+
+
+def _is_supabase_transaction_pooler(database_url: str) -> bool:
+    url = make_url(database_url)
+    return (url.host or "").lower().endswith(".pooler.supabase.com") and url.port == 6543
+
+
+def _create_seed_engine(database_url: str):
+    from sqlalchemy import create_engine
+
+    connect_args: dict[str, object] = {"connect_timeout": 10}
+    if _is_supabase_transaction_pooler(database_url):
+        connect_args["prepare_threshold"] = None
+    return create_engine(
+        database_url,
+        poolclass=NullPool,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
+
+
+def _prepare_seed_engine(database_url: str):
+    """Preflight DB access and fallback only for Supabase session-pool exhaustion."""
+
+    engine = _create_seed_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return engine, "CONFIGURED", None
+    except OperationalError as error:
+        engine.dispose()
+        fallback_url = _supabase_transaction_pooler_url(database_url)
+        if not (_is_connection_limit(error) and fallback_url):
+            raise
+
+        fallback = _create_seed_engine(fallback_url)
+        try:
+            with fallback.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return fallback, "SUPABASE_TRANSACTION_POOLER_FALLBACK", str(error)
+        except Exception:
+            fallback.dispose()
+            raise
 
 
 def choose_demo_industry(db: Session) -> IndustryCode | None:
@@ -261,15 +323,21 @@ def seed_product_golden_demo(db: Session, *, bid_notice_no: str = DEFAULT_NOTICE
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed the Product Golden demo into the local DB.")
+    parser = argparse.ArgumentParser(description="Seed the Product Golden demo into the configured DB.")
     parser.add_argument("--notice-no", default=DEFAULT_NOTICE_NO)
     args = parser.parse_args()
 
-    db = SessionLocal()
+    configured_url = get_settings().sqlalchemy_database_url
+    engine, database_connection_mode, initial_connection_error = _prepare_seed_engine(configured_url)
+    SessionMaker = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    db = SessionMaker()
     try:
         result = seed_product_golden_demo(db, bid_notice_no=args.notice_no)
         case_id = result["case"]["id"]
         print("Product Golden demo ready")
+        print(f"database_connection_mode: {database_connection_mode}")
+        if initial_connection_error:
+            print("session_pooler_preflight_failed: true")
         print(f"notice: {result['notice']['bid_notice_no']} / versions={result['notice']['versions']}")
         print(f"company: {result['company']['name']}")
         print(f"case: {result['case']['title']}")
@@ -281,6 +349,7 @@ def main() -> None:
         print(f"changes: http://localhost:3000/changes?caseId={case_id}")
     finally:
         db.close()
+        engine.dispose()
 
 
 if __name__ == "__main__":

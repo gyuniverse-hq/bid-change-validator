@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, FileSearch, GitCompareArrows, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 
 import { loadCaseWorkspace } from '@/lib/case-workspace';
 import { ActionCard } from '@/components/copilot/action-card';
@@ -119,6 +119,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const [reviewStep, setReviewStep] = useState<ReviewStep>('idle');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  // 판정 밖 조건은 10건 넘게 나오는 게 보통이라, 다 펼쳐두면 판정 2건보다 블록이 다섯 배 커진다.
+  // 기본은 접어두고 필요할 때 편다. 건수는 접혀 있어도 제목에 그대로 보인다.
+  const [showAllUnjudged, setShowAllUnjudged] = useState(false);
 
   const selectedNotice = useMemo(() => notices.find((item) => item.id === noticeId) ?? null, [noticeId, notices]);
   const company = useMemo(() => companies.find((item) => item.id === companyId) ?? null, [companies, companyId]);
@@ -297,6 +300,28 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const pipelineDiagnostics = analysisDetail?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
   const droppedRequirements = analysisDetail?.dropped_requirements ?? [];
 
+  // 판정 밖 조건도 셋으로 갈린다 — 아직 안 돌렸다 / 못 읽었다 / 확인했더니 없다.
+  // 0건일 때도 이 자리에서 말해야 한다. 아무 말도 안 하면 「빠진 게 없다」를 사용자가 알 수 없다.
+  const unjudgedCount = noticeFacts.length + droppedRequirements.length;
+  const unjudgedState: 'NOT_RUN' | 'FAILED' | 'DONE' = !analysisDetail
+    ? 'NOT_RUN'
+    : analysisDetail.status === 'FAILED'
+      ? 'FAILED'
+      : 'DONE';
+
+  // 접었을 때 보여줄 개수. 공고 쪽 확인사항을 먼저 채우고 남으면 제외 요건을 채운다.
+  const UNJUDGED_PREVIEW = 3;
+  const previewNoticeFacts = showAllUnjudged ? noticeFacts : noticeFacts.slice(0, UNJUDGED_PREVIEW);
+  const previewDropped = showAllUnjudged
+    ? droppedRequirements
+    : droppedRequirements.slice(0, Math.max(0, UNJUDGED_PREVIEW - previewNoticeFacts.length));
+  const hiddenUnjudgedCount = unjudgedCount - previewNoticeFacts.length - previewDropped.length;
+
+  // message는 code별 고정 문구다. 걸린 code가 하나뿐이면 열 줄 모두 같은 문장이 되므로
+  // 항목마다 반복하지 않고 목록 머리에 한 번만 쓴다. 종류가 섞여 있으면 항목별로 둔다.
+  const noticeFactMessages = Array.from(new Set(noticeFacts.map((item) => item.message)));
+  const sharedNoticeFactMessage = noticeFactMessages.length === 1 ? noticeFactMessages[0] : null;
+
   // 실행 전·실패는 「세어본 적이 없는」 상태다. 0으로 적으면 확인 후 0건으로 읽힌다 — #119 리뷰.
   const countedAnalysis = analysisDetail && analysisDetail.status !== 'FAILED' ? analysisDetail : null;
 
@@ -335,15 +360,18 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           </section>
         ) : (
           <>
+            {/* ── 1 공고 · 검토 건 ── */}
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
               <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">분석 {analysisDetail.status}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p></div>
               <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
             </section>
 
             <CaseTabs caseId={activeCase.id} active="qualification" />
-            <ActionCard caseId={activeCase.id} />
-            <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} analysis={analysisDetail} />
 
+            {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
+
+            {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
             {currentAnalysis && currentAnalysis.status !== 'SUCCEEDED' && (
               <section className="mt-6 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
@@ -354,14 +382,10 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             {reviewProgress && <section className="mt-6 rounded-[18px] border border-[#d9def7] bg-[#f5f6ff] px-5 py-4"><div className="flex items-center gap-3">{busy === 'review' ? <LoaderCircle className="size-5 animate-spin text-[var(--product-accent)]" /> : <CheckCircle2 className="size-5 text-emerald-600" />}<div><strong className="text-[14px]">{reviewProgress}</strong>{busy === 'review' && <p className="mt-1 text-[12px] text-[var(--product-muted)]">완료되면 새로고침 없이 이 화면에 즉시 결과가 반영됩니다.</p>}</div></div></section>}
 
-            <section className="mt-7 grid gap-4 lg:grid-cols-3">
-              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">회사 프로필</span><strong className="mt-1 block text-[16px]">{company?.name ?? '미연결'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">{company?.region_name ?? '-'} · {labelOf(COMPANY_SIZE_LABEL, company?.company_size)}</p></div>
-              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">자격요건 분석</span><strong className="mt-1 block text-[16px]">{currentAnalysis?.requirement_count != null ? `${currentAnalysis.requirement_count}건 구조화` : '분석 전'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">Evidence {currentAnalysis?.evidence_count ?? 0}건 · {analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p></div>
-              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{unknown}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p></div>
-            </section>
+            {/* ── 4 물어보기 ── */}
+            <ActionCard caseId={activeCase.id} />
 
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
-
+            {/* ── 5 왜 그 결론인지 — 요건별 판정과 근거 ── */}
             <section className="mt-9">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">Canonical Requirement와 공고 원문 Evidence를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
@@ -373,25 +397,35 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
+            {/* ── 6 판정 밖 조건 — 위 표에 없는 것 ── */}
             {/* P0-5 · 위 표에 없는 조건을 말한다. 이걸 안 그리면 사용자는 빠진 조건이 있는 줄 모른 채 판정을 믿는다 (NFR-1). */}
-            {(noticeFacts.length > 0 || droppedRequirements.length > 0) && (
-              <section id="analysis-scope" className="mt-7 rounded-[20px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-6 py-5">
-                <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건 {noticeFacts.length + droppedRequirements.length}건</h2>
-                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">아래 항목은 위 표의 판정에 반영되지 않았습니다. 제출 전에 공고 원문에서 직접 확인해 주세요.</p>
+            <section id="analysis-scope" className={`mt-7 rounded-[20px] border px-6 py-5 ${unjudgedCount > 0 ? 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)]' : 'border-[var(--product-line)] bg-white'}`}>
+                <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건{unjudgedCount > 0 ? ` ${unjudgedCount}건` : ''}</h2>
+                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{unjudgedState === 'NOT_RUN'
+                  ? '아직 자격검토를 실행하지 않았습니다. 검토를 실행하면 판정에서 빠진 조건을 여기에 표시합니다.'
+                  : unjudgedState === 'FAILED'
+                    ? unjudgedCount
+                      // 실패했어도 중단 전까지 잡힌 항목은 남는다. 「확인 못 했다」로 끝내면 아래 목록과 말이 어긋난다.
+                      ? '분석이 끝나지 않았습니다. 아래는 중단되기 전까지 확인된 항목이라 이 목록이 전부가 아닙니다.'
+                      : '분석이 완료되지 않아 판정에서 빠진 조건을 확인하지 못했습니다.'
+                    : unjudgedCount
+                      ? '아래 항목은 위 표의 판정에 반영되지 않았습니다. 제출 전에 공고 원문에서 직접 확인해 주세요.'
+                      : '이번 분석에서 판정 밖으로 빠진 조건이 없습니다.'}</p>
 
-                {noticeFacts.length > 0 && (
+                {previewNoticeFacts.length > 0 && (
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">판정 대상이 아닌 확인사항 {noticeFacts.length}건</strong>
+                    {sharedNoticeFactMessage && <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{sharedNoticeFactMessage}</p>}
                     <ul className="mt-2 space-y-2">
-                      {/* message는 코드별 고정 문구라 같은 code가 여러 건이면 전부 같은 문장이 된다. 무엇이 걸렸는지는 근거 원문으로만 구분된다. */}
-                      {noticeFacts.map((item, index) => {
+                      {/* 무엇이 걸렸는지는 근거 원문으로만 구분된다. 공통 문구는 위에서 한 번 말했다. */}
+                      {previewNoticeFacts.map((item, index) => {
                         const evidenceKey = item.evidence_keys[0];
                         const evidence = evidenceKey ? analysisDetail?.evidence.find((row) => row.evidence_key === evidenceKey) ?? null : null;
                         const locationText = evidence ? evidenceLocationText(evidence.location) : null;
                         return (
                           <li key={`${item.code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
                             {evidence && <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
-                            <p className={evidence ? 'mt-1 text-[13px] leading-6 text-[var(--product-body)]' : 'text-[13px] leading-6 text-[var(--product-body)]'}>{item.message}</p>
+                            {!sharedNoticeFactMessage && <p className={evidence ? 'mt-1 text-[13px] leading-6 text-[var(--product-body)]' : 'text-[13px] leading-6 text-[var(--product-body)]'}>{item.message}</p>}
                             {locationText && <p className="mt-1 text-[12px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
                             {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
@@ -402,12 +436,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   </div>
                 )}
 
-                {droppedRequirements.length > 0 && (
+                {previewDropped.length > 0 && (
                   <div className="mt-4">
                     <strong className="text-[13px] text-[var(--product-warn)]">구조화에서 제외된 요건 {droppedRequirements.length}건</strong>
                     <ul className="mt-2 space-y-2">
                       {/* MISSING_RAW는 raw가 비어 있을 수 있다. 빈 따옴표만 남기지 않고 확보하지 못했다고 말한다. */}
-                      {droppedRequirements.map((item, index) => {
+                      {previewDropped.map((item, index) => {
                         const raw = item.raw.trim();
                         return (
                           <li key={`${item.reason_code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
@@ -421,15 +455,36 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                     </ul>
                   </div>
                 )}
-              </section>
-            )}
+
+                {hiddenUnjudgedCount > 0 && (
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full bg-white" onClick={() => setShowAllUnjudged(true)}>
+                    <ChevronDown /> 나머지 {hiddenUnjudgedCount}건 더 보기
+                  </Button>
+                )}
+                {showAllUnjudged && unjudgedCount > UNJUDGED_PREVIEW && (
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full bg-white" onClick={() => setShowAllUnjudged(false)}>
+                    <ChevronUp /> 접기
+                  </Button>
+                )}
+            </section>
 
             {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
+            {/* ── 7 분석 완전성 · 변경공고 재검증 ── */}
             <section className="mt-9 grid gap-5 lg:grid-cols-2">
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">분석 완전성</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">분석 실행 상태와 diagnostic을 판정 결과와 분리해서 관리합니다.</p><div className="mt-5 flex flex-wrap gap-3"><Badge variant="outline">상태 {analysisDetail?.status ?? '미실행'}</Badge><Badge variant="outline">Requirement {countedAnalysis ? countedAnalysis.requirements.length : '-'}</Badge><Badge variant="outline">Evidence {countedAnalysis ? countedAnalysis.evidence.length : '-'}</Badge></div>{pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}</div>
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2><p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 Canonical Requirement만 다시 판정합니다.</p><Button className="mt-5" variant="outline" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>{revalidation && <p className="mt-4 text-[13px]">재판정된 Requirement <strong>{revalidation.revalidated_keys.length}건</strong></p>}</div>
             </section>
+
+            {/* ── 8 판정에 쓴 입력값 ── */}
+            <section className="mt-7 grid gap-4 lg:grid-cols-3">
+              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">회사 프로필</span><strong className="mt-1 block text-[16px]">{company?.name ?? '미연결'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">{company?.region_name ?? '-'} · {labelOf(COMPANY_SIZE_LABEL, company?.company_size)}</p></div>
+              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">자격요건 분석</span><strong className="mt-1 block text-[16px]">{currentAnalysis?.requirement_count != null ? `${currentAnalysis.requirement_count}건 구조화` : '분석 전'}</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">Evidence {currentAnalysis?.evidence_count ?? 0}건 · {analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p></div>
+              <div className="rounded-[18px] border border-[var(--product-line)] p-5"><span className="text-[12px] text-[var(--product-muted)]">확인 필요</span><strong className="mt-1 block text-[16px]">{unknown}건</strong><p className="mt-2 text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p></div>
+            </section>
+
+            {/* ── 9 공고 원본 정보 ── */}
+            <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} />
 
             <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>
           </>

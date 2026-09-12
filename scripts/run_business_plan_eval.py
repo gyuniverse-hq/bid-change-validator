@@ -51,6 +51,7 @@ from app.ai.quality_eval.business_plan import parse_qualification_items  # noqa:
 from app.ai.quality_eval.business_plan import render_briefing  # noqa: E402
 from app.ai.quality_eval.business_plan import verify_round_trip  # noqa: E402
 from app.ai.quality_eval.business_plan.dataset import load_cases  # noqa: E402
+from app.ai.quality_eval.business_plan.dataset import source_fingerprint  # noqa: E402
 
 
 def load_generator(narration_root: Path):
@@ -284,6 +285,7 @@ def main() -> int:
                 "runs": args.runs,
                 "dry_run": args.dry_run,
                 "baseline": str(baseline_path),
+                "golden_source_sha256": source_fingerprint(baseline_path, bundle_path),
                 "narration_root": str(args.narration_root),
                 "model": args.model or os.getenv("OPENAI_MODEL_DEFAULT"),
                 "ablated_rule": ablated_rule,

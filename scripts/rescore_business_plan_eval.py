@@ -28,6 +28,7 @@ from app.ai.quality_eval.business_plan import derive_user_claims  # noqa: E402
 from app.ai.quality_eval.business_plan import parse_qualification_items  # noqa: E402
 from app.ai.quality_eval.business_plan import render_briefing  # noqa: E402
 from app.ai.quality_eval.business_plan.dataset import load_cases  # noqa: E402
+from app.ai.quality_eval.business_plan.dataset import source_fingerprint  # noqa: E402
 
 
 def render_inputs(values: dict[str, str]) -> str:
@@ -158,7 +159,10 @@ def main() -> int:
 
     out = args.out or args.result_file.with_name(args.result_file.stem + "_rescored.json")
     out.write_text(
-        json.dumps({"source": str(args.result_file), "summary": summary, "records": rescored},
+        json.dumps({"source": str(args.result_file),
+                    "golden_source_sha256": source_fingerprint(
+                        baseline, args.golden_root / "fixture_bundle.json"),
+                    "summary": summary, "records": rescored},
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

@@ -23,8 +23,23 @@
 `conformance`      초안 검사. 누락·상태오기·모순이 안전 지표이고 0 이어야 한다.
 `inputs`           담당자 입력 3종. 골든셋에 없는 부분이라 여기서 고정한다.
 
-실행기는 `scripts/run_business_plan_eval.py` 에 있다. 골든셋 자체는 이 저장소에
-없고(팀 공용 자료) 경로를 인자로 받는다.
+골든셋 의존이 어디까지인가
+--------------------------
+골든셋(공고·회사 프로필·판정 결과)은 팀 공용 자료라 이 저장소에 없다. 다만 그
+의존은 **측정 실행에만** 있다. 경계는 이렇다.
+
+    제품 생성기(narration.business_plan)  골든셋 모름, 이 패키지도 모름
+    이 패키지의 조판·검사 함수             골든셋 모름 — 인자로 받은 것만 본다
+    tests/test_business_plan_conformance   합성 데이터만 씀 → CI 에서 그대로 돈다
+    scripts/*_business_plan_eval.py        골든셋 필요 (--golden-root)
+
+그래서 팀원이 저장소만 클론해도 검사기 단위 테스트는 전부 돌아간다. 골든셋이
+필요한 것은 "실제 모델을 32케이스에 돌려 재는" 작업뿐이고, 그것은 어차피
+OPENAI_API_KEY 가 있어야 하므로 평범한 CI 잡이 아니다.
+
+측정 결과에는 읽은 골든셋 파일의 sha256 을 남긴다(`golden_source_sha256`).
+저장소 밖 파일이라 조용히 바뀔 수 있는데, 숫자만 남기면 나중에 그 숫자가 어느
+버전을 잰 것인지 알 방법이 없다.
 """
 
 from .briefing_format import parse_qualification_items

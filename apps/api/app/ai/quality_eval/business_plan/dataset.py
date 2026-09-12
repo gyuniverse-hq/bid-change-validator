@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,20 @@ class GoldenCase:
     def flagged(self) -> list[dict[str, Any]]:
         """초안이 숨기면 안 되는 행 — 미달과 확인 필요."""
         return [j for j in self.judgments if j["status"] in ("UNSATISFIED", "UNKNOWN")]
+
+
+def source_fingerprint(*paths: str | Path) -> dict[str, str]:
+    """읽은 골든셋 파일의 sha256. 결과에 남겨 두면 어떤 입력으로 잰 숫자인지 되짚는다.
+
+    골든셋은 저장소 밖 팀 공용 자료라 조용히 바뀔 수 있다. 숫자만 남기면 나중에
+    그 숫자가 어느 버전을 잰 것인지 알 방법이 없다.
+    """
+    prints: dict[str, str] = {}
+    for path in paths:
+        file = Path(path)
+        if file.is_file():
+            prints[file.name] = hashlib.sha256(file.read_bytes()).hexdigest()[:16]
+    return prints
 
 
 def load_cases(

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -77,8 +77,14 @@ export default function NoticesPage() {
   // 판정 상태는 목록보다 늦게 온다. 다 오기 전에 0으로 그리면 「확인했더니 0건」으로 읽힌다.
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaProgress, setMetaProgress] = useState({ done: 0, total: 0 });
+  /*
+    hydrate는 백그라운드로 돈다. 앞선 검색의 응답이 늦게 도착하면 새 검색 결과에 섞여
+    목록에 없는 공고의 판정이 남는다. 검색마다 세대 번호를 올리고, 세대가 바뀌면 버린다.
+  */
+  const hydrateGeneration = useRef(0);
 
   async function hydrateCaseMeta(caseItems: PreflightCase[], noticeItems: BidNoticeSummary[], selectedCompanyId: string) {
+    const generation = (hydrateGeneration.current += 1);
     const targets = caseItems.filter((item, index) => item.company_id === selectedCompanyId
       && noticeItems.some((notice) => notice.id === item.notice_id && notice.current_version === item.current_version_number)
       && caseItems.findIndex((other) => other.notice_id === item.notice_id && other.company_id === selectedCompanyId && other.current_version_number === item.current_version_number) === index
@@ -98,6 +104,8 @@ export default function NoticesPage() {
           }
         }),
       );
+      // 이 사이에 새 검색이 시작됐으면 이 응답은 지난 목록의 것이다. 넣지 않고 끝낸다.
+      if (generation !== hydrateGeneration.current) return;
       done += chunk.length;
       // 오는 대로 채운다. 전부 모아서 한 번에 넣으면 마지막 한 건이 늦을 때 화면이 계속 비어 있다.
       setCaseMeta((previous) => ({ ...previous, ...(Object.fromEntries(chunk) as Record<string, CaseStatusMeta>) }));
@@ -110,6 +118,8 @@ export default function NoticesPage() {
     setLoading(true);
     setError('');
     setCaseMeta({});
+    // 목록을 받아오는 동안 앞선 hydrate가 끝날 수 있다. 여기서 먼저 세대를 올려 그 응답을 버린다.
+    hydrateGeneration.current += 1;
     try {
       const [noticeResult, caseResult, companies] = await Promise.all([
         listNotices(searchQuery),
@@ -154,6 +164,24 @@ export default function NoticesPage() {
     });
   }, [notices, query, statusFilter, businessTypeFilter, caseMeta]);
 
+  /*
+    기존 검토 건 여부는 이미 받아둔 cases에서 찾는다. caseMeta는 판정 상세까지 받은 뒤에야 차므로
+    hydrate 중에 caseMeta로 판단하면 기존 건이 있는데도 「검토 시작」이 뜨고, 누르면 Case를 또 만든다.
+    caseMeta는 판정 표시 전용으로 남긴다. (#131 리뷰)
+    현재 차수(current_version)와 같은 Case만 「기존 건」으로 본다 — 변경공고가 나면 그 차수는 새로 검토한다.
+  */
+  const existingCaseByNotice = useMemo(() => {
+    const map = new Map<string, PreflightCase>();
+    if (!company) return map;
+    cases.forEach((item) => {
+      if (item.company_id !== company.id || map.has(item.notice_id)) return;
+      const notice = notices.find((row) => row.id === item.notice_id);
+      if (!notice || notice.current_version !== item.current_version_number) return;
+      map.set(item.notice_id, item);
+    });
+    return map;
+  }, [cases, notices, company]);
+
   // 불러온 목록에 실제로 있는 유형만 버튼으로 만든다. 없는 유형을 띄우면 눌러도 0건이 나온다.
   const businessTypeOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -190,7 +218,7 @@ export default function NoticesPage() {
   ];
 
   async function startReview(notice: BidNoticeSummary) {
-    const existing = caseMeta[notice.id]?.caseItem;
+    const existing = existingCaseByNotice.get(notice.id);
     if (existing) {
       router.push(`/qualification?caseId=${existing.id}`);
       return;
@@ -346,9 +374,13 @@ export default function NoticesPage() {
                     </div>
                     <span className="truncate text-[13px] text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'}</span>
                     <span className="text-[13px] text-[var(--product-muted)]">{labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</span>
-                    {/* 차수가 1보다 크면 변경공고가 있었다는 뜻이다. 횟수는 백필 이력에 따라 달라질 수 있어 단정하지 않는다. */}
-                    <span className={`text-[13px] ${changed ? 'font-semibold text-amber-700' : 'text-[var(--product-faint)]'}`}>{changed ? `변경 있음 · v${notice.current_version}` : '원공고'}</span>
-                    <div className="lg:text-right"><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : meta ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
+                    {/*
+                      차수가 1보다 크면 변경공고가 있었다는 뜻이다. 횟수는 백필 이력에 따라 달라질 수 있어 단정하지 않는다.
+                      반대로 차수가 1이라고 원공고라고 말할 수는 없다 — 이력 백필(#129) 전에 수집된 공고는
+                      변경이 있었어도 차수가 1로 남아 있다. 확인된 것만 쓴다.
+                    */}
+                    <span className={`text-[13px] ${changed ? 'font-semibold text-amber-700' : 'text-[var(--product-faint)]'}`}>{changed ? `변경 있음 · v${notice.current_version}` : '변경 여부 확인 전'}</span>
+                    <div className="lg:text-right"><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : existingCaseByNotice.has(notice.id) ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
                   </div>
                 );
               })}

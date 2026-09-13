@@ -112,7 +112,7 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
           <Input placeholder="번호" value={certification.certificate_number} onChange={(e) => setCertification({ ...certification, certificate_number: e.target.value })} />
           <Input placeholder="발급기관" value={certification.issuer_name} onChange={(e) => setCertification({ ...certification, issuer_name: e.target.value })} />
           <Input type="date" value={certification.issued_at} onChange={(e) => setCertification({ ...certification, issued_at: e.target.value })} />
-          <label className="sm:col-span-2 text-[12px] text-[var(--product-muted)]">만료일<Input className="mt-1" type="date" value={certification.expires_at} onChange={(e) => setCertification({ ...certification, expires_at: e.target.value })} /></label>
+          <label className="sm:col-span-2 text-[12px] text-[var(--product-muted)]" htmlFor="certification-expires-at">만료일<Input id="certification-expires-at" className="mt-1" type="date" value={certification.expires_at} onChange={(e) => setCertification({ ...certification, expires_at: e.target.value })} /></label>
         </div>
         <Button className="mt-3 rounded-full" onClick={() => void addCertification()} disabled={busy !== null}><Plus /> 인증·등록 추가</Button>
 

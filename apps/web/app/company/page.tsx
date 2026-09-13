@@ -216,12 +216,12 @@ export default function CompanyPage() {
               </p>
 
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
-                <label className="text-sm font-medium">회사명<Input className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
-                <label className="text-sm font-medium">사업자등록번호<Input className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
-                <label className="text-sm font-medium">지역 코드<Input className="mt-2" value={form.region_code} onChange={(event) => setForm({ ...form, region_code: event.target.value })} /></label>
-                <label className="text-sm font-medium">소재지<Input className="mt-2" value={form.region_name} onChange={(event) => setForm({ ...form, region_name: event.target.value })} /></label>
-                <label className="text-sm font-medium">전체 인원<Input className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
-                <label className="text-sm font-medium">개발자 인원<Input className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-name">회사명<Input id="company-name" className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
+                <label className="text-sm font-medium" htmlFor="company-brn">사업자등록번호<Input id="company-brn" className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
+                <label className="text-sm font-medium" htmlFor="company-region-code">지역 코드<Input id="company-region-code" className="mt-2" value={form.region_code} onChange={(event) => setForm({ ...form, region_code: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-region-name">소재지<Input id="company-region-name" className="mt-2" value={form.region_name} onChange={(event) => setForm({ ...form, region_name: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-staff-total">전체 인원<Input id="company-staff-total" className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-developer-count">개발자 인원<Input id="company-developer-count" className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
               </div>
 
               <div className="mt-6">

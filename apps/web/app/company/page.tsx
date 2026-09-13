@@ -17,7 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { COMPANY_SIZE_LABEL } from '@/lib/status-copy';
+import { COMPANY_SIZE_LABEL, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import {
   createCompany,
   listCompanies,
@@ -241,12 +241,12 @@ export default function CompanyPage() {
               <Building2 className="size-9 text-white/80" />
               <h2 className="mt-6 text-[28px] font-extrabold">프로필 값이 판정 근거가 됩니다</h2>
               <div className="mt-7 space-y-4 text-sm text-white/78">
-                <p>업종 → INDUSTRY</p>
-                <p>지역 → REGION</p>
-                <p>기업 규모 → COMPANY_SIZE</p>
-                <p>인력 → STAFF</p>
-                <p>수행 실적 → PERFORMANCE</p>
-                <p>인증·등록 → REGISTRATION</p>
+                <p>업종 → 공고의 업종 제한과 대조합니다</p>
+                <p>지역 → 참가 가능 지역과 대조합니다</p>
+                <p>기업 규모 → 기업 구분 제한과 대조합니다</p>
+                <p>인력 → 상시 인력·전담 인력 요건과 대조합니다</p>
+                <p>수행 실적 → 실적 건수·금액 요건과 대조합니다</p>
+                <p>인증·등록 → 요구하는 면허·인증 보유 여부와 대조합니다</p>
               </div>
             </aside>
           </section>
@@ -284,7 +284,7 @@ export default function CompanyPage() {
                     <span className={row.value.startsWith('비어 있음') ? 'text-amber-700' : ''}>{row.value}</span>
                     <span><Badge variant="outline">{row.source}</Badge></span>
                     <span>{new Date(row.updated).toLocaleDateString('ko-KR')}</span>
-                    <span className="text-[12px] font-semibold text-[var(--product-accent-deep)]">{row.use}</span>
+                    <span className="text-[12px] font-semibold text-[var(--product-accent-deep)]">{labelOf(REQUIREMENT_TYPE_LABEL, row.use)}</span>
                   </div>
                 ))}
               </div>

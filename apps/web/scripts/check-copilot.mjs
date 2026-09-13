@@ -113,6 +113,9 @@ history.focus('history', 'R2', oldReply);
 await history.ask('history', '그 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
 assert.equal(historicalRequest.requirement_key, 'R2');
 assert.equal(historicalRequest.conversation_context.last_read_receipt.provenance.judgment_run_id, 'old');
+// The first mock response intentionally has no visible targets. Restore the historical
+// reply so the ordinal check isolates stale-focus precedence instead of mock-state loss.
+history.focus('history', 'R2', oldReply);
 await history.ask('history', '첫 번째 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
 assert.equal(historicalRequest.requirement_key, undefined, 'Explicit ordinal must override stale UI focus');
 assert.deepEqual(historicalRequest.conversation_context.visible_requirement_keys, ['R1', 'R2']);

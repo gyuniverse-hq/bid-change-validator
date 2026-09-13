@@ -35,6 +35,7 @@ function companyRows(company: CompanyProfile) {
   return [
     {
       label: '업종 코드',
+      form: null as string | null,
       value: company.industries.length
         ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ')
         : '비어 있음 · 판정하지 않습니다',
@@ -44,6 +45,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '소재지',
+      form: null as string | null,
       value: company.region_name || company.region_code || '비어 있음 · 판정하지 않습니다',
       source: company.region_name || company.region_code ? '회사 입력' : '없음',
       updated: company.updated_at,
@@ -51,6 +53,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '기업 구분',
+      form: null as string | null,
       value: COMPANY_SIZE_LABEL[company.company_size],
       source: '회사 입력',
       updated: company.updated_at,
@@ -58,6 +61,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '상시 근로자 수',
+      form: null as string | null,
       value: company.staff ? `${company.staff.total_count.toLocaleString()}명` : '비어 있음 · 판정하지 않습니다',
       source: company.staff ? '회사 입력' : '없음',
       updated: company.updated_at,
@@ -65,6 +69,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '최근 수행 실적 건수',
+      form: '#profile-performance',
       // 「0건」은 회사가 신고한 사실이 아니라 우리가 아직 받지 못했다는 뜻이다.
       value: company.performances.length ? `${company.performances.length}건` : '비어 있음 · 판정하지 않습니다',
       source: company.performances.length ? '회사 입력' : '없음',
@@ -73,6 +78,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '최근 수행 실적 금액',
+      form: '#profile-performance',
       value: company.performances.length ? `합계 ${performanceTotal.toLocaleString()}원` : '비어 있음 · 판정하지 않습니다',
       source: company.performances.length ? '회사 입력' : '없음',
       updated: company.performances[0]?.updated_at ?? company.updated_at,
@@ -80,6 +86,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '인증 · 등록',
+      form: '#profile-certification',
       value: company.certifications.length
         ? company.certifications.map((item) => item.name).join(', ')
         : '비어 있음 · 판정하지 않습니다',
@@ -270,7 +277,8 @@ export default function CompanyPage() {
               <section className="mt-5 rounded-[22px] border border-[#e2d9a9] bg-[#fffaf0] p-6">
                 <div className="flex items-center gap-2"><FileBadge2 className="size-5 text-amber-700" /><h2 className="text-[20px] font-bold">비어 있는 항목 {missingRows.length}건</h2></div>
                 <div className="mt-4 divide-y divide-[#eee3bd]">
-                  {missingRows.map((row) => <div key={row.label} className="flex items-center justify-between gap-4 py-4"><div><strong>{row.label}</strong><p className="mt-1 text-sm text-[var(--product-muted)]">이 값을 요구하는 공고는 확인 필요로 남습니다.</p></div><Badge className="bg-amber-100 text-amber-800">확인 필요</Badge></div>)}
+                  {missingRows.map((row) => <div key={row.label} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><strong>{row.label}</strong><p className="mt-1 text-sm text-[var(--product-muted)]">이 값을 요구하는 공고는 확인 필요로 남습니다.</p></div><div className="flex shrink-0 items-center gap-2"><Badge className="bg-amber-100 text-amber-800">확인 필요</Badge>{/* 경고만 하고 끝내지 않는다. 이 화면 안에 입력 폼이 있는 항목은 거기로 바로 보낸다. */}
+                    {row.form && <a href={row.form} className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-[13px] font-semibold text-amber-800 hover:bg-amber-50">입력하러 가기 →</a>}</div></div>)}
                 </div>
               </section>
             )}

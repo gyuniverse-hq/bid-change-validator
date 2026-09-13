@@ -23,7 +23,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
+import { findPreflightCasesByNotice, getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
 import {
   createPreflightCaseWithCompany,
   listCompanies,
@@ -82,6 +82,11 @@ export default function NoticesPage() {
     목록에 없는 공고의 판정이 남는다. 검색마다 세대 번호를 올리고, 세대가 바뀌면 버린다.
   */
   const hydrateGeneration = useRef(0);
+  /*
+    검색도 마찬가지다. 빠르게 두 번 치면 먼저 보낸 목록 응답이 나중에 도착해
+    새 검색 결과를 덮을 수 있다. 세대가 지난 응답은 화면에 넣지 않는다. (#131 리뷰 P1)
+  */
+  const searchGeneration = useRef(0);
 
   async function hydrateCaseMeta(caseItems: PreflightCase[], noticeItems: BidNoticeSummary[], selectedCompanyId: string) {
     const generation = (hydrateGeneration.current += 1);
@@ -115,26 +120,35 @@ export default function NoticesPage() {
   }
 
   async function initialize(searchQuery = '') {
+    const generation = (searchGeneration.current += 1);
     setLoading(true);
     setError('');
     setCaseMeta({});
     // 목록을 받아오는 동안 앞선 hydrate가 끝날 수 있다. 여기서 먼저 세대를 올려 그 응답을 버린다.
     hydrateGeneration.current += 1;
     try {
-      const [noticeResult, caseResult, companies] = await Promise.all([
-        listNotices(searchQuery),
-        listPreflightCases(),
-        listCompanies(),
-      ]);
+      const [noticeResult, companies] = await Promise.all([listNotices(searchQuery), listCompanies()]);
+      // 이 사이에 새 검색이 시작됐으면 이건 지난 검색의 응답이다. 덮어쓰지 않는다.
+      if (generation !== searchGeneration.current) return;
+      const selectedCompany = companies[0] ?? null;
       setNotices(noticeResult.items);
       setNoticeTotal(noticeResult.total);
-      setCases(caseResult.items);
-      setCompany(companies[0] ?? null);
-      // 목록은 여기서 바로 그린다. hydrate를 기다리면 Case 한 건당 요청 3개가 나가서
-      // 수백 건이 끝날 때까지 스피너가 안 꺼진다. 판정 상태는 뒤이어 채운다.
+      setCompany(selectedCompany);
+      // 목록은 여기서 바로 그린다. 검토 건과 판정 상태는 뒤이어 채운다.
+      // hydrate를 기다리면 Case 한 건당 요청 2~3개가 나가서 수백 건이 끝날 때까지 스피너가 안 꺼진다.
       setLoading(false);
-      void hydrateCaseMeta(caseResult.items, noticeResult.items, companies[0]?.id ?? '');
+
+      /*
+        검토 건은 회사를 정한 뒤에 받는다. company_id 없이 받으면 백엔드가 회사로 걸러주지 않아
+        (auth_required=false로 띄우면 로그인 사용자가 없다) 다른 회사 Case가 상위 100칸을 나눠 쓰고,
+        우리 회사의 기존 검토 건이 목록 밖으로 밀린다. 그러면 이미 검토한 공고가 전부 「검토 시작」으로 보인다.
+      */
+      const caseResult = await listPreflightCases(selectedCompany?.id);
+      if (generation !== searchGeneration.current) return;
+      setCases(caseResult.items);
+      void hydrateCaseMeta(caseResult.items, noticeResult.items, selectedCompany?.id ?? '');
     } catch (cause) {
+      if (generation !== searchGeneration.current) return;
       setError(cause instanceof Error ? cause.message : '공고 데이터를 불러오지 못했습니다.');
       setLoading(false);
       setMetaLoading(false);
@@ -231,6 +245,18 @@ export default function NoticesPage() {
     setCreatingNoticeId(notice.id);
     setError('');
     try {
+      /*
+        목록에 없다고 없는 게 아니다. 목록은 상위 100건까지만 받아오므로
+        그 밖에 있는 기존 검토 건을 놓치고 같은 공고로 Case를 또 만들 수 있다.
+        만들기 직전에 이 공고만 다시 확인한다. (#131 리뷰)
+      */
+      const known = await findPreflightCasesByNotice(notice.id, company.id);
+      const reusable = known.items.find((item) => item.current_version_number === notice.current_version);
+      if (reusable) {
+        setCases((previous) => (previous.some((item) => item.id === reusable.id) ? previous : [...previous, reusable]));
+        router.push(`/qualification?caseId=${reusable.id}`);
+        return;
+      }
       const versions = await getNoticeVersions(notice.id);
       const current = versions.find((item) => item.is_current) ?? versions[0];
       if (!current) throw new Error('현재 공고 버전을 찾지 못했습니다.');
@@ -244,7 +270,7 @@ export default function NoticesPage() {
         current_version_number: current.version_number,
         title: `${notice.bid_notice_no} 참가자격 검토`,
       });
-      const refreshed = await listPreflightCases();
+      const refreshed = await listPreflightCases(company.id);
       setCases(refreshed.items);
       await hydrateCaseMeta(refreshed.items, notices, company.id);
       router.push(`/qualification?caseId=${created.id}`);

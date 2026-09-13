@@ -17,6 +17,7 @@ from .context import compact
 from .contracts import ConfirmAction
 from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
+from .narration import apply_product_narration
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
@@ -109,7 +110,10 @@ def copilot_chat(
         )
         if route_intent(payload) == "DOCUMENT_QA":
             return answer_grounded_document_question(db, payload)
-        return chat(db, payload)
+        result = chat(db, payload)
+        if semantic_processing:
+            result = apply_product_narration(db, payload, result)
+        return result
     except QualificationJudgmentError as error:
         raise ApiError(error.status_code, error.code, error.message) from error
     except (ValueError, RuntimeError, OpenAIError) as error:

@@ -65,7 +65,8 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '최근 수행 실적 건수',
-      value: `${company.performances.length}건`,
+      // 「0건」은 회사가 신고한 사실이 아니라 우리가 아직 받지 못했다는 뜻이다.
+      value: company.performances.length ? `${company.performances.length}건` : '비어 있음 · 판정하지 않습니다',
       source: company.performances.length ? '회사 입력' : '없음',
       updated: company.performances[0]?.updated_at ?? company.updated_at,
       use: 'PERFORMANCE_COUNT',
@@ -292,8 +293,8 @@ export default function CompanyPage() {
 
             <section className="mt-7 grid gap-5 md:grid-cols-3">
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><Users className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인력</h3><p className="mt-2 text-sm text-[var(--product-muted)]">총 {company.staff?.total_count ?? 0}명 · {company.staff?.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ') || '역할 정보 없음'}</p></div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><CheckCircle2 className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">수행 실적</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.performances.length}건 저장됨</p></div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><BadgeCheck className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인증 · 등록</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.certifications.length}건 저장됨</p></div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><CheckCircle2 className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">수행 실적</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.performances.length ? `${company.performances.length}건 저장됨` : '아직 입력하지 않았습니다'}</p></div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><BadgeCheck className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인증 · 등록</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.certifications.length ? `${company.certifications.length}건 저장됨` : '아직 입력하지 않았습니다'}</p></div>
             </section>
           </>
         )}

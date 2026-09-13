@@ -68,6 +68,8 @@ export default function NoticesPage() {
   const [caseMeta, setCaseMeta] = useState<Record<string, CaseStatusMeta>>({});
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // 사업 유형은 목록 API가 그대로 주는 값이라 추측이 없다. 용역만 하는 회사에게 물품·공사는 볼 이유가 없다.
+  const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [creatingNoticeId, setCreatingNoticeId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -147,9 +149,17 @@ export default function NoticesPage() {
         notice.bid_notice_no.toLowerCase().includes(normalized) ||
         (notice.announcing_institution_name ?? '').toLowerCase().includes(normalized);
       const status = caseMeta[notice.id]?.judgment?.overall_status ?? 'unreviewed';
-      return matchesText && (statusFilter === 'all' || status === statusFilter);
+      const matchesType = businessTypeFilter === 'all' || notice.business_type === businessTypeFilter;
+      return matchesText && matchesType && (statusFilter === 'all' || status === statusFilter);
     });
-  }, [notices, query, statusFilter, caseMeta]);
+  }, [notices, query, statusFilter, businessTypeFilter, caseMeta]);
+
+  // 불러온 목록에 실제로 있는 유형만 버튼으로 만든다. 없는 유형을 띄우면 눌러도 0건이 나온다.
+  const businessTypeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    notices.forEach((notice) => counts.set(notice.business_type, (counts.get(notice.business_type) ?? 0) + 1));
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [notices]);
 
   const activeNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) !== 'ineligible');
   const rejectedNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) === 'ineligible');
@@ -293,14 +303,22 @@ export default function NoticesPage() {
               <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
               <p className="mt-2 text-[14px] text-[var(--product-muted)]">나라장터에서 수집한 공고입니다. 검토를 시작하면 판정 상태가 붙습니다. 아래 「회사 기준으로 판정 가능한 공고」는 이 중 분석이 끝난 것만 모은 자리입니다.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-[62px] shrink-0 text-[12px] font-bold text-[var(--product-muted)]">사업 유형</span>
+                <button type="button" onClick={() => setBusinessTypeFilter('all')} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${businessTypeFilter === 'all' ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>전체 {notices.length}</button>
+                {businessTypeOptions.map(([type, count]) => <button key={type} type="button" onClick={() => setBusinessTypeFilter(type)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${businessTypeFilter === type ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{labelOf(BUSINESS_TYPE_LABEL, type)} {count}</button>)}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-[62px] shrink-0 text-[12px] font-bold text-[var(--product-muted)]">검토 상태</span>
+                {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
+              </div>
             </div>
           </div>
 
           {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
           {/* DL-007 — 「전체 공고」가 아니라 「검색으로 좁힌 결과의 상위 N건」이라는 사실을 화면이 말한다. */}
-          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 중 상위 {notices.length}건을 불러왔고, 이 중 {Math.min(activeNotices.length, VISIBLE_NOTICE_LIMIT)}건을 표시합니다{activeNotices.length > VISIBLE_NOTICE_LIMIT ? ' · 원하는 공고는 검색으로 좁혀보세요' : ''}</p>}
+          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 중 상위 {notices.length}건을 불러왔습니다{businessTypeFilter !== 'all' || statusFilter !== 'all' ? ` · 필터에 맞는 ${activeNotices.length}건` : ''} · 이 중 {Math.min(activeNotices.length, VISIBLE_NOTICE_LIMIT)}건 표시{activeNotices.length > VISIBLE_NOTICE_LIMIT ? ' · 원하는 공고는 검색으로 좁혀보세요' : ''}</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
             /*

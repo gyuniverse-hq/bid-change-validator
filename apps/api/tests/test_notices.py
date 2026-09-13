@@ -19,6 +19,7 @@ from apps.api.app.models import (
     NoticeChangeHistory,
     NoticeDocument,
     NoticeFact,
+    NoticeHistoryBackfillJob,
     NoticeRelation,
 )
 from apps.api.app.routers import notices as notices_router
@@ -196,9 +197,11 @@ def test_notice_version_deduplication_file_download_and_api(
         assert same_version.id == first_version.id
         assert file_session.calls == 1
 
+        changed_item = _item(notice_no, estimated_price="130000000")
+        changed_item["bidNtceOrd"] = "01"
         changed, _, second_version = save_notice_snapshot(
             db,
-            item=_item(notice_no, estimated_price="130000000"),
+            item=changed_item,
             business_type=BusinessType.SERVICE,
             source_endpoint="getBidPblancListInfoServc",
             collected_at=datetime(2026, 9, 5, 12, tzinfo=KST),
@@ -387,6 +390,7 @@ def test_notice_facts_are_versioned_and_diffed() -> None:
         notice_id = notice.id
 
         second = _item(notice_no)
+        second["bidNtceOrd"] = "01"
         second["bidClseDt"] = "2026-09-12 10:00:00"
         second["asignBdgtAmt"] = "150000000"
         second["cmmnSpldmdMethdCd"] = "공500001"
@@ -571,6 +575,187 @@ def test_g2b_change_history_uses_notice_number_operation() -> None:
     assert window_params["inqryDiv"] == "1"
     assert window_params["inqryBgnDt"] == "202609050900"
     assert window_params["inqryEndDt"] == "202609051000"
+
+
+def test_g2b_replaces_unpaired_surrogates_before_persistence() -> None:
+    payload = b'''{"response":{"header":{"resultCode":"00"},"body":{"items":[{"bidNtceNo":"R26TEST","bidNtceNm":"bad\\udb80title"}],"totalCount":1,"pageNo":1,"numOfRows":100}}}'''
+    g2b = G2BClient(
+        service_key="decoded-key",
+        base_url="https://example.test/BidPublicInfoService",
+        session=FakeJsonSession(payload),
+    )
+
+    page = g2b.fetch_page(
+        business_type=BusinessType.SERVICE,
+        inquiry_type=NoticeInquiryType.NOTICE_NUMBER,
+        page_number=1,
+        page_size=100,
+        bid_notice_no="R26TEST",
+    )
+
+    assert page.items[0]["bidNtceNm"] == "bad\ufffdtitle"
+    assert "\udb80" not in page.items[0]["bidNtceNm"]
+
+
+def test_notice_number_backfill_orders_versions_and_is_idempotent() -> None:
+    notice_no = f"TEST-HISTORY-{uuid4()}"
+    db = SessionLocal()
+    notice_id = None
+    run_ids = []
+    try:
+        current_item = _item(notice_no)
+        current_item["bidNtceOrd"] = "003"
+        first_run = run_notice_sync(
+            db,
+            request=NoticeSyncRequest(
+                business_type=BusinessType.SERVICE,
+                inquiry_type=NoticeInquiryType.REGISTERED,
+                window_started_at=datetime(2026, 9, 5, 9, tzinfo=KST),
+                window_ended_at=datetime(2026, 9, 5, 10, tzinfo=KST),
+            ),
+            client=type(
+                "RegisteredClient",
+                (),
+                {
+                    "fetch_page": lambda _self, **kwargs: G2BPage(
+                        items=[current_item],
+                        total_count=1,
+                        page_number=kwargs["page_number"],
+                        page_size=kwargs["page_size"],
+                        endpoint="getBidPblancListInfoServc",
+                    )
+                },
+            )(),
+        )
+        run_ids.append(first_run.id)
+        notice = db.scalar(
+            select(BidNotice).where(BidNotice.bid_notice_no == notice_no)
+        )
+        assert notice is not None
+        notice_id = notice.id
+        assert db.scalar(
+            select(func.count())
+            .select_from(NoticeHistoryBackfillJob)
+            .where(NoticeHistoryBackfillJob.notice_id == notice.id)
+        ) == 1
+
+        history_items = []
+        for order in range(5, -1, -1):
+            item = _item(notice_no, estimated_price=str(100_000_000 + order))
+            item["bidNtceOrd"] = f"{order:03d}"
+            item["ntceKindNm"] = "취소공고" if order == 5 else "변경공고"
+            if order == 5:
+                item["stdNtceDocUrl"] = ""
+                item["ntceSpecDocUrl1"] = ""
+            history_items.append(item)
+
+        class HistoryClient:
+            def fetch_page(self, **kwargs) -> G2BPage:
+                return G2BPage(
+                    items=history_items,
+                    total_count=len(history_items),
+                    page_number=kwargs["page_number"],
+                    page_size=kwargs["page_size"],
+                    endpoint="getBidPblancListInfoServc",
+                )
+
+        request = NoticeSyncRequest(
+            business_type=BusinessType.SERVICE,
+            inquiry_type=NoticeInquiryType.NOTICE_NUMBER,
+            bid_notice_no=notice_no,
+        )
+        history_run = run_notice_sync(db, request=request, client=HistoryClient())
+        run_ids.append(history_run.id)
+
+        versions = db.scalars(
+            select(BidNoticeVersion)
+            .where(BidNoticeVersion.notice_id == notice.id)
+            .order_by(BidNoticeVersion.version_number)
+        ).all()
+        assert [version.bid_notice_order for version in versions] == [
+            "000", "001", "002", "003", "004", "005"
+        ]
+        assert [version.version_number for version in versions] == [1, 2, 3, 4, 5, 6]
+        assert [version.is_current for version in versions] == [
+            False, False, False, False, False, True
+        ]
+        assert versions[-1].notice_kind == "취소공고"
+        assert len(versions[-1].documents) == 0
+
+        repeat_run = run_notice_sync(db, request=request, client=HistoryClient())
+        run_ids.append(repeat_run.id)
+        assert db.scalar(
+            select(func.count())
+            .select_from(BidNoticeVersion)
+            .where(BidNoticeVersion.notice_id == notice.id)
+        ) == 6
+    finally:
+        if notice_id is not None:
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        for run_id in run_ids:
+            run = db.get(NoticeCollectionRun, run_id)
+            if run is not None:
+                db.delete(run)
+        db.commit()
+        db.close()
+
+
+def test_one_invalid_notice_does_not_abort_remaining_items() -> None:
+    valid_notice_no = f"TEST-VALID-{uuid4()}"
+    invalid = _item(f"TEST-INVALID-{uuid4()}")
+    invalid.pop("bidNtceNm")
+    valid = _item(valid_notice_no)
+
+    class MixedClient:
+        def fetch_page(self, **kwargs) -> G2BPage:
+            return G2BPage(
+                items=[invalid, valid],
+                total_count=2,
+                page_number=kwargs["page_number"],
+                page_size=kwargs["page_size"],
+                endpoint="getBidPblancListInfoServc",
+            )
+
+    db = SessionLocal()
+    notice_id = None
+    run_id = None
+    try:
+        run = run_notice_sync(
+            db,
+            request=NoticeSyncRequest(
+                business_type=BusinessType.SERVICE,
+                inquiry_type=NoticeInquiryType.REGISTERED,
+                window_started_at=datetime(2026, 9, 5, 9, tzinfo=KST),
+                window_ended_at=datetime(2026, 9, 5, 10, tzinfo=KST),
+            ),
+            client=MixedClient(),
+        )
+        run_id = run.id
+        notice = db.scalar(
+            select(BidNotice).where(BidNotice.bid_notice_no == valid_notice_no)
+        )
+        assert notice is not None
+        notice_id = notice.id
+        assert run.status == "COMPLETED"
+        assert run.fetched_count == 2
+        assert run.created_count == 1
+        assert run.failed_item_count == 1
+        assert "TEST-INVALID" in (run.error_message or "")
+    finally:
+        if notice_id is not None:
+            notice = db.get(BidNotice, notice_id)
+            if notice is not None:
+                db.delete(notice)
+                db.commit()
+        if run_id is not None:
+            run = db.get(NoticeCollectionRun, run_id)
+            if run is not None:
+                db.delete(run)
+                db.commit()
+        db.close()
 
 
 def test_changed_sync_persists_authoritative_change_history() -> None:

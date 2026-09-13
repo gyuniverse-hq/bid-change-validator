@@ -6,13 +6,16 @@ from datetime import datetime, timedelta
 from threading import Event
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, or_, select, text
 
 from ..config import Settings, get_settings
 from ..database import SessionLocal, engine
-from ..models import NoticeCollectionRun
+from ..models import BidNotice, NoticeCollectionRun, NoticeHistoryBackfillJob
 from ..schemas import BusinessType, NoticeInquiryType, NoticeSyncRequest
-from ..services.document_storage import build_document_downloader
+from ..services.document_storage import (
+    NoticeDocumentDownloader,
+    build_document_downloader,
+)
 from ..services.g2b import G2BClient
 from ..services.notices import run_notice_sync
 
@@ -107,6 +110,109 @@ def run_poll_cycle(settings: Settings, *, now: datetime | None = None) -> None:
             )
         except Exception:
             logger.exception("poll failed business_type=%s", business_type.value)
+
+    run_history_backfill_batch(
+        settings,
+        client=client,
+        document_downloader=downloader,
+        now=cycle_time,
+    )
+
+
+def run_history_backfill_batch(
+    settings: Settings,
+    *,
+    client: G2BClient,
+    document_downloader: NoticeDocumentDownloader | None,
+    now: datetime | None = None,
+) -> int:
+    """Consume a bounded number of durable full-history jobs."""
+
+    cycle_time = now or datetime.now(KST)
+    stale_before = cycle_time - timedelta(hours=1)
+    with SessionLocal() as db:
+        job_ids = db.scalars(
+            select(NoticeHistoryBackfillJob.id)
+            .where(
+                or_(
+                    and_(
+                        NoticeHistoryBackfillJob.status.in_(("PENDING", "FAILED")),
+                        NoticeHistoryBackfillJob.next_attempt_at <= cycle_time,
+                    ),
+                    and_(
+                        NoticeHistoryBackfillJob.status == "RUNNING",
+                        NoticeHistoryBackfillJob.started_at < stale_before,
+                    ),
+                )
+            )
+            .order_by(NoticeHistoryBackfillJob.next_attempt_at)
+            .limit(settings.notice_history_backfill_batch_size)
+        ).all()
+
+    completed = 0
+    for job_id in job_ids:
+        with SessionLocal() as db:
+            job = db.get(NoticeHistoryBackfillJob, job_id)
+            if job is None:
+                continue
+            notice = db.get(BidNotice, job.notice_id)
+            if notice is None:
+                db.delete(job)
+                db.commit()
+                continue
+
+            job.status = "RUNNING"
+            job.attempts += 1
+            job.started_at = cycle_time
+            job.completed_at = None
+            job.last_error = None
+            job.updated_at = cycle_time
+            db.commit()
+
+            try:
+                run_notice_sync(
+                    db,
+                    request=NoticeSyncRequest(
+                        business_type=BusinessType(notice.business_type),
+                        inquiry_type=NoticeInquiryType.NOTICE_NUMBER,
+                        bid_notice_no=notice.bid_notice_no,
+                        page_size=settings.notice_poll_page_size,
+                        max_pages=settings.notice_poll_max_pages,
+                    ),
+                    client=client,
+                    document_downloader=document_downloader,
+                )
+                job = db.get(NoticeHistoryBackfillJob, job_id)
+                if job is not None:
+                    job.status = "COMPLETED"
+                    job.completed_at = datetime.now(KST)
+                    job.updated_at = job.completed_at
+                    db.commit()
+                completed += 1
+            except Exception as error:
+                db.rollback()
+                job = db.get(NoticeHistoryBackfillJob, job_id)
+                if job is not None:
+                    retry_factor = min(2 ** max(job.attempts - 1, 0), 96)
+                    job.status = "FAILED"
+                    job.next_attempt_at = cycle_time + timedelta(
+                        minutes=(
+                            settings.notice_history_backfill_retry_minutes
+                            * retry_factor
+                        )
+                    )
+                    job.last_error = f"{type(error).__name__}: {str(error)}"[:2000]
+                    job.updated_at = datetime.now(KST)
+                    db.commit()
+                logger.exception("notice history backfill failed job_id=%s", job_id)
+
+    if job_ids:
+        logger.info(
+            "notice history backfill batch selected=%s completed=%s",
+            len(job_ids),
+            completed,
+        )
+    return completed
 
 
 def _run_cycle_with_lock(settings: Settings) -> bool:

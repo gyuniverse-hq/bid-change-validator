@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from ..schemas import BusinessType, NoticeInquiryType
+from .json_safety import sanitize_json_value
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -153,7 +154,9 @@ class G2BClient:
             response.raise_for_status()
             # The API declares UTF-8, but relying on guessed encoding can corrupt
             # Korean text on some Windows environments.
-            payload = json.loads(response.content.decode("utf-8"))
+            payload = sanitize_json_value(
+                json.loads(response.content.decode("utf-8"))
+            )
         except (requests.RequestException, UnicodeDecodeError, ValueError) as error:
             # Request exception strings can contain the service key in the URL.
             raise G2BApiError(

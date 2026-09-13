@@ -18,6 +18,9 @@ from .qualification.routers.matching import router as qualification_matching_rou
 from .qualification.routers.revalidation import router as qualification_revalidation_router
 from .routers.companies import router as companies_router
 from .routers.auth import router as auth_router
+# [재현] 사업계획서 초안. 판정 결과(judgment run)를 서버가 읽어 초안을 만든다 —
+# 프론트는 사건 ID 와 담당자 입력만 보낸다. 근거를 클라이언트가 만들지 않게 하기 위해서다.
+from .routers.business_plan_drafts import router as business_plan_drafts_router
 from .routers.clause_reviews import router as clause_reviews_router
 from .routers.master_codes import router as master_codes_router
 from .routers.notices import router as notices_router
@@ -77,6 +80,7 @@ protected_api_router = APIRouter(
     dependencies=[Depends(require_authentication_if_enabled)]
 )
 protected_api_router.include_router(companies_router)
+protected_api_router.include_router(business_plan_drafts_router)
 protected_api_router.include_router(clause_reviews_router)
 protected_api_router.include_router(master_codes_router)
 protected_api_router.include_router(notices_router)

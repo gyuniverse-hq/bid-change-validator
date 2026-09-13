@@ -1,9 +1,11 @@
 """Optional product-truth narration for the bootcamp Copilot demo.
 
 The model may *explain* an already persisted product decision, but it never owns
-eligibility, requirement status, provenance, or write execution.  The existing
+eligibility, requirement status, provenance, or write execution. The existing
 product response remains the fallback whenever narration is unavailable or its
-structured output violates the observed product context.
+structured output violates the observed product context. REQUIRED_CHECKS uses a
+compact deterministic fallback because the legacy full-scope dump is itself a
+user-facing ambiguity ("nothing to answer" followed by many manual-review items).
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from .context import compact
 from .contracts import QualificationSummary, RequiredChecksResult
 from .presentation import NextAction, Presentation, Reason, render_answer
 from .product_tools import get_judgment_profile_snapshot, get_qualification_summary, matching_provenance
-from .source_map import SourceMap, cited_sources, source_identity
+from .source_map import SourceMap, cited_sources
 
 
 class NarratedPoint(BaseModel):
@@ -33,7 +35,7 @@ class NarratedPoint(BaseModel):
 class ProductNarration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Locked by a per-request JSON-schema enum.  This field is deliberately
+    # Locked by a per-request JSON-schema enum. This field is deliberately
     # separate from prose so the model never gets to choose product truth.
     status: str
     conclusion: str = Field(min_length=1, max_length=500)
@@ -53,14 +55,25 @@ SYSTEM_PROMPT = """당신은 나라장터 입찰 검토 서비스의 설명 전�
 4. 참가 가능 여부 요약에서는 핵심 이유를 최대 3개만 보여준다. 전체 요건을 반복하지 않는다.
 5. SATISFIED 요건은 사용자의 질문에 도움이 될 때만 짧게 언급한다.
 6. '추가로 답변할 회사정보가 없음'과 '사람이 직접 확인할 판정 밖 항목이 있음'을 같은 뜻으로 쓰지 않는다.
-7. analysis_status가 PARTIAL이면 판정의 직접 원인이 없다는 식으로 말하지 않는다. 대신 자동 검토 범위가 완전하지 않다고만 설명한다.
-8. company_profile은 판정 당시 snapshot이며, 제공된 필드만 사용한다. 식별자를 추정하거나 복원하지 않는다.
-9. key_points는 입력에 있는 requirement_key만 사용한다. 판정 밖 수동 확인사항을 요약할 때만 requirement_key를 null로 둔다.
-10. 저장·반영·재검증을 실행했다고 말하지 않는다. next_action은 조회·확인 안내만 작성한다.
-11. 짧고 대화체로 답한다. 시스템 내부 용어, JSON, reason_code를 그대로 노출하지 않는다.
+7. intent가 REQUIRED_CHECKS이면 required_checks가 사용자 입력으로 판정을 갱신할 수 있는 항목이다.
+   - required_checks가 비어 있고 manual_review가 있으면, '추가로 입력할 회사정보는 없지만 직접 확인할 공고 항목은 있다'고 명확히 구분한다.
+   - 이 경우 points는 manual_review의 실제 원문/근거만 최대 3개 요약하고 requirement_key는 반드시 null로 둔다.
+   - product_truth의 미달 요건을 required_checks인 것처럼 다시 제시하지 않는다.
+8. analysis_status가 PARTIAL이면 판정의 직접 원인이 없다는 식으로 말하지 않는다. 대신 자동 검토 범위가 완전하지 않다고만 설명한다.
+9. company_profile은 판정 당시 snapshot이며, 제공된 필드만 사용한다. 식별자를 추정하거나 복원하지 않는다.
+10. requirement_key가 필요한 points는 입력의 허용된 요건만 사용한다. 판정 밖 수동 확인사항을 요약할 때는 requirement_key를 null로 둔다.
+11. 저장·반영·재검증을 실행했다고 말하지 않는다. next_action은 조회·확인 안내만 작성한다.
+12. 짧고 대화체로 답한다. 시스템 내부 용어, JSON, reason_code를 그대로 노출하지 않는다.
 """
 
 StructuredCall = Callable[[str, str, dict[str, Any]], dict[str, Any]]
+
+
+STATUS_CONCLUSION = {
+    "eligible": "현재 저장된 판정은 참가 가능입니다.",
+    "ineligible": "현재 저장된 판정은 참가 불가입니다.",
+    "insufficient_data": "현재 저장된 판정만으로는 참가 가능 여부를 확정할 수 없습니다.",
+}
 
 
 def _profile_for_ai(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -104,13 +117,34 @@ def _profile_for_ai(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _manual_review(summary: QualificationSummary) -> list[str]:
+def _manual_review(summary: QualificationSummary) -> list[dict[str, Any]]:
+    """Give narration the actual manual-review content, not repeated scope labels."""
     scope = summary.analysis_scope
     if scope is None:
         return []
-    items = [item.message for item in scope.notice_facts]
-    items.extend(item.raw for item in scope.dropped_requirements if item.raw.strip())
+    items: list[dict[str, Any]] = []
+    for item in scope.notice_facts:
+        items.append({
+            "kind": "NOTICE_FACT",
+            "code": item.code,
+            "message": item.message,
+            "evidence_quotes": [evidence.quote for evidence in item.evidence[:2]],
+        })
+    for item in scope.dropped_requirements:
+        if item.raw.strip():
+            items.append({
+                "kind": "DROPPED_REQUIREMENT",
+                "reason_code": item.reason_code,
+                "text": item.raw,
+            })
     return items[:8]
+
+
+def _manual_review_count(summary: QualificationSummary) -> int:
+    scope = summary.analysis_scope
+    if scope is None:
+        return 0
+    return len(scope.notice_facts) + len(scope.dropped_requirements)
 
 
 def _summary_payload(summary: QualificationSummary) -> dict[str, Any]:
@@ -129,6 +163,7 @@ def _summary_payload(summary: QualificationSummary) -> dict[str, Any]:
             }
             for item in summary.judgments
         ],
+        "manual_review_count": _manual_review_count(summary),
         "manual_review": _manual_review(summary),
     }
 
@@ -175,13 +210,17 @@ def _allowed_keys(request: CopilotChatRequest, summary: QualificationSummary, ch
     return {item.requirement_key for item in summary.judgments}
 
 
-def _recompose(result: CopilotChatResponse, narration: ProductNarration, allowed_keys: set[str]) -> CopilotChatResponse:
+def _recompose(
+    result: CopilotChatResponse,
+    narration: ProductNarration,
+    allowed_keys: set[str],
+) -> CopilotChatResponse | None:
     old_presentation = result.presentation
     if old_presentation is None:
-        return result
+        return None
 
     # Preserve only evidence that belongs to model-selected, already-visible
-    # product requirements.  The model never creates source identities.
+    # product requirements. The model never creates source identities.
     old_reasons = {
         reason.requirement_key: reason
         for reason in old_presentation.reasons
@@ -193,16 +232,16 @@ def _recompose(result: CopilotChatResponse, narration: ProductNarration, allowed
     for point in narration.points:
         key = point.requirement_key
         if key is not None and key not in allowed_keys:
-            return result
+            return None
         evidence_ids: list[str] = []
         if key is not None:
             original = old_reasons.get(key)
             if original is None:
-                return result
+                return None
             for ref in original.evidence_refs:
                 source = old_sources.get(ref)
                 if source is None:
-                    return result
+                    return None
                 evidence_ids.append(mapping.add(source))
         reasons.append(Reason(text=point.text, requirement_key=key, evidence_refs=evidence_ids))
 
@@ -223,6 +262,53 @@ def _recompose(result: CopilotChatResponse, narration: ProductNarration, allowed
     return result
 
 
+def _compact_required_checks_fallback(
+    result: CopilotChatResponse,
+    summary: QualificationSummary,
+    checks: RequiredChecksResult,
+) -> CopilotChatResponse:
+    """Keep REQUIRED_CHECKS useful even when optional narration fails."""
+    manual_count = _manual_review_count(summary)
+    answerable_count = len(checks.questions)
+    status = STATUS_CONCLUSION[summary.overall_status]
+
+    if answerable_count:
+        conclusion = f"{status} 추가로 답변해 판정을 갱신할 회사정보는 {answerable_count}건입니다."
+    elif manual_count:
+        conclusion = (
+            f"{status} 추가로 입력해 판정을 갱신할 회사정보는 없습니다. "
+            f"다만 공고 원문에서 직접 확인해야 할 항목이 {manual_count}건 있습니다."
+        )
+    else:
+        conclusion = f"{status} 현재 추가로 입력하거나 직접 확인할 항목은 없습니다."
+
+    allowed = {item.requirement_key for item in checks.questions}
+    old_presentation = result.presentation
+    old_sources = {source.ref: source for source in result.sources}
+    mapping = SourceMap()
+    reasons: list[Reason] = []
+    if old_presentation is not None:
+        for reason in old_presentation.reasons:
+            if reason.requirement_key not in allowed:
+                continue
+            evidence_ids: list[str] = []
+            for ref in reason.evidence_refs:
+                source = old_sources.get(ref)
+                if source is not None:
+                    evidence_ids.append(mapping.add(source))
+            reasons.append(reason.model_copy(update={"evidence_refs": evidence_ids}))
+
+    limitations = []
+    if manual_count:
+        limitations.append("자동 판정에 포함되지 않은 항목은 참가자격 화면에서 원문과 함께 확인해 주세요.")
+    presentation = Presentation(conclusion=conclusion, reasons=reasons, limitations=limitations)
+    result.presentation = presentation
+    result.sources = mapping.finalize(presentation)
+    result.answer = render_answer(presentation, result.sources)
+    result.citations = cited_sources(result.answer, presentation, result.sources)
+    return result
+
+
 def apply_product_narration(
     db: Session,
     request: CopilotChatRequest,
@@ -230,7 +316,7 @@ def apply_product_narration(
     *,
     extractor: StructuredCall | None = None,
 ) -> CopilotChatResponse:
-    """Narrate read-only Product Truth and fail closed to the deterministic answer."""
+    """Narrate read-only Product Truth and fail closed to a safe presentation."""
     if result.intent not in {"QUALIFICATION_SUMMARY", "REQUIRED_CHECKS"}:
         return result
 
@@ -245,13 +331,13 @@ def apply_product_narration(
     try:
         profile = get_judgment_profile_snapshot(db, request.case_id)
     except Exception:
-        return result
+        return _compact_required_checks_fallback(result, summary, checks) if checks is not None else result
     if not matching_provenance(summary, profile):
-        return result
+        return _compact_required_checks_fallback(result, summary, checks) if checks is not None else result
 
     provider = extractor or OpenAIStructuredExtractor()
     if extractor is None and not provider.available:
-        return result
+        return _compact_required_checks_fallback(result, summary, checks) if checks is not None else result
 
     allowed_keys = _allowed_keys(request, summary, checks)
     body = {
@@ -278,9 +364,15 @@ def apply_product_narration(
         raw = provider(SYSTEM_PROMPT, json.dumps(body, ensure_ascii=False, default=str), _schema(summary.overall_status))
         narration = ProductNarration.model_validate(raw)
         if narration.status != summary.overall_status:
-            return result
-        return _recompose(result, narration, allowed_keys)
+            return _compact_required_checks_fallback(result, summary, checks) if checks is not None else result
+        narrated = _recompose(result, narration, allowed_keys)
+        if narrated is not None:
+            return narrated
     except Exception:
-        # Narration is an optional presentation layer. Provider failures,
-        # validation failures or unsafe target selection never replace product truth.
-        return result
+        pass
+
+    # Narration is an optional presentation layer. Provider failures, validation
+    # failures or unsafe target selection never replace Product Truth. For
+    # REQUIRED_CHECKS the fallback is compact because the legacy full-scope dump
+    # contradicts the user's task even though its facts are technically correct.
+    return _compact_required_checks_fallback(result, summary, checks) if checks is not None else result

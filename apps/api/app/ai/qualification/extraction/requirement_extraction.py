@@ -15,6 +15,7 @@ resolves canonical values, and later judges them.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -137,6 +138,55 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 
 _TOP_LEVEL_LABEL_RE = re.compile(r"^(?:\d+|[가-힣]|[IVXivx]+|제\d+조(?:의\d+)?|제\d+장)$")
 
+# 한국 공고의 항목 위계. 숫자 1. 아래에 가. 아래에 1) 아래에 가) 가 온다.
+# 예전에는 이 넷을 전부 "상위 제목"으로 봐서, "3. 입찰참가자격" 의 자식을 걷다가
+# 바로 다음 "가." 에서 멈췄다. 자격 절의 본문(가·나·다 …)이 통째로 빠졌고, 그 항목들은
+# 제목에 키워드가 없어 앵커도 못 됐다. 위계를 분리해 자식 항목은 다음 동급·상위
+# 제목이 나타날 때까지 자격 절과 함께 전달한다.
+_LABEL_RANK_PATTERNS = (
+    (re.compile(r"^(?:제\d+장|제\d+조(?:의\d+)?)$"), 0),   # 제N장 · 제N조
+    (re.compile(r"^(?:\d+|[IVXivx]+)$"), 10),               # 1.  Ⅰ.
+    (re.compile(r"^[가-힣]$"), 20),                          # 가.
+    (re.compile(r"^\d+\)$"), 30),                           # 1)
+    (re.compile(r"^[가-힣]\)$"), 40),                        # 가)
+    (re.compile(r"^\(\d+\)$"), 50),                         # (1)
+)
+
+
+# 청커는 라벨에서 괄호를 뗀다 — "1)" 도 "1." 도 clause_label 은 '1' 이다. 위계는
+# 본문 첫 줄에 남아 있는 실제 기호로 읽는다.
+_HEADING_MARKER_RE = re.compile(
+    r"^\s*(?:(?P<paren_num>\(\d+\))|(?P<num_paren>\d+\))|(?P<han_paren>[가-힣]\))"
+    r"|(?P<dotted>\d+(?:\.\d+)+)|(?P<num>\d+)\s*[.．]|(?P<han>[가-힣])\s*[.．]"
+    r"|(?P<article>제\d+(?:장|조(?:의\d+)?)))"
+)
+_MARKER_RANK = {
+    "article": 0,
+    "num": 10,
+    "han": 20,
+    "num_paren": 30,
+    "han_paren": 40,
+    "paren_num": 50,
+}
+
+
+def _label_rank(chunk: dict[str, Any]) -> int | None:
+    """항목 기호의 위계. 낮을수록 상위. 기호가 없으면 None."""
+    label = str(chunk.get("clause_label") or "").strip()
+    if not label:
+        return None
+    marker = _HEADING_MARKER_RE.match(_heading_text(chunk))
+    if marker:
+        if marker.lastgroup == "dotted":
+            # 숫자 절 안에서 점 하나마다 한 단계 깊어진다. 한글 항목(가.)보다
+            # 앞선 대역을 써서 `3.1 참가자격 -> 가. 업종`도 자식으로 유지한다.
+            return 10 + marker.group("dotted").count(".")
+        return _MARKER_RANK[marker.lastgroup]
+    for pattern, rank in _LABEL_RANK_PATTERNS:
+        if pattern.match(label):
+            return rank
+    return None
+
 
 def _is_top_level(chunk: dict[str, Any]) -> bool:
     label = chunk.get("clause_label")
@@ -154,7 +204,8 @@ def _heading_text(chunk: dict[str, Any]) -> str:
 
 
 def _is_eligibility_section_anchor(chunk: dict[str, Any]) -> bool:
-    if not _is_top_level(chunk):
+    rank = _label_rank(chunk)
+    if rank is None:
         return False
     heading = _heading_text(chunk)
     return any(keyword in heading for keyword in _SECTION_HEADER_KEYWORDS)
@@ -169,12 +220,16 @@ def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, An
         anchor = chunks[index]
         selected[index] = anchor
         anchor_document_id = _chunk_document_id(anchor)
+        anchor_rank = _label_rank(anchor)
         for child_index in range(index + 1, len(chunks)):
             candidate = chunks[child_index]
             candidate_document_id = _chunk_document_id(candidate)
             if anchor_document_id is not None and candidate_document_id is not None and candidate_document_id != anchor_document_id:
                 break
-            if _is_top_level(candidate):
+            # 앵커와 같거나 더 상위인 기호가 나오면 절이 끝난 것이다. 더 깊은 기호
+            # (3. 아래의 가., 가. 아래의 1))는 그 절의 본문이므로 계속 걷는다.
+            candidate_rank = _label_rank(candidate)
+            if candidate_rank is not None and (anchor_rank is None or candidate_rank <= anchor_rank):
                 break
             selected[child_index] = candidate
 
@@ -186,8 +241,25 @@ def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, An
     return [selected[index] for index in sorted(selected)] if selected else chunks
 
 
+_GROUNDING_PUNCTUATION = str.maketrans(
+    {
+        "․": "·",
+        "ㆍ": "·",
+        "‧": "·",
+        "・": "·",
+        "‥": "·",
+        "（": "(",
+        "）": ")",
+    }
+)
+
+
 def _squash(value: str) -> str:
-    return re.sub(r"\s+", "", value)
+    """Normalize source text only for containment checks; stored raw stays untouched."""
+    # U+2024 (ONE DOT LEADER) becomes an ASCII period under NFKC, so translate
+    # punctuation variants first and apply compatibility normalization afterward.
+    normalized = unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION))
+    return re.sub(r"\s+", "", normalized)
 
 
 def _normalize_reference(value: str) -> str:

@@ -39,6 +39,13 @@ type StatusFilter = 'all' | OverallStatus;
 type CaseStatusMeta = { caseItem: PreflightCase; judgment: QualificationJudgmentSummary | null };
 type QuickTile = { label: string; value: string | number; icon: LucideIcon; filter: StatusFilter };
 
+/*
+  판정 상태는 Case 한 건당 요청 3개를 쓴다 (분석 목록 · 판정 목록 · 판정 상세).
+  공용 API는 Supabase 세션 풀러 상한 때문에 DB 커넥션 2개로 제한돼 있어,
+  수백 건을 한 번에 던지면 전부 대기열에 걸려 목록이 몇 분씩 멈춘다. 묶어서 보낸다.
+*/
+const HYDRATE_CONCURRENCY = 6;
+
 const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> = {
   eligible: { label: '응찰 가능', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   insufficient_data: { label: '확인 필요', className: 'border-amber-200 bg-amber-50 text-amber-700' },
@@ -59,28 +66,42 @@ export default function NoticesPage() {
   const [creatingNoticeId, setCreatingNoticeId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showRejected, setShowRejected] = useState(true);
+  // 판정 상태는 목록보다 늦게 온다. 다 오기 전에 0으로 그리면 「확인했더니 0건」으로 읽힌다.
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaProgress, setMetaProgress] = useState({ done: 0, total: 0 });
 
   async function hydrateCaseMeta(caseItems: PreflightCase[], noticeItems: BidNoticeSummary[], selectedCompanyId: string) {
-    const pairs = await Promise.all(
-      caseItems.filter((item, index) => item.company_id === selectedCompanyId
-        && noticeItems.some((notice) => notice.id === item.notice_id && notice.current_version === item.current_version_number)
-        && caseItems.findIndex((other) => other.notice_id === item.notice_id && other.company_id === selectedCompanyId && other.current_version_number === item.current_version_number) === index
-      ).map(async (caseItem) => {
-        try {
-          const run = await loadCurrentJudgment(caseItem);
-          const judgment = run ? { ...run, judgment_count: run.judgments.length, unknown_count: run.judgments.filter((item) => item.status === 'UNKNOWN').length, unsatisfied_count: run.judgments.filter((item) => item.status === 'UNSATISFIED').length } : null;
-          return [caseItem.notice_id, { caseItem, judgment }] as const;
-        } catch {
-          return [caseItem.notice_id, { caseItem, judgment: null }] as const;
-        }
-      }),
+    const targets = caseItems.filter((item, index) => item.company_id === selectedCompanyId
+      && noticeItems.some((notice) => notice.id === item.notice_id && notice.current_version === item.current_version_number)
+      && caseItems.findIndex((other) => other.notice_id === item.notice_id && other.company_id === selectedCompanyId && other.current_version_number === item.current_version_number) === index
     );
-    setCaseMeta(Object.fromEntries(pairs));
+    setMetaLoading(true);
+    setMetaProgress({ done: 0, total: targets.length });
+    let done = 0;
+    for (let index = 0; index < targets.length; index += HYDRATE_CONCURRENCY) {
+      const chunk = await Promise.all(
+        targets.slice(index, index + HYDRATE_CONCURRENCY).map(async (caseItem) => {
+          try {
+            const run = await loadCurrentJudgment(caseItem);
+            const judgment = run ? { ...run, judgment_count: run.judgments.length, unknown_count: run.judgments.filter((item) => item.status === 'UNKNOWN').length, unsatisfied_count: run.judgments.filter((item) => item.status === 'UNSATISFIED').length } : null;
+            return [caseItem.notice_id, { caseItem, judgment }] as const;
+          } catch {
+            return [caseItem.notice_id, { caseItem, judgment: null }] as const;
+          }
+        }),
+      );
+      done += chunk.length;
+      // 오는 대로 채운다. 전부 모아서 한 번에 넣으면 마지막 한 건이 늦을 때 화면이 계속 비어 있다.
+      setCaseMeta((previous) => ({ ...previous, ...(Object.fromEntries(chunk) as Record<string, CaseStatusMeta>) }));
+      setMetaProgress({ done, total: targets.length });
+    }
+    setMetaLoading(false);
   }
 
   async function initialize(searchQuery = '') {
     setLoading(true);
     setError('');
+    setCaseMeta({});
     try {
       const [noticeResult, caseResult, companies] = await Promise.all([
         listNotices(searchQuery),
@@ -91,11 +112,14 @@ export default function NoticesPage() {
       setNoticeTotal(noticeResult.total);
       setCases(caseResult.items);
       setCompany(companies[0] ?? null);
-      await hydrateCaseMeta(caseResult.items, noticeResult.items, companies[0]?.id ?? '');
+      // 목록은 여기서 바로 그린다. hydrate를 기다리면 Case 한 건당 요청 3개가 나가서
+      // 수백 건이 끝날 때까지 스피너가 안 꺼진다. 판정 상태는 뒤이어 채운다.
+      setLoading(false);
+      void hydrateCaseMeta(caseResult.items, noticeResult.items, companies[0]?.id ?? '');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '공고 데이터를 불러오지 못했습니다.');
-    } finally {
       setLoading(false);
+      setMetaLoading(false);
     }
   }
 
@@ -141,10 +165,10 @@ export default function NoticesPage() {
   const firstUnknownCase = Object.values(caseMeta).find((item) => (item.judgment?.unknown_count ?? 0) > 0)?.caseItem;
 
   const quickTiles: QuickTile[] = [
-    { label: '응찰 가능', value: counts.eligible, icon: CheckCircle2, filter: 'eligible' },
-    { label: '확인 필요', value: counts.insufficient_data, icon: CircleHelp, filter: 'insufficient_data' },
-    { label: '자격 미달', value: counts.ineligible, icon: XCircle, filter: 'ineligible' },
-    { label: '미검토', value: counts.unreviewed, icon: FileCheck2, filter: 'unreviewed' },
+    { label: '응찰 가능', value: metaLoading ? '—' : counts.eligible, icon: CheckCircle2, filter: 'eligible' },
+    { label: '확인 필요', value: metaLoading ? '—' : counts.insufficient_data, icon: CircleHelp, filter: 'insufficient_data' },
+    { label: '자격 미달', value: metaLoading ? '—' : counts.ineligible, icon: XCircle, filter: 'ineligible' },
+    { label: '미검토', value: metaLoading ? '—' : counts.unreviewed, icon: FileCheck2, filter: 'unreviewed' },
     { label: '검색된 공고', value: noticeTotal, icon: FileText, filter: 'all' },
     { label: '준비 문서', value: `${proposalDocumentCount}개`, icon: Building2, filter: 'all' },
   ];
@@ -265,6 +289,7 @@ export default function NoticesPage() {
             </div>
           </div>
 
+          {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
           {!loading && activeNotices.length > 6 && <p className="mt-3 text-[13px] text-[var(--product-muted)]">현재 불러온 {activeNotices.length}건 중 6건 표시 · 원하는 공고는 검색으로 좁혀보세요</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
@@ -273,7 +298,9 @@ export default function NoticesPage() {
                 const status = noticeStatus(notice.id);
                 const meta = caseMeta[notice.id];
                 return <article key={notice.id} className="flex min-h-[286px] flex-col rounded-[20px] border border-[var(--product-line)] bg-white p-6 shadow-[0_10px_30px_rgba(35,50,90,0.06)] transition-transform hover:-translate-y-1">
-                  <div className="flex items-center justify-between gap-3"><span className={`rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span><span className="text-[12px] text-[var(--product-faint)]">현재 v{notice.current_version}</span></div>
+                  <div className="flex items-center justify-between gap-3">{metaLoading && !meta
+                    ? <span className="rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
+                    : <span className={`rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span>}<span className="text-[12px] text-[var(--product-faint)]">현재 v{notice.current_version}</span></div>
                   <h3 className="mt-5 line-clamp-3 text-[21px] font-bold leading-8 tracking-[-0.025em] text-[var(--product-ink)]">{notice.title}</h3>
                   <p className="mt-3 text-[13px] leading-6 text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'} · {labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</p>
                   {meta?.judgment && <p className="mt-2 text-[13px] text-[var(--product-muted)]">판정 {meta.judgment.judgment_count}건 · 확인 필요 {meta.judgment.unknown_count}건 · 미달 {meta.judgment.unsatisfied_count}건</p>}
@@ -285,16 +312,16 @@ export default function NoticesPage() {
         </section>
 
         <section className="mt-12 overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-[var(--product-tint)]">
-          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${showRejected ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고 {rejectedNotices.length}건</h3><p className="mt-1 text-[13px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[13px] font-medium">{showRejected ? '접기' : '펼치기'}</span></button>
+          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${showRejected ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[13px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[13px] font-medium">{showRejected ? '접기' : '펼치기'}</span></button>
           {showRejected && <div className="border-t border-[var(--product-line)] bg-white px-6">{rejectedNotices.length ? rejectedNotices.map((notice) => {
             const meta = caseMeta[notice.id];
             return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY.ineligible.className}`}>자격 미달</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{meta?.judgment ? `미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : notice.bid_notice_no}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[13px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
-          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">현재 자격 미달로 판정된 공고가 없습니다.</p>}</div>}
+          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 자격 미달로 판정된 공고가 없습니다.'}</p>}</div>}
         </section>
 
         <section className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1fr)_452px]">
           <div className="rounded-[22px] border border-[var(--product-line)] bg-white p-7"><div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">공지사항</h2><Sparkles className="size-5 text-[var(--product-accent)]" /></div><div className="mt-5 divide-y divide-[var(--product-line-2)]">{[['데이터 연결', '공고·회사·판정 데이터를 실제 나라장터 수집 기준으로 연결합니다.'], ['근거 원칙', '판정 결과는 공고 원문 근거와 연결되는 경우에만 화면에 보여줍니다.'], ['변경공고', '변경공고는 이전 차수를 덮어쓰지 않고 판정 영향과 함께 추적합니다.']].map(([title, text]) => <div key={title} className="grid gap-2 py-5 sm:grid-cols-[130px_minmax(0,1fr)]"><strong className="text-[13px] text-[var(--product-accent-deep)]">{title}</strong><span className="text-[14px]">{text}</span></div>)}</div></div>
-          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[12px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[13px] text-white/65">지금 답할 항목이 없습니다</p>}</aside>        </section>
+          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{metaLoading ? '—' : unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[12px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[13px] text-white/65">{metaLoading ? '판정 상태를 불러오는 중입니다' : '지금 답할 항목이 없습니다'}</p>}</aside>        </section>
 
         <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[14px] text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.join(' · ')} 영역이 아직 비어 있습니다.` : '현재 기본 프로필 영역이 모두 연결되어 있습니다.'}</p></div><div className="flex items-center gap-4"><span className="text-[13px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company"><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]">프로필 보완</Button></Link></div></section>
       </div>

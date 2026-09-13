@@ -65,7 +65,10 @@ if (process.argv.includes('--fixtures')) {
   }
 
 // Stateful checks reuse the existing compiler loader; no server or external data.
-const { ConversationStore, validateSources } = load(resolve(root, 'lib/copilot-conversation.ts'));
+const { ConversationStore, validateSources, hasOrdinalReference } = load(resolve(root, 'lib/copilot-conversation.ts'));
+assert.equal(hasOrdinalReference('첫 번째 조건 근거 보여줘'), true);
+assert.equal(hasOrdinalReference('두번째 근거'), true);
+assert.equal(hasOrdinalReference('그 조건 근거 보여줘'), false);
 let resolveFirst;
 const transportRequests = [];
 const store = new ConversationStore(async request => {
@@ -103,16 +106,20 @@ const reordered = structuredClone(evidenceResponse);
 reordered.citations = reordered.citations.map(source => Object.fromEntries(Object.entries(source).reverse()));
 validateSources(reordered);
 const oldReply = { status: 'RESOLVED', context_revision: 1, requirement_key: 'R2',
-  visible_requirement_keys: ['R2'], last_read_receipt: { kind: 'product', provenance: { judgment_run_id: 'old' } } };
+  visible_requirement_keys: ['R1', 'R2'], last_read_receipt: { kind: 'product', provenance: { judgment_run_id: 'old' } } };
 let historicalRequest;
 const history = new ConversationStore(async request => { historicalRequest = request; return copilotMocks.eligible; });
 history.focus('history', 'R2', oldReply);
 await history.ask('history', '그 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
+assert.equal(historicalRequest.requirement_key, 'R2');
 assert.equal(historicalRequest.conversation_context.last_read_receipt.provenance.judgment_run_id, 'old');
+await history.ask('history', '첫 번째 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
+assert.equal(historicalRequest.requirement_key, undefined, 'Explicit ordinal must override stale UI focus');
+assert.deepEqual(historicalRequest.conversation_context.visible_requirement_keys, ['R1', 'R2']);
 assert.match(readFileSync(resolve(root, 'components/copilot/panel.tsx'), 'utf8'), /ask\('그 조건 근거 보여줘'/);
-console.log('Citation metadata identity, citation completeness and historical receipt checks passed.');
+console.log('Citation metadata identity, citation completeness, ordinal precedence and historical receipt checks passed.');
 
 console.log('Conversation isolation, duplicate reads, late response, privacy and invalid reference checks passed.');
 
-  console.log('Copilot client/view-model checks passed; 11 response mocks + 1 error fixture. No network calls.');
+console.log('Copilot client/view-model checks passed; 11 response mocks + 1 error fixture. No network calls.');
 }

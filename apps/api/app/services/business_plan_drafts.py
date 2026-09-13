@@ -84,6 +84,15 @@ def _load_judgment_run(
             "JUDGMENT_RUN_REQUIRED",
             "참가자격 판정이 아직 없습니다. 판정을 먼저 실행해 주세요.",
         )
+    if not run.judgments:
+        # 실행은 있는데 판정 행이 없는 경우가 실제로 있다 — 첫 시연에서 최신 실행이
+        # 재검증으로 남은 빈 실행이었다. 이걸 그대로 쓰면 브리핑에 제목만 남고 초안은
+        # 근거 없이 써진다. 그것이 이 기능의 최악이라 빈 실행은 거절한다.
+        raise BusinessPlanDraftError(
+            "JUDGMENT_EMPTY",
+            "최신 판정 실행에 판정된 요건이 없습니다. 판정을 다시 실행하거나 "
+            "judgment_run_id 로 요건이 있는 실행을 지정해 주세요.",
+        )
     return run
 
 

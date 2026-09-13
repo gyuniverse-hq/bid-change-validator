@@ -99,3 +99,34 @@ def test_only_address_evidence_parentheses_are_removed() -> None:
     assert "사업자등록증" not in strip_decorations(address)
     assert unsafe_clause_reason(address) is None
     assert "(업종코드 : 1253)" in strip_decorations(plain)
+
+
+def test_quoted_condition_ending_in_criteria_is_not_stripped() -> None:
+    """#128 2차 리뷰 반례. '기준' 은 법령 접미가 아니라 흔한 조건 낱말이다.
+
+    접미 하나로는 법령명과 조건을 못 가르므로, 뒤따르는 인용 문맥(제N조 · 에 따른 …)
+    까지 있어야 인용으로 본다.
+    """
+    raw = "「소기업 또는 소상공인 기준」에 해당하는 업체"
+
+    assert "소기업 또는 소상공인 기준" in strip_decorations(raw)
+    assert unsafe_clause_reason(raw) == "ALTERNATIVE_OR_EXCEPTION_RULE"
+
+
+def test_a_statute_name_without_citation_context_is_left_alone() -> None:
+    """법령명 꼴이어도 인용 문맥이 없으면 건드리지 않는다 — 지우는 쪽이 위험하다."""
+    raw = "「중소기업기본법」 중소기업 확인서를 소지한 자"
+
+    assert "중소기업기본법" in strip_decorations(raw)
+
+
+def test_a_document_alternative_in_parentheses_is_not_mistaken_for_address_evidence() -> None:
+    """#128 2차 리뷰 반례. '(사업자등록증 또는 허가 서류 제출)' 은 실제 대안 제출 조건이다.
+
+    주소 증빙 설명은 반드시 '사업장' 과 '소재지' 를 함께 말한다. 그 둘이 없으면 괄호를
+    남겨 '또는' 이 가드에 닿게 한다.
+    """
+    raw = "참가자는 (사업자등록증 또는 허가 서류 제출) 요건을 충족해야 한다"
+
+    assert "사업자등록증 또는 허가 서류 제출" in strip_decorations(raw)
+    assert unsafe_clause_reason(raw) == "ALTERNATIVE_OR_EXCEPTION_RULE"

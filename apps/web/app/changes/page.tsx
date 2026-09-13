@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GitCompareArrows, LoaderCircle } from 'lucide-react';
 
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
@@ -10,7 +10,8 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
-import { CHANGE_TYPE_LABEL } from '@/lib/status-copy';
+import { getQualificationAnalysis, type CanonicalRequirement, type QualificationAnalysisRun } from '@/lib/qualification-api';
+import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -19,6 +20,35 @@ function formatDate(value: string | null | undefined) {
 
 function money(value: number | null | undefined) {
   return value == null ? '-' : `${value.toLocaleString()} 원`;
+}
+
+/*
+  구조화 값은 백엔드가 원문에서 뽑아낸 비교 대상이다.
+  연산자(이상·포함 등)에 대응하는 한글 표가 아직 없으므로 값과 단위·기간만 적는다.
+  「전라북도 이상」처럼 뜻을 지어내는 것보다 값만 보여주고 원문을 같이 두는 편이 정확하다.
+*/
+function requirementValue(requirement: CanonicalRequirement) {
+  if (requirement.value == null) return '값 없음';
+  const unit = requirement.unit ? ` ${requirement.unit}` : '';
+  const period = requirement.period_months ? ` · 최근 ${requirement.period_months}개월` : '';
+  return `${requirement.value}${unit}${period}`;
+}
+
+/** 재검증 결과 한 줄의 한쪽 차수. 요건이 없으면 왜 없는지를 적는다. */
+function RequirementSide({ label, requirement, missing }: { label: string; requirement: CanonicalRequirement | null; missing: string }) {
+  return (
+    <div className="rounded-[14px] border border-[#eef0f4] bg-[#fafbfc] px-4 py-3">
+      <span className="text-[12px] font-semibold text-[var(--product-muted)]">{label}</span>
+      {requirement ? (
+        <>
+          <p className="mt-1.5 text-[13px] leading-6 text-[var(--product-ink)]">{requirement.raw}</p>
+          <p className="mt-2 text-[12px] text-[var(--product-muted)]">구조화 값 · {requirementValue(requirement)}</p>
+        </>
+      ) : (
+        <p className="mt-1.5 text-[13px] leading-6 text-[var(--product-muted)]">{missing}</p>
+      )}
+    </div>
+  );
 }
 
 export default function ChangesPage() {
@@ -52,6 +82,40 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
       ['첨부문서 수', `${base.documents.length}종`, `${current.documents.length}종`],
     ];
   }, [workspace]);
+
+  /*
+    재검증 결과는 요건 키(REQ-006-REGION)만 준다. 그 키가 무엇을 뜻하는지는 분석 상세에 있다.
+    현재 차수 상세는 workspace가 이미 들고 있지만 기준 차수는 요약만 있어서 여기서 한 번 더 받는다.
+    이게 없으면 화면이 내부 코드만 늘어놓게 되고, 무엇이 어떻게 바뀌었는지 읽을 수 없다.
+  */
+  const [baselineDetail, setBaselineDetail] = useState<{ analysisId: string; run: QualificationAnalysisRun } | null>(null);
+  const baselineAnalysisId = workspace?.baselineAnalysis?.id;
+  useEffect(() => {
+    if (!baselineAnalysisId) return;
+    let alive = true;
+    void getQualificationAnalysis(baselineAnalysisId)
+      .then((run) => { if (alive) setBaselineDetail({ analysisId: baselineAnalysisId, run }); })
+      // 받지 못하면 원문 없이 키만 보여준다. 화면 전체를 실패로 만들 일은 아니다.
+      .catch(() => { if (alive) setBaselineDetail(null); });
+    return () => { alive = false; };
+  }, [baselineAnalysisId]);
+
+  /*
+    어느 분석의 것인지 함께 담아둔다. effect 본문에서 동기적으로 비우면 렌더가 한 번 더 돌기 때문에
+    (react-compiler EffectSetState) 지우는 대신, 지금 보고 있는 분석과 id가 맞을 때만 쓴다.
+    검토 건을 옮겨 다닐 때 앞 건의 기준 차수 원문이 남아 보이는 것도 이걸로 막힌다.
+  */
+  const baselineRequirements = useMemo(
+    () => new Map(
+      (baselineDetail && baselineDetail.analysisId === baselineAnalysisId ? baselineDetail.run.requirements : [])
+        .map((item) => [item.requirement_key, item]),
+    ),
+    [baselineDetail, baselineAnalysisId],
+  );
+  const currentRequirements = useMemo(
+    () => new Map((workspace?.currentAnalysisDetail?.requirements ?? []).map((item) => [item.requirement_key, item])),
+    [workspace?.currentAnalysisDetail],
+  );
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
   if (!workspace) return <main className="app-shell-container py-12">
@@ -105,7 +169,24 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => <div key={item.identity} className="grid grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)] border-t border-[#eef0f4] px-4 py-3 text-[13px] first:border-t-0"><strong>{CHANGE_TYPE_LABEL[item.change_type]}</strong><span>{item.baseline_key ?? '-'}</span><span>{item.current_key ?? '-'}</span></div>)}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
+              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+                const before = item.baseline_key ? baselineRequirements.get(item.baseline_key) ?? null : null;
+                const after = item.current_key ? currentRequirements.get(item.current_key) ?? null : null;
+                const typeCode = after?.type ?? before?.type ?? null;
+                return (
+                  <div key={item.identity} className="border-t border-[#eef0f4] px-4 py-4 first:border-t-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 요건 유형을 못 찾으면 내부 키라도 보여준다. 빈 칸보다는 낫고, 못 찾았다는 사실도 드러난다. */}
+                      <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
+                      <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                      <RequirementSide label="기준 차수" requirement={before} missing={item.change_type === 'ADDED' ? '기준 차수에는 없던 요건입니다.' : '기준 차수 분석에서 이 요건을 찾지 못했습니다.'} />
+                      <RequirementSide label="현재 차수" requirement={after} missing={item.change_type === 'REMOVED' ? '현재 차수에서 빠졌습니다.' : '현재 차수 분석에서 이 요건을 찾지 못했습니다.'} />
+                    </div>
+                  </div>
+                );
+              })}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
           </>
         )}
 

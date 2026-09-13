@@ -70,6 +70,16 @@ def _load_judgment_run(
         query = query.order_by(QualificationJudgmentRun.created_at.desc()).limit(1)
     run = db.scalar(query)
     if run is None:
+        # 두 상황은 담당자가 할 일이 다르다. 판정이 아예 없으면 판정을 돌려야 하고,
+        # 지정한 ID 가 틀렸으면 ID 를 고쳐야 한다. 같은 오류로 뭉치면 "판정 먼저"
+        # 안내를 보고 이미 판정한 사건에서 헤맨다 — Swagger 예시 UUID 를 그대로
+        # 보낸 첫 시연에서 실제로 그랬다.
+        if judgment_run_id is not None:
+            raise BusinessPlanDraftError(
+                "JUDGMENT_RUN_NOT_FOUND",
+                "지정한 판정 실행이 이 사건에 없습니다. judgment_run_id 를 비우면 최신 판정을 씁니다.",
+                status_code=404,
+            )
         raise BusinessPlanDraftError(
             "JUDGMENT_RUN_REQUIRED",
             "참가자격 판정이 아직 없습니다. 판정을 먼저 실행해 주세요.",

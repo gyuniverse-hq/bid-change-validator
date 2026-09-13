@@ -161,3 +161,26 @@ def test_unknown_case_is_a_404() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_a_wrong_run_id_is_told_apart_from_a_missing_judgment(monkeypatch) -> None:
+    """Swagger 예시 UUID 를 그대로 보낸 첫 시연에서 '판정 먼저' 안내가 떠 헤맸다.
+
+    지정한 ID 가 틀린 것과 판정이 없는 것은 담당자가 할 일이 다르다.
+    """
+    monkeypatch.setattr(router_module, "OpenAINarrator", _EchoNarrator)
+    seed = _seed_golden_case()
+    try:
+        _judge(seed)
+        response = client.post(
+            f"/api/v1/preflight-cases/{seed['case_id']}/business-plan-draft",
+            json={
+                "judgment_run_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "inputs": {"proposal_goal": "수행합니다"},
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "JUDGMENT_RUN_NOT_FOUND"
+    finally:
+        _cleanup(seed)

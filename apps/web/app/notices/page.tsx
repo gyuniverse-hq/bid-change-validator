@@ -124,6 +124,13 @@ export default function NoticesPage() {
     setLoading(true);
     setError('');
     setCaseMeta({});
+    /*
+      판정 표시도 같이 초기화한다. caseMeta만 비우고 metaLoading을 false로 두면,
+      검토 건을 받아오는 동안 KPI가 「—」 대신 0을, 배지가 「판정 확인 중」 대신 「미검토」를 보여준다.
+      확인하지 않은 것을 확인해서 0이라고 말하는 셈이다.
+    */
+    setMetaLoading(true);
+    setMetaProgress({ done: 0, total: 0 });
     // 목록을 받아오는 동안 앞선 hydrate가 끝날 수 있다. 여기서 먼저 세대를 올려 그 응답을 버린다.
     hydrateGeneration.current += 1;
     try {

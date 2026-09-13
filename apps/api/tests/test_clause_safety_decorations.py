@@ -57,7 +57,8 @@ def test_stripping_removes_decorations_but_keeps_the_clause() -> None:
 
     assert "법률" not in stripped
     assert "제20조" not in stripped and "제24조" not in stripped
-    assert "법인등기일" not in stripped
+    # 괄호는 기본 보존한다 — 주소 증빙 설명 괄호가 아니면 그대로 둔다.
+    assert "(법인등기일 기준)" in stripped
     assert "본점이 전남에 있는 업체" in stripped
 
 
@@ -73,3 +74,28 @@ def test_a_real_alternative_inside_parentheses_is_not_hidden() -> None:
 
     assert "소기업 또는 소상공인" in strip_decorations(raw)
     assert unsafe_clause_reason(raw) == "ALTERNATIVE_OR_EXCEPTION_RULE"
+
+
+def test_a_quoted_alternative_is_not_mistaken_for_a_statute_citation() -> None:
+    """「…」 는 법령명에도, 조건을 감싸는 데도 쓰인다 (#128 리뷰).
+
+    「소기업 또는 소상공인」 을 인용으로 보고 통째로 지우면 '또는' 이 가드에 닿기 전에
+    사라져 대안 조건 검사가 우회된다. 법령명일 때만 벗긴다.
+    """
+    quoted_condition = "「소기업 또는 소상공인」 확인서를 소지한 자"
+    statute = "「건설폐기물의 재활용촉진에 관한 법률」 제21조에 따른 업종코드 1253 등록업체"
+
+    assert "소기업 또는 소상공인" in strip_decorations(quoted_condition)
+    assert unsafe_clause_reason(quoted_condition) == "ALTERNATIVE_OR_EXCEPTION_RULE"
+    assert "법률" not in strip_decorations(statute)
+    assert unsafe_clause_reason(statute) is None
+
+
+def test_only_address_evidence_parentheses_are_removed() -> None:
+    """괄호는 기본 보존. 주소를 어느 서류로 보는지 나열한 설명 괄호만 벗긴다."""
+    address = "본점소재지(사업자등록증 또는 허가 서류가 기재된 사업장의 소재지)가 전남인 업체"
+    plain = "건설폐기물중간처리업 (업종코드 : 1253)을 등록한 업체"
+
+    assert "사업자등록증" not in strip_decorations(address)
+    assert unsafe_clause_reason(address) is None
+    assert "(업종코드 : 1253)" in strip_decorations(plain)

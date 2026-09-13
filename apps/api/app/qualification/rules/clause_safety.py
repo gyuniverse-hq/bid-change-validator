@@ -44,36 +44,47 @@ _COMPLEX_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"계약.*해지|낙찰자.*결정|제한을\s*받는", "POST_AWARD_OR_RESTRICTION_RULE"),
 )
 
-# 조항의 뜻과 무관한 장식. 법령명 인용, 조문 번호, 괄호 안 설명.
-_CITATION_RE = re.compile(r"「[^」]*」|『[^』]*』")
+# 조항의 뜻과 무관한 장식. 법령명 인용, 조문 번호, 주소 증빙 설명 괄호.
+#
+# 따옴표는 법령명일 때만 벗긴다. 「…」 는 법령 인용에 쓰이지만 조건을 감싸는 데도 쓰인다 —
+# 「소기업 또는 소상공인」 을 통째로 지우면 '또는' 이 가드에 닿기 전에 사라져 대안 조건
+# 검사가 우회된다 (#128 리뷰). 법령·령·규칙·조례·규정·고시·지침으로 끝나거나
+# "…에 관한 법률" 꼴일 때만 인용으로 본다.
+_QUOTED_RE = re.compile(r"「(?P<a>[^」]*)」|『(?P<b>[^』]*)』")
+_STATUTE_NAME_RE = re.compile(
+    r"(?:에\s*관한\s*법률|법률|법|시행령|시행규칙|규칙|조례|규정|고시|지침|예규|훈령|기준)\s*$"
+)
 _ARTICLE_REF_RE = re.compile(
     r"(?:같은\s*법\s*)?(?:시행령|시행규칙)?\s*제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?"
     r"(?:\s*\[별표\s*\d*\])?\s*(?:에\s*(?:따른|의한|따라|의거한?)|의)?"
 )
 _PARENTHETICAL_RE = re.compile(r"\((?P<ascii>[^()]*)\)|（(?P<fullwidth>[^（）]*)）")
+# 괄호는 기본 보존한다. 주소를 어느 서류로 보는지 나열한 설명 괄호만 벗긴다 —
+# "본점소재지(사업자등록증 또는 허가 … 서류가 기재된 소재지)" 의 '또는' 은 대안 조건이
+# 아니다. 그 밖의 괄호는 안에 무엇이 있든 그대로 두어 가드가 본다.
 _ADDRESS_EVIDENCE_OR_RE = re.compile(
     r"(?:사업자등록증|법인등기부(?:등본)?)\s*또는\s*"
     r"(?:허가|인가|면허|등록|신고).*(?:서류|소재지)"
 )
 
 
+def _strip_quoted(match: re.Match[str]) -> str:
+    inner = (match.group("a") or match.group("b") or "").strip()
+    return " " if _STATUTE_NAME_RE.search(inner) else match.group(0)
+
+
 def _strip_parenthetical(match: re.Match[str]) -> str:
-    """Drop explanatory parentheses but retain anything the safety rules must inspect."""
     inner = match.group("ascii") or match.group("fullwidth") or ""
-    if _ADDRESS_EVIDENCE_OR_RE.search(inner):
-        return " "
-    if any(re.search(pattern, inner) for pattern, _ in _COMPLEX_PATTERNS):
-        return f" {inner} "
-    return " "
+    return " " if _ADDRESS_EVIDENCE_OR_RE.search(inner) else match.group(0)
 
 
 def strip_decorations(raw: str) -> str:
-    """법령 인용·조문 번호·괄호 설명을 벗긴 본문. 가드는 이것을 본다.
+    """법령명 인용·조문 번호·주소 증빙 설명 괄호를 벗긴 본문. 가드는 이것을 본다.
 
-    주소 판단에 쓰는 증빙서류를 나열한 좁은 설명 괄호만 제거한다. 다른 괄호에 안전
-    패턴이 있으면 내용을 남겨 실제 대안·부정·공동수급 조건이 숨지 않게 한다.
+    벗기는 것은 셋뿐이고 나머지는 전부 남긴다. 조건을 감싼 따옴표, 제한을 적은 괄호가
+    사라지면 가드가 우회되므로, 무엇을 지울지가 아니라 무엇만 지울지를 정한다.
     """
-    text = _CITATION_RE.sub(" ", raw)
+    text = _QUOTED_RE.sub(_strip_quoted, raw)
     text = _ARTICLE_REF_RE.sub(" ", text)
     text = _PARENTHETICAL_RE.sub(_strip_parenthetical, text)
     return " ".join(text.split())

@@ -38,6 +38,22 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function sameReadReceipt(a: ReplyContext['last_read_receipt'] | null | undefined, b: ReplyContext['last_read_receipt'] | null | undefined) {
+  return Boolean(a && b && canonical(a) === canonical(b));
+}
+
+function conversationReply(next: ReplyContext | undefined, previous?: ReplyContext): ReplyContext | undefined {
+  if (!next) return undefined;
+  if (next.status === 'RESOLVED' && next.visible_requirement_keys.length === 0 &&
+      previous?.visible_requirement_keys.length && sameReadReceipt(next.last_read_receipt, previous.last_read_receipt)) {
+    // A manual-review/help turn can legitimately expose no targetable requirement.
+    // Keep the last requirement list the user actually saw while Product Truth is
+    // unchanged, so a later "첫 번째 조건" still refers to that visible list.
+    return { ...next, visible_requirement_keys: [...previous.visible_requirement_keys] };
+  }
+  return next;
+}
+
 const compactQuestion = (text: string) => text.replace(/\s+/g, '').replace(/[?.!。？！]/g, '');
 
 export function hasOrdinalReference(question: string) {
@@ -140,7 +156,7 @@ export class ConversationStore {
   publish(caseId: string, response: CopilotChatResponse) {
     validateSources(response);
     const state = this.get(caseId), revision = state.revision + 1;
-    this.update(caseId, { revision, busy: false, focus: null, reply: response.reply_context ?? undefined,
+    this.update(caseId, { revision, busy: false, focus: null, reply: conversationReply(response.reply_context ?? undefined, state.reply),
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }
   async retry(caseId: string, semanticProcessing?: boolean, documentProcessing?: boolean) {
@@ -195,9 +211,10 @@ export class ConversationStore {
       validateSources(response);
       if (this.get(caseId).revision !== revision) return;
       this.failed.delete(caseId);
-      this.update(caseId, { busy: false, reply: response.reply_context ?? undefined,
+      const current = this.get(caseId);
+      this.update(caseId, { busy: false, reply: conversationReply(response.reply_context ?? undefined, current.reply),
         focus: response.reply_context?.requirement_key ?? null,
-        turns: this.get(caseId).turns.map(t => t.id === revision ? { ...t, response } : t) });
+        turns: current.turns.map(t => t.id === revision ? { ...t, response } : t) });
     } catch (error) {
       if (this.get(caseId).revision !== revision) return;
       this.failed.set(caseId, { request: structuredClone(request), turnId: revision });

@@ -315,6 +315,40 @@ def _performance_candidates(
     return candidates, has_ambiguous_date
 
 
+# [재현 2026-09-13] 2026-07-01 광주·전남 행정통합으로 지역 이름에 위계가 생겼다.
+# 전남광주통합특별시 안에 "종전 광주광역시" 와 "종전 전라남도" 가 있고, 통합 전 이름
+# "광주광역시" · "전라남도" 도 같은 하위 지역을 가리킨다. 부분문자열 비교는 이 관계를
+# 모른다 — R26BK01634263 004차수가 소재지를 "전남광주통합특별시" 에서 "종전 광주광역시" 로
+# 좁혔을 때, 통합시 단위로 등록된 회사 셋에 전부 '미달' 을 확정했다. 그 회사가 옛 광주
+# 안에 있을 수도 있어서 프로필로는 답할 수 없는데 답한 것이다 — 잘못된 확정 미달.
+#
+# 하위 -> 상위. 키는 _norm 을 거친 형태(공백 없음).
+_REGION_PARENT: dict[str, str] = {
+    "종전광주광역시": "전남광주통합특별시",
+    "종전전라남도": "전남광주통합특별시",
+    "광주광역시": "전남광주통합특별시",
+    "전라남도": "전남광주통합특별시",
+}
+
+
+def _region_relation(observed: str, required: object) -> str:
+    """'match' | 'contained' | 'too_coarse' | 'none'.
+
+    contained  프로필이 하위 지역이고 요건이 그 상위 — 포함되므로 충족.
+    too_coarse 요건이 하위 지역인데 프로필은 상위 단위 — 프로필로는 가를 수 없다.
+    """
+    obs, req = _norm(observed), _norm(required)
+    if not obs or not req:
+        return "none"
+    if _string_match(observed, required):
+        return "match"
+    if _REGION_PARENT.get(obs) == req:
+        return "contained"
+    if _REGION_PARENT.get(req) == obs:
+        return "too_coarse"
+    return "none"
+
+
 def _judge_region(
     requirement: QualificationRequirement,
     profile: CompanyProfileSnapshot,
@@ -325,7 +359,12 @@ def _judge_region(
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
-    matched = _string_match(observed, requirement.value)
+    relation = _region_relation(observed, requirement.value)
+    if relation == "too_coarse":
+        # 통합시 단위 프로필로는 종전 시·도 안인지 알 수 없다. 미달로 확정하면 옛 광주
+        # 안에 있는 회사를 떨어뜨린다. 상세 주소를 물어야 하므로 확인 필요로 넘긴다.
+        return _unknown(requirement, preflight_case_id)
+    matched = relation in {"match", "contained"}
     if not matched and not profile.completeness.region:
         return _unknown(requirement, preflight_case_id)
     return _judgment(

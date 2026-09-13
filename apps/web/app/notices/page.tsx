@@ -21,7 +21,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
@@ -45,6 +44,13 @@ type QuickTile = { label: string; value: string | number; icon: LucideIcon; filt
   수백 건을 한 번에 던지면 전부 대기열에 걸려 목록이 몇 분씩 멈춘다. 묶어서 보낸다.
 */
 const HYDRATE_CONCURRENCY = 6;
+
+/*
+  목록에 한 번에 보여줄 공고 수. 카드 6장일 때는 100건을 불러와 6건만 보여줬는데,
+  「검색으로 좁혀서 고른다」는 이 화면의 전제와 어긋난다 (DL-007).
+  목록형으로 바꾸면서 한 화면에 비교할 수 있는 양으로 올린다.
+*/
+const VISIBLE_NOTICE_LIMIT = 20;
 
 const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> = {
   eligible: { label: '응찰 가능', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
@@ -226,24 +232,27 @@ export default function NoticesPage() {
             </div>
           </div>
 
-          <div className="mt-[22px] grid gap-[22px] lg:grid-cols-[372px_minmax(0,1fr)]">
-            <form onSubmit={(event) => { event.preventDefault(); void initialize(query); }} className="rounded-[24px] bg-white p-7 shadow-[0_16px_48px_rgba(55,70,120,0.12)]">
-              <h1 className="text-[31px] font-extrabold leading-[1.35] tracking-[-0.04em] text-[var(--product-ink)]">검토할 공고를<br />바로 찾기</h1>
-              <p className="mt-3 text-[14px] leading-6 text-[var(--product-muted)]">실제 수집 공고를 조회하고, 검토를 시작한 공고에는 회사 프로필 기준 판정 상태를 함께 표시합니다.</p>
-              <div className="mt-7 flex h-[52px] items-center rounded-2xl border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)]">
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-auto flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" placeholder="공고번호 또는 공고명" aria-label="공고 검색" />
+          {/*
+            업무 시작점은 검색이다. 이전에는 검색 카드(372px) 옆에 소개 배너가 더 크게 붙어
+            화면의 주인공이 소개문이었다. 검색을 전체 너비로 올리고, 제품 원칙을 말하는 배너는
+            지우지 않고 한 줄로 줄인다 — 「근거 없으면 판정하지 않는다」는 이 제품의 약속이라 뺄 수 없다.
+          */}
+          <form onSubmit={(event) => { event.preventDefault(); void initialize(query); }} className="mt-[22px] rounded-[24px] bg-white p-7 shadow-[0_16px_48px_rgba(55,70,120,0.12)]">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-[30px] font-extrabold leading-[1.3] tracking-[-0.04em] text-[var(--product-ink)]">검토할 공고를 바로 찾기</h1>
+                <p className="mt-2 text-[14px] leading-6 text-[var(--product-muted)]">공고번호나 공고명으로 좁힌 뒤, 검토를 시작하면 회사 프로필 기준 판정 상태가 함께 붙습니다.</p>
+              </div>
+              <div className="flex h-[56px] w-full items-center rounded-2xl border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)] lg:max-w-[520px]">
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-auto flex-1 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0" placeholder="공고번호 또는 공고명" aria-label="공고 검색" />
                 <button type="submit" className="grid size-10 place-items-center rounded-full bg-[var(--product-accent)] text-white" aria-label="검색">{loading ? <LoaderCircle className="size-5 animate-spin" /> : <Search className="size-5" />}</button>
               </div>
-            </form>
-
-            <div className="relative overflow-hidden rounded-[24px] bg-[var(--product-accent-deep)] p-8 text-white shadow-[0_16px_48px_rgba(31,58,176,0.2)]">
-              <div className="relative z-10 max-w-3xl">
-                <Badge className="border-white/20 bg-white/10 text-white">근거 우선</Badge>
-                <h2 className="mt-4 text-[34px] font-extrabold leading-[1.3] tracking-[-0.035em]">근거가 붙은 공고만<br />판정으로 이어갑니다</h2>
-                <p className="mt-4 max-w-2xl text-[15px] leading-7 text-white/80">공고 원문에서 구조화된 자격조건과 회사 프로필을 비교합니다. 근거가 없거나 정보가 부족하면 억지로 결론 내리지 않고 확인 필요로 남깁니다.</p>
-              </div>
-              <ShieldCheck className="absolute -right-10 -bottom-16 size-64 text-white/[0.07]" strokeWidth={1} />
             </div>
+          </form>
+
+          <div className="mt-4 flex flex-col gap-2 rounded-2xl bg-[var(--product-accent-deep)] px-5 py-4 text-white sm:flex-row sm:items-center sm:gap-4">
+            <span className="flex shrink-0 items-center gap-2 text-[13px] font-bold"><ShieldCheck className="size-4" />근거 우선</span>
+            <p className="text-[13px] leading-6 text-white/80">공고 원문에서 구조화된 자격조건과 회사 프로필을 비교합니다. 근거가 없거나 정보가 부족하면 억지로 결론 내리지 않고 확인 필요로 남깁니다.</p>
           </div>
         </div>
 
@@ -282,7 +291,7 @@ export default function NoticesPage() {
             <div>
               <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">공고 조회</p>
               <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
-              <p className="mt-2 text-[14px] text-[var(--product-muted)]">실제 API에서 조회된 공고입니다. 아직 자동 매칭 전이며, 저장된 판정이 있으면 최신 결과를 함께 표시합니다.</p>
+              <p className="mt-2 text-[14px] text-[var(--product-muted)]">나라장터에서 수집한 공고입니다. 검토를 시작하면 판정 상태가 붙습니다. 아래 「회사 기준으로 판정 가능한 공고」는 이 중 분석이 끝난 것만 모은 자리입니다.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
@@ -290,22 +299,40 @@ export default function NoticesPage() {
           </div>
 
           {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
-          {!loading && activeNotices.length > 6 && <p className="mt-3 text-[13px] text-[var(--product-muted)]">현재 불러온 {activeNotices.length}건 중 6건 표시 · 원하는 공고는 검색으로 좁혀보세요</p>}
+          {/* DL-007 — 「전체 공고」가 아니라 「검색으로 좁힌 결과의 상위 N건」이라는 사실을 화면이 말한다. */}
+          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 중 상위 {notices.length}건을 불러왔고, 이 중 {Math.min(activeNotices.length, VISIBLE_NOTICE_LIMIT)}건을 표시합니다{activeNotices.length > VISIBLE_NOTICE_LIMIT ? ' · 원하는 공고는 검색으로 좁혀보세요' : ''}</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
-            <div className="mt-7 grid gap-[18px] lg:grid-cols-3">
-              {activeNotices.slice(0, 6).map((notice) => {
+            /*
+              카드 6장을 나열하면 한 화면에 6건뿐이라 서로 비교가 안 된다.
+              같은 열을 세로로 세워 공고명·기관·유형·변경·검토 상태를 한눈에 견주게 한다.
+              마감일 열은 목록 API(BidNoticeSummary)에 bid_closed_at이 없어 넣지 못했다.
+              공고마다 버전을 따로 부르면 방금 없앤 N+1이 되살아난다 — 백엔드에 필드 추가를 요청해둔다.
+            */
+            <div className="mt-6 overflow-hidden rounded-[20px] border border-[var(--product-line)] bg-white">
+              <div className="hidden grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px] items-center gap-3 bg-[var(--product-tint)] px-5 py-3 text-[12px] font-bold text-[var(--product-muted)] lg:grid">
+                <span>검토 상태</span><span>공고명 · 공고번호</span><span>공고기관</span><span>유형</span><span>변경</span><span className="text-right">조치</span>
+              </div>
+              {activeNotices.slice(0, VISIBLE_NOTICE_LIMIT).map((notice) => {
                 const status = noticeStatus(notice.id);
                 const meta = caseMeta[notice.id];
-                return <article key={notice.id} className="flex min-h-[286px] flex-col rounded-[20px] border border-[var(--product-line)] bg-white p-6 shadow-[0_10px_30px_rgba(35,50,90,0.06)] transition-transform hover:-translate-y-1">
-                  <div className="flex items-center justify-between gap-3">{metaLoading && !meta
-                    ? <span className="rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
-                    : <span className={`rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span>}<span className="text-[12px] text-[var(--product-faint)]">현재 v{notice.current_version}</span></div>
-                  <h3 className="mt-5 line-clamp-3 text-[21px] font-bold leading-8 tracking-[-0.025em] text-[var(--product-ink)]">{notice.title}</h3>
-                  <p className="mt-3 text-[13px] leading-6 text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'} · {labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</p>
-                  {meta?.judgment && <p className="mt-2 text-[13px] text-[var(--product-muted)]">판정 {meta.judgment.judgment_count}건 · 확인 필요 {meta.judgment.unknown_count}건 · 미달 {meta.judgment.unsatisfied_count}건</p>}
-                  <div className="mt-auto flex items-end justify-between gap-3 pt-5"><div><span className="block text-[11px] text-[var(--product-faint)]">공고번호</span><strong className="mt-1 block text-[12px] font-semibold">{notice.bid_notice_no}</strong></div><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : meta ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
-                </article>;
+                const changed = notice.current_version > 1;
+                return (
+                  <div key={notice.id} className="grid grid-cols-1 items-center gap-3 border-t border-[var(--product-line-2)] px-5 py-4 transition-colors hover:bg-[var(--product-tint)] lg:grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px]">
+                    <div>{metaLoading && !meta
+                      ? <span className="inline-block rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
+                      : <span className={`inline-block rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span>}</div>
+                    <div className="min-w-0">
+                      <strong className="block truncate text-[15px] font-bold text-[var(--product-ink)]">{notice.title}</strong>
+                      <span className="mt-1 block text-[12px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 판정 ${meta.judgment.judgment_count}건 · 확인 필요 ${meta.judgment.unknown_count}건 · 미달 ${meta.judgment.unsatisfied_count}건` : ''}</span>
+                    </div>
+                    <span className="truncate text-[13px] text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'}</span>
+                    <span className="text-[13px] text-[var(--product-muted)]">{labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</span>
+                    {/* 차수가 1보다 크면 변경공고가 있었다는 뜻이다. 횟수는 백필 이력에 따라 달라질 수 있어 단정하지 않는다. */}
+                    <span className={`text-[13px] ${changed ? 'font-semibold text-amber-700' : 'text-[var(--product-faint)]'}`}>{changed ? `변경 있음 · v${notice.current_version}` : '원공고'}</span>
+                    <div className="lg:text-right"><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : meta ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
+                  </div>
+                );
               })}
             </div>
           ) : <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center"><Search className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 font-semibold">조회된 공고가 없습니다.</p><p className="mt-1 text-sm text-[var(--product-muted)]">검색어나 판정 상태 필터를 바꿔보세요.</p></div>}

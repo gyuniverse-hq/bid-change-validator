@@ -326,6 +326,22 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   // 실행 전·실패는 「세어본 적이 없는」 상태다. 0으로 적으면 확인 후 0건으로 읽힌다 — #119 리뷰.
   const countedAnalysis = analysisDetail && analysisDetail.status !== 'FAILED' ? analysisDetail : null;
 
+  /*
+    첨부가 0종이면 「읽지 못했다」가 아니라 「읽을 것이 없었다」다.
+    다만 0인 이유까지는 화면이 모른다 — 취소공고라 원래 없는 차수일 수도, 수집이 안 된 것일 수도 있다.
+    그래서 사실(0종)만 말하고 원인은 단정하지 않는다. 백엔드가 문서 없는 공고의 상태를
+    (취소공고 / 첨부 누락 / 추출 실패 / 정상)로 구분해 내려주면 그때 원인을 쓴다.
+  */
+  const currentVersionHasNoDocument = Boolean(currentVersion && currentVersion.documents.length === 0);
+  const analysisNotice = currentAnalysis && currentAnalysis.status !== 'SUCCEEDED'
+    ? currentAnalysis.status === 'FAILED' && currentVersionHasNoDocument
+      ? {
+          label: '현재 차수에 수집된 첨부 문서가 없습니다',
+          description: '읽을 원문이 없어 판정하지 않았습니다. 취소공고처럼 원래 첨부가 없는 차수일 수도 있고, 수집이 되지 않았을 수도 있습니다. 공고 원문을 직접 확인해 주세요.',
+        }
+      : ANALYSIS_STATUS_COPY[currentAnalysis.status]
+    : null;
+
   // 분석이 실패했을 때 「없습니다」라고 하면 「확인했는데 없더라」로 읽힌다.
   // 「확인하지 못했다」와 구분한다 — 화면필드명세 공통원칙 3.
   const emptyRequirementCopy = busy === 'review'
@@ -333,7 +349,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     : !analysisDetail
       ? '아직 자격검토를 실행하지 않았습니다.'
       : analysisDetail.status === 'FAILED'
-        ? '분석이 완료되지 않아 자격요건을 표시할 수 없습니다. 위 안내를 확인해 주세요.'
+        ? currentVersionHasNoDocument
+          ? '현재 차수에 수집된 첨부 문서가 없어 읽을 원문이 없습니다. 위 안내를 확인해 주세요.'
+          : '분석이 완료되지 않아 자격요건을 표시할 수 없습니다. 위 안내를 확인해 주세요.'
         : '이번 분석에서 안전하게 구조화된 자격요건이 없습니다.';
 
   if (busy === 'load' || (requestedCaseId && activeCase?.id !== requestedCaseId && !error)) return <main className="app-shell-container py-12">
@@ -370,14 +388,14 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             <CaseTabs caseId={activeCase.id} active="qualification" />
 
             {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail?.status} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
 
             {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
-            {currentAnalysis && currentAnalysis.status !== 'SUCCEEDED' && (
+            {analysisNotice && (
               <section className="mt-6 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
-                <strong className="text-[14px] text-[var(--product-warn)]">{ANALYSIS_STATUS_COPY[currentAnalysis.status].label}</strong>
-                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{ANALYSIS_STATUS_COPY[currentAnalysis.status].description}</p>
+                <strong className="text-[14px] text-[var(--product-warn)]">{analysisNotice.label}</strong>
+                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{analysisNotice.description}</p>
               </section>
             )}
 

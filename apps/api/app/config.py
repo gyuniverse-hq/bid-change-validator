@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     notice_poll_page_size: int = Field(default=100, ge=1, le=999)
     notice_poll_max_pages: int = Field(default=10, ge=1, le=100)
     notice_poll_business_types: str = "SERVICE,GOODS,CONSTRUCTION,FOREIGN"
+    notice_history_backfill_batch_size: int = Field(default=10, ge=1, le=100)
+    notice_history_backfill_retry_minutes: int = Field(default=15, ge=1, le=1_440)
     auth_bootstrap_admin_username: str = "admin"
     auth_bootstrap_admin_password: str = "admin"
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)

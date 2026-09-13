@@ -739,7 +739,7 @@ def test_one_invalid_notice_does_not_abort_remaining_items() -> None:
         )
         assert notice is not None
         notice_id = notice.id
-        assert run.status == "COMPLETED"
+        assert run.status == "FAILED"
         assert run.fetched_count == 2
         assert run.created_count == 1
         assert run.failed_item_count == 1

@@ -170,7 +170,7 @@ def run_history_backfill_batch(
             db.commit()
 
             try:
-                run_notice_sync(
+                run = run_notice_sync(
                     db,
                     request=NoticeSyncRequest(
                         business_type=BusinessType(notice.business_type),
@@ -182,6 +182,11 @@ def run_history_backfill_batch(
                     client=client,
                     document_downloader=document_downloader,
                 )
+                if run.status != "COMPLETED" or run.failed_item_count > 0:
+                    raise RuntimeError(
+                        run.error_message
+                        or f"notice history sync ended with status={run.status}"
+                    )
                 job = db.get(NoticeHistoryBackfillJob, job_id)
                 if job is not None:
                     job.status = "COMPLETED"

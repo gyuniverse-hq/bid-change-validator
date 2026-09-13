@@ -476,18 +476,46 @@ def run_notice_sync(
                     raw_order,
                 )
 
-            for item, source_endpoint in sorted(
-                notice_number_items,
-                key=notice_order,
-            ):
-                save_item(item, source_endpoint=source_endpoint)
-            target_notice = db.scalar(
-                select(BidNotice).where(
-                    BidNotice.bid_notice_no == request.bid_notice_no
+            # A full-history lookup is one logical unit.  Keeping 000~004 while
+            # 005 failed could make 004 look current and permanently complete
+            # the backfill job.  Retain item savepoints for diagnostics, but
+            # roll back every version written by this lookup when any item
+            # fails.  The durable backfill job will retry the whole notice.
+            history_transaction = db.begin_nested()
+            try:
+                for item, source_endpoint in sorted(
+                    notice_number_items,
+                    key=notice_order,
+                ):
+                    save_item(item, source_endpoint=source_endpoint)
+
+                if item_errors:
+                    history_transaction.rollback()
+                    db.refresh(run)
+                    run.fetched_count = len(notice_number_items)
+                    run.failed_item_count = len(item_errors)
+                    run.status = "FAILED"
+                    run.error_message = (
+                        f"{len(item_errors)}개 항목 저장 실패: "
+                        + " | ".join(item_errors[:10])
+                    )[:2000]
+                    run.completed_at = datetime.now(KST)
+                    db.commit()
+                    db.refresh(run)
+                    return run
+
+                target_notice = db.scalar(
+                    select(BidNotice).where(
+                        BidNotice.bid_notice_no == request.bid_notice_no
+                    )
                 )
-            )
-            if target_notice is not None:
-                _resequence_notice_versions(db, notice_id=target_notice.id)
+                if target_notice is not None:
+                    _resequence_notice_versions(db, notice_id=target_notice.id)
+                history_transaction.commit()
+            except Exception:
+                if history_transaction.is_active:
+                    history_transaction.rollback()
+                raise
             db.commit()
 
         # Reannouncements use a different notice number. Fetch direct predecessors
@@ -556,7 +584,10 @@ def run_notice_sync(
                 history_page_number += 1
             db.commit()
 
-        run.status = "COMPLETED"
+        # Partial polling runs keep successfully isolated items, but must not
+        # advance the next polling checkpoint.  Only COMPLETED runs are used by
+        # the worker when calculating its next window.
+        run.status = "FAILED" if item_errors else "COMPLETED"
         if item_errors:
             run.error_message = (
                 f"{len(item_errors)}개 항목 저장 실패: " + " | ".join(item_errors[:10])

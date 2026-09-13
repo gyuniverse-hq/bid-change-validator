@@ -77,7 +77,7 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
 function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof typeof pages] }) {
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
-  const [semanticProcessing, setSemanticProcessing] = useState(false);
+  const [semanticProcessing, setSemanticProcessing] = useState(true);
   const [documentProcessing, setDocumentProcessing] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [state.turns, state.busy]);
@@ -94,16 +94,16 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <h3>{caseId ? '판정 결과가 궁금하면 편하게 물어보세요' : '검토할 공고를 먼저 선택해 주세요'}</h3>
         <p>AI는 판정을 대신하지 않아요.<br />저장된 결과와 원문 근거를 설명해 드려요.</p>
       </div>}
-      {caseId && <div className="copilot-processing-options" aria-label="AI 외부 처리 옵션">
-        <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="자연어 의미 이해 사용">
+      {caseId && <div className="copilot-processing-options" aria-label="AI 처리 옵션">
+        <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="AI 상세 설명 사용">
           <input id="copilot-semantic-processing" type="checkbox" checked={semanticProcessing} disabled={state.busy}
             onChange={event => setSemanticProcessing(event.target.checked)} />
-          <span><strong>자연어 의미 이해 사용</strong><small>켜면 질문과 최소 대화 맥락(이전 요청 유형·선택 여부)을 외부 AI 분류기에 전달합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+          <span><strong>AI 상세 설명 사용</strong><small>켜면 질문 이해와 자연스러운 설명을 위해 현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용합니다. AI는 참가 가능 여부를 새로 판정하거나 저장하지 않습니다.</small></span>
         </label>
         <label className="copilot-semantic-toggle" htmlFor="copilot-document-processing" aria-label="공고문 근거 답변 사용">
           <input id="copilot-document-processing" type="checkbox" checked={documentProcessing} disabled={state.busy}
             onChange={event => setDocumentProcessing(event.target.checked)} />
-          <span><strong>공고문 근거 답변 사용</strong><small>켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용해 근거 답변을 생성합니다. 회사 프로필·저장 입력은 보내지 않습니다.</small></span>
+          <span><strong>공고문 근거 답변 사용</strong><small>켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용해 근거 답변을 생성합니다. 회사 프로필·저장 입력은 문서 검색 경로에 보내지 않습니다.</small></span>
         </label>
       </div>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>
@@ -119,7 +119,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         </div>)}
       </div>
       {state.busy && <div className="copilot-answer copilot-loading" data-state="LOADING">
-        <output>{documentProcessing ? '공고문 근거를 확인하고 있어요…' : '현재 검토 결과를 확인하고 있어요…'}</output>
+        <output>{documentProcessing ? '공고문 근거를 확인하고 있어요…' : semanticProcessing ? '판정 결과를 이해하기 쉽게 정리하고 있어요…' : '현재 검토 결과를 확인하고 있어요…'}</output>
         <div className="copilot-skeleton" aria-hidden="true"><span /><span /><span /></div>
       </div>}
       {state.error && <div role="alert" className={noJudgment ? 'copilot-notice' : 'copilot-error'} data-state={noJudgment ? 'NO_JUDGMENT' : 'ERROR'}>

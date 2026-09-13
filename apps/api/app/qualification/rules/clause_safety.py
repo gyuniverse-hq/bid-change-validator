@@ -18,10 +18,9 @@
       -> ALTERNATIVE_OR_EXCEPTION_RULE ('또는' 이 있어서). 그 '또는' 은 괄호 안에서
          어느 서류로 주소를 보는지를 설명할 뿐이고, 요건은 '전남광주 소재' 하나다.
 
-한국 공고는 업종 요건에 거의 항상 근거 법령을 붙이므로 첫째는 업종 요건 대부분을
-막는다. 골든셋 20공고에서 정답 요건이 판정기에 도달한 비율이 12.5% 였고, 그 큰 이유가
-이것이다. 골든셋의 canonical raw 는 법령 인용을 뗀 채 작성돼 있어 골든 러너로는
-이 실패가 보이지 않았다 — 제품이 실제로 만들지 않는 모양의 입력이었다.
+한국 공고는 업종 요건에 근거 법령을 자주 붙이므로 첫째는 정상적인 업종 요건까지
+막을 수 있다. canonical raw 가 법령 인용을 뗀 형태라면 골든 러너에서도 이 제품 경로
+실패가 드러나지 않는다.
 
 그래서 패턴을 대기 전에 **장식을 벗긴다.** 「…」 로 감싼 법령명, 제N조·제N항 같은
 조문 번호, 괄호 안 설명을 지운 뒤 같은 패턴을 적용한다. 패턴 표 자체는 손대지 않는다
@@ -51,19 +50,32 @@ _ARTICLE_REF_RE = re.compile(
     r"(?:같은\s*법\s*)?(?:시행령|시행규칙)?\s*제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?"
     r"(?:\s*\[별표\s*\d*\])?\s*(?:에\s*(?:따른|의한|따라|의거한?)|의)?"
 )
-_PARENTHETICAL_RE = re.compile(r"\([^()]*\)|（[^（）]*）")
+_PARENTHETICAL_RE = re.compile(r"\((?P<ascii>[^()]*)\)|（(?P<fullwidth>[^（）]*)）")
+_ADDRESS_EVIDENCE_OR_RE = re.compile(
+    r"(?:사업자등록증|법인등기부(?:등본)?)\s*또는\s*"
+    r"(?:허가|인가|면허|등록|신고).*(?:서류|소재지)"
+)
+
+
+def _strip_parenthetical(match: re.Match[str]) -> str:
+    """Drop explanatory parentheses but retain anything the safety rules must inspect."""
+    inner = match.group("ascii") or match.group("fullwidth") or ""
+    if _ADDRESS_EVIDENCE_OR_RE.search(inner):
+        return " "
+    if any(re.search(pattern, inner) for pattern, _ in _COMPLEX_PATTERNS):
+        return f" {inner} "
+    return " "
 
 
 def strip_decorations(raw: str) -> str:
     """법령 인용·조문 번호·괄호 설명을 벗긴 본문. 가드는 이것을 본다.
 
-    괄호를 벗기는 것이 가장 공격적인 선택이다. 괄호 안에 진짜 대안 조건이 들어가는
-    공고도 있을 수 있다. 그 경우 이 가드가 아니라 골든셋의 '잘못된 확정' 지표가
-    잡아 주므로, 여기서는 흔한 쪽(괄호 = 설명)을 따른다.
+    주소 판단에 쓰는 증빙서류를 나열한 좁은 설명 괄호만 제거한다. 다른 괄호에 안전
+    패턴이 있으면 내용을 남겨 실제 대안·부정·공동수급 조건이 숨지 않게 한다.
     """
     text = _CITATION_RE.sub(" ", raw)
     text = _ARTICLE_REF_RE.sub(" ", text)
-    text = _PARENTHETICAL_RE.sub(" ", text)
+    text = _PARENTHETICAL_RE.sub(_strip_parenthetical, text)
     return " ".join(text.split())
 
 

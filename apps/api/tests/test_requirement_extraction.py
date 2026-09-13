@@ -291,8 +291,7 @@ def test_section_body_under_korean_sub_labels_is_kept_as_children():
 
     예전에는 한 글자 한글 기호를 상위 제목으로 봐서 첫 '가.' 에서 자식 수집이 멈췄다.
     자격 절 본문이 통째로 빠졌고 그 항목들은 제목에 키워드가 없어 앵커도 못 됐다.
-    골든셋 20공고에서 정답 요건 59행 중 20행이 이렇게 LLM 에 보내지지도 않았다
-    (선별기 수정만으로 39/59 -> 54/59).
+    전체 측정 수치는 fixture bundle을 포함한 골든 러너 결과로 별도 검증한다.
     """
     blocks = canonical_source_blocks(
         document_id="doc-k",
@@ -314,3 +313,60 @@ def test_section_body_under_korean_sub_labels_is_kept_as_children():
     assert "1450" in selected and "충청북도" in selected and "등록증 사본" in selected
     # 다음 상위 절("4. 입찰방법")과 그 아래는 들어오지 않는다.
     assert "전자입찰" not in selected
+
+
+def test_dotted_eligibility_heading_keeps_korean_children() -> None:
+    blocks = canonical_source_blocks(
+        document_id="doc-dotted",
+        text_sha256="sha-dotted",
+        blocks=[
+            {"block_index": 0, "text": "3.1 입찰참가자격"},
+            {"block_index": 1, "text": "가. 업종코드 1253 등록업체"},
+            {"block_index": 2, "text": "나. 충청북도 소재 업체"},
+            {"block_index": 3, "text": "3.2 입찰방법"},
+            {"block_index": 4, "text": "가. 전자입찰"},
+        ],
+    )
+
+    selected = "\n".join(
+        chunk["text"]
+        for chunk in select_eligibility_chunks(chunk_source_blocks(blocks))
+    )
+
+    assert "1253" in selected and "충청북도" in selected
+    assert "전자입찰" not in selected
+
+
+def test_parenthesized_number_can_be_an_eligibility_anchor() -> None:
+    blocks = canonical_source_blocks(
+        document_id="doc-paren",
+        text_sha256="sha-paren",
+        blocks=[
+            {"block_index": 0, "text": "1) 입찰참가자격"},
+            {"block_index": 1, "text": "가) 업종코드 1169 등록업체"},
+            {"block_index": 2, "text": "나) 서울특별시 소재 업체"},
+            {"block_index": 3, "text": "2) 제출서류"},
+            {"block_index": 4, "text": "가) 법인등기부등본"},
+        ],
+    )
+
+    selected = "\n".join(
+        chunk["text"]
+        for chunk in select_eligibility_chunks(chunk_source_blocks(blocks))
+    )
+
+    assert "1169" in selected and "서울특별시" in selected
+    assert "법인등기부등본" not in selected
+
+
+def test_grounding_normalizes_compatibility_dots_without_changing_raw() -> None:
+    raw = "건설폐기물수집·운반업 (업종코드 : 6728)을 등록한 업체"
+    source = "건설폐기물수집․운반업 (업종코드 : 6728)을 등록한 업체"
+    slot = {"유형": "업종요건", "raw": raw, "업종_raw": "건설폐기물수집·운반업"}
+
+    ok, reason, source_chunk = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok is True
+    assert reason == ""
+    assert source_chunk is not None
+    assert slot["raw"] == raw

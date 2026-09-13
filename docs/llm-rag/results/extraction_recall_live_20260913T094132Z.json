@@ -1,0 +1,869 @@
+{
+  "executed_at": "20260913T094132Z",
+  "summary": {
+    "source": "live",
+    "notices": 20,
+    "runs": 20,
+    "golden_requirement_rows": 59,
+    "outcome": {
+      "REACHED": 18,
+      "UNMAPPED": 10,
+      "MISSED": 11,
+      "DROPPED": 20
+    },
+    "reach_rate": 0.305,
+    "drop_reasons": {
+      "RAW_NOT_FOUND_IN_SOURCE": 5,
+      "DETAIL_NOT_FOUND_IN_SOURCE": 15
+    },
+    "by_type": {
+      "COMPANY_SIZE": {
+        "REACHED": 1,
+        "DROPPED": 2,
+        "UNMAPPED": 2,
+        "MISSED": 1
+      },
+      "EXPERIENCE_FIELD": {
+        "REACHED": 1,
+        "DROPPED": 1,
+        "UNMAPPED": 0,
+        "MISSED": 0
+      },
+      "INDUSTRY": {
+        "REACHED": 8,
+        "DROPPED": 12,
+        "UNMAPPED": 7,
+        "MISSED": 3
+      },
+      "PERFORMANCE_AMOUNT": {
+        "REACHED": 1,
+        "DROPPED": 1,
+        "UNMAPPED": 0,
+        "MISSED": 2
+      },
+      "PERFORMANCE_COUNT": {
+        "REACHED": 1,
+        "DROPPED": 1,
+        "UNMAPPED": 0,
+        "MISSED": 2
+      },
+      "REGION": {
+        "REACHED": 4,
+        "DROPPED": 0,
+        "UNMAPPED": 0,
+        "MISSED": 0
+      },
+      "REGISTRATION_CERTIFICATION": {
+        "REACHED": 2,
+        "DROPPED": 1,
+        "UNMAPPED": 1,
+        "MISSED": 0
+      },
+      "STAFF": {
+        "REACHED": 0,
+        "DROPPED": 2,
+        "UNMAPPED": 0,
+        "MISSED": 3
+      }
+    },
+    "notices_fully_reached_in_some_run": 2,
+    "notices_fully_reached_in_every_run": 2,
+    "extras_total": 29
+  },
+  "records": [
+    {
+      "source_id": "01634263-003",
+      "notice_no": "R26BK01634263",
+      "title": "우치공원 거점동물원 동물 행복복지센터 건립 구 파충류사 건설폐기물 처리용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 2,
+      "DROPPED": 0,
+      "UNMAPPED": 1,
+      "MISSED": 0,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "processing",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "「건설폐기물의 재활용촉진에 관한 법률」 제21조에 따른 건설폐기물중간처리업 (업종코드 : 1253)을 등록한 업체"
+        },
+        {
+          "key": "transport",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "「건설폐기물의 재활용촉진에 관한 법률」 제21조에 따른 건설폐기물수집·운반업 (업종코드 : 6728)을 등록한 업체 또는 같은 법 시행규칙 제12조 제5항 [별표2] 1. 가. 수집․운반업 허가기준의 장비기준을 충족한 업체"
+        },
+        {
+          "key": "region",
+          "type": "REGION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "「지방자치단체를 당사자로 하는 계약에 관한 법률」 시행령 제20조 및 같은 법 시행규칙 제24조에 따라 공고일 전일 [신규사업자(법인인 경우 법인등기일, 개인사업자인 경우 사업자등록일 기준)인 경우 공고일 이후]부터 입찰서 제출일(낙찰자는 계약체결일)까지 계속하여 법인등기부상 본점소재지(개인사업자인 경우 사업자등록증 또는 허가․인가․면허․등록․신고 등에 관련된 서류가 기재된 사업장의 소재지)를 전남광주통합특별시에 소재한 업체"
+        }
+      ],
+      "extra_raws": [
+        "「국가종합전자조달시스템 입찰참가자격등록규정」에 따라 입찰참가등록 마감일시까지 입찰참가자격을 등록한 업체"
+      ]
+    },
+    {
+      "source_id": "01633750-001",
+      "notice_no": "R26BK01633750",
+      "title": "구내식당 위탁운영 업체 선정",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 2,
+      "REACHED": 1,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 3,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "나. 식품위생법에 의거 단체급식업 등록업체로서 식당허가 등에 결격사유가 없는 업체 식품위생법에 따른 인·허가를 득하고 동법 시행령에 따라 영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자"
+        },
+        {
+          "key": "sites",
+          "type": "PERFORMANCE_COUNT",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": [
+        "나. 식품위생법에 의거 단체급식업 등록업체로서 식당허가 등에 결격사유가 없는 업체 식품위생법에 따른 인·허가를 득하고 동법 시행령에 따라 영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자",
+        "나. 식품위생법에 의거 단체급식업 등록업체로서 식당허가 등에 결격사유가 없는 업체 식품위생법에 따른 인·허가를 득하고 동법 시행령에 따라 영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자",
+        "다. 입찰 공고일 기준 2년 내에 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체(실적증명)\n※ 관공서와 기업체에 한함(병원, 학교, 군부대, 사회복지시설 등 제외)"
+      ]
+    },
+    {
+      "source_id": "01687120-001",
+      "notice_no": "R26BK01687120",
+      "title": "한림대학교 창업지원본부 2026 Station C 디지털 사이니지 시스템 구축",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 4,
+      "REACHED": 0,
+      "DROPPED": 3,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "industries:atom1",
+          "type": "INDUSTRY",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        },
+        {
+          "key": "industries:atom2",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "「소프트웨어 진흥법」에 따른 소프트웨어사업자로서 다음 각 분야의 신고를 모두 완료하고 해당 자격을 갖춘 업체\n가. 컴퓨터관련서비스사업\n나. 디지털콘텐츠개발서비스사업\n다. 패키지소프트웨어개발·공급사업"
+        },
+        {
+          "key": "industries:atom3",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "「소프트웨어 진흥법」에 따른 소프트웨어사업자로서 다음 각 분야의 신고를 모두 완료하고 해당 자격을 갖춘 업체\n가. 컴퓨터관련서비스사업\n나. 디지털콘텐츠개발서비스사업\n다. 패키지소프트웨어개발·공급사업"
+        },
+        {
+          "key": "technical_any",
+          "type": "EXPERIENCE_FIELD",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "＊입찰참가자는 다음 중 하나 이상의 역량을 보유하여야 한다.\n- 클라우드 기반 디지털 사이니지 콘텐츠 관리 시스템(SaaS) 보유 또는 제공 가능 업체\n- 다수 디바이스 대상 중앙관제형 콘텐츠 송출 시스템 구축 경험 보유 업체\n- 하드웨어, 소프트웨어, 설치, 유지보수를 통합하여 수행할 수 있는 업체\n- 무상 운영지원 기간 이후 서버 이전 또는 온프레미스 전환 가능 방안을 제시할 수 있는 업체"
+        }
+      ],
+      "extra_raws": [
+        "국가종합전자조달시스템(나라장터) 입찰참가자격 등록 업체"
+      ]
+    },
+    {
+      "source_id": "01684863-001",
+      "notice_no": "R26BK01684863",
+      "title": "전북대학교 남원글로컬캠퍼스 본관동 생활폐기물 처리 용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 6,
+      "REACHED": 1,
+      "DROPPED": 5,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "processing_any:atom1",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업 (6770)또는 폐기물종합재활용업(6786) 등록업체\n2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n※ 단, 처분 또는 재활용업 허가를 받은 업체가 관계 법령상 해당 폐기물을 직접 수집·운반할 수 있는 장비·허가 조건을 갖춘 경우에는 수집·운반업 등록을 별도로 요구하지 않을 수 있다."
+        },
+        {
+          "key": "processing_any:atom2",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업 (6770)또는 폐기물종합재활용업(6786) 등록업체\n2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n※ 단, 처분 또는 재활용업 허가를 받은 업체가 관계 법령상 해당 폐기물을 직접 수집·운반할 수 있는 장비·허가 조건을 갖춘 경우에는 수집·운반업 등록을 별도로 요구하지 않을 수 있다."
+        },
+        {
+          "key": "processing_any:atom3",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업 (6770)또는 폐기물종합재활용업(6786) 등록업체\n2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n※ 단, 처분 또는 재활용업 허가를 받은 업체가 관계 법령상 해당 폐기물을 직접 수집·운반할 수 있는 장비·허가 조건을 갖춘 경우에는 수집·운반업 등록을 별도로 요구하지 않을 수 있다."
+        },
+        {
+          "key": "transport_literal",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업 (6770)또는 폐기물종합재활용업(6786) 등록업체\n2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n※ 단, 처분 또는 재활용업 허가를 받은 업체가 관계 법령상 해당 폐기물을 직접 수집·운반할 수 있는 장비·허가 조건을 갖춘 경우에는 수집·운반업 등록을 별도로 요구하지 않을 수 있다."
+        },
+        {
+          "key": "region",
+          "type": "REGION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "○ 본 입찰은 공고일 전일부터 입찰일(낙찰자는 계약체결일)까지 주된 영업소의 소재지가 전북특별자치도에 있는 업체만 참가할 수 있다."
+        },
+        {
+          "key": "code_review",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업 (6770)또는 폐기물종합재활용업(6786) 등록업체\n2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n※ 단, 처분 또는 재활용업 허가를 받은 업체가 관계 법령상 해당 폐기물을 직접 수집·운반할 수 있는 장비·허가 조건을 갖춘 경우에는 수집·운반업 등록을 별도로 요구하지 않을 수 있다."
+        }
+      ],
+      "extra_raws": [
+        "「국가를 당사자로 하는 계약에 관한 법률 시행령」 제12조 및 같은 법 시행규칙 제14조에 따른 자격을 갖추고, 국가종합전자조달시스템 입찰참가자격 등록을 마친 업체이어야 한다."
+      ]
+    },
+    {
+      "source_id": "01626459-000",
+      "notice_no": "R26BK01626459",
+      "title": "2026-19호 성결대학교 생성형 AI 서비스 도입 사업 용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 1,
+      "DROPPED": 2,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 3,
+      "placements": [
+        {
+          "key": "count",
+          "type": "PERFORMANCE_COUNT",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "다. 최근 3년 이내 유사 사업 수행 실적(1억 이상) 1건 이상, 총 4억 이상 보유 업체"
+        },
+        {
+          "key": "sum",
+          "type": "PERFORMANCE_AMOUNT",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "다. 최근 3년 이내 유사 사업 수행 실적(1억 이상) 1건 이상, 총 4억 이상 보유 업체"
+        },
+        {
+          "key": "onprem",
+          "type": "EXPERIENCE_FIELD",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "제안사는 온프레미스 방식의 납품 실적을 보유하고 있어야 한다."
+        }
+      ],
+      "extra_raws": [
+        "마. 본 사업은 20억 미만의 사업으로써, 「소프트웨어 진흥법」 제48조(중소 소프트웨어사업자의 사업 참여 지원)에 따라 「중소 소프트웨어사업자의 사업 참여 지원에 관한 지침」(과학기술정보통신부 고시 제2022-39호)에 의거 대기업 참여제한 사업임",
+        "바. 『중소기업기본법』제2조에 따른 중소기업자 및『소기업 및 소상공인 지원을 위한 특별조치법』제2조에 따른 소상공인으로서『중·소기업·소상공인 및 장애인기업 확인요령』에 따라 발급된 중·소기업·소상공인 확인서를 소지한 업체",
+        "차. 본 사업에 제안하는 상품은 국가 공인 GS(Good Software) 1등급 인증을 획득한 제품이어야 하며, 동시에 중소벤처기업부 기술개발제품 시범구매사업에 선정된 이력이 있는 제품이어야 한다. 관련 증빙자료를 제안서에 반드시 첨부하여야 한다"
+      ]
+    },
+    {
+      "source_id": "01635124-000",
+      "notice_no": "R26BK01635124",
+      "title": "한림대학교 글로컬 사업 관련 AI 마이크로러닝 기반 자기주도 학습 플랫폼 구축 업체 선정",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 3,
+      "REACHED": 2,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 4,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "○ 「소프트웨어진흥법」 제24조의 규정에 의거 입찰 공고일 현재 소프트웨어사업자(컴퓨터관련서비스사업[업종코드: 1468])로 등록을 필한 업체로 나라장터에 입찰 참가 자격을 등록한 업체"
+        },
+        {
+          "key": "academic",
+          "type": "PERFORMANCE_COUNT",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        },
+        {
+          "key": "scale",
+          "type": "PERFORMANCE_COUNT",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "- 단일 강좌 수강생 2,000명 이상 규모의 AI 기반 학습 서비스 운영 실적을 1건 이상 보유한 업체"
+        }
+      ],
+      "extra_raws": [
+        "○ 「소프트웨어진흥법」 제24조의 규정에 의거 입찰 공고일 현재 소프트웨어사업자(컴퓨터관련서비스사업[업종코드: 1468])로 등록을 필한 업체로 나라장터에 입찰 참가 자격을 등록한 업체",
+        "- 최근 3년 이내, 4년제 대학교 정규 학점 인정 과목에 AI 기반 학습 지원 서비스(AI 튜터, AI 조교 등)를 실제 도입·운영한 실적을 1건 이상 보유한 업체",
+        "- 최근 3년 이내, 4년제 대학교 정규 학점 인정 과목에 AI 기반 학습 지원 서비스(AI 튜터, AI 조교 등)를 실제 도입·운영한 실적을 1건 이상 보유한 업체",
+        "- 단일 강좌 수강생 2,000명 이상 규모의 AI 기반 학습 서비스 운영 실적을 1건 이상 보유한 업체"
+      ]
+    },
+    {
+      "source_id": "01686686-000",
+      "notice_no": "R26BK01686686",
+      "title": "파킨슨병 환자 원격 운동 모니터링 시스템 개발 용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 2,
+      "REACHED": 1,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 3,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "나. 소프트웨어산업진흥법에 의한 소프트웨어사업자 신고를 필한 업체"
+        },
+        {
+          "key": "amount",
+          "type": "PERFORMANCE_AMOUNT",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": [
+        "다. 법인등기부등본상 사업자등록을 필하고, 관련 분야(클라우드 시스템 개발, 헬 스케어/IoT 플랫폼 등) 사업을 영위하는 자",
+        "다. 법인등기부등본상 사업자등록을 필하고, 관련 분야(클라우드 시스템 개발, 헬 스케어/IoT 플랫폼 등) 사업을 영위하는 자",
+        "가. 「소프트웨어 진흥법」에 따른 소프트웨어사업자 신고를 필한 자"
+      ]
+    },
+    {
+      "source_id": "01684825-000",
+      "notice_no": "R26BK01684825",
+      "title": "2026 화성 루나빛축제 대행 용역 입찰 공고[긴급]",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 2,
+      "REACHED": 1,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "[기타자유업(행사대행업)(9901)] 업종을 등록한 업체"
+        },
+        {
+          "key": "single_amount",
+          "type": "PERFORMANCE_AMOUNT",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01707963-000",
+      "notice_no": "R26BK01707963",
+      "title": "코스콤 안양 데이터센터 이전 정보통신공사 감리용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 1,
+      "DROPPED": 2,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "industry_or:atom1",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "나. 엔지니어링산업 진흥법 제21조에 따라 엔지니어링사업자(정보통신, 업종코드:3572)로 신고를 필한 자 또는 기술사법 제6조에 따라 기술사사무소(정보통신, 업종코드:1320)의 개설 등록을 필한 업체"
+        },
+        {
+          "key": "industry_or:atom2",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "나. 엔지니어링산업 진흥법 제21조에 따라 엔지니어링사업자(정보통신, 업종코드:3572)로 신고를 필한 자 또는 기술사법 제6조에 따라 기술사사무소(정보통신, 업종코드:1320)의 개설 등록을 필한 업체"
+        },
+        {
+          "key": "single_amount",
+          "type": "PERFORMANCE_AMOUNT",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "다. 입찰공고일 기준 최근 5년 내 “데이터센터(전산실 포함) 구축사업 정보통신공사 감리” 유사사업 실적(단일계약, 1.3억원 이상, 부가세 별도) 보유업체"
+        }
+      ],
+      "extra_raws": [
+        "다. 입찰공고일 기준 최근 5년 내 “데이터센터(전산실 포함) 구축사업 정보통신공사 감리” 유사사업 실적(단일계약, 1.3억원 이상, 부가세 별도) 보유업체"
+      ]
+    },
+    {
+      "source_id": "01633754-000",
+      "notice_no": "R26BK01633754",
+      "title": "2026학년도 대전대성고등학교 1학년 해외(일본-오사카) 수학여행 위탁용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 4,
+      "REACHED": 0,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 4,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "industry_or:atom1",
+          "type": "INDUSTRY",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        },
+        {
+          "key": "industry_or:atom2",
+          "type": "INDUSTRY",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        },
+        {
+          "key": "guide_headcount",
+          "type": "STAFF",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        },
+        {
+          "key": "stage_review",
+          "type": "STAFF",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01634767-000",
+      "notice_no": "R26BK01634767",
+      "title": "[제주] 2026년 지역특화 K-브랜드 100 지원사업 수행기관 입찰공고",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 0,
+      "DROPPED": 3,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 6,
+      "placements": [
+        {
+          "key": "responsible",
+          "type": "STAFF",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "해당 분야의 상근 책임연구원 1명 + 연구원(연구보조원) 2명 이상을 보유한 산업디자인법에서 정하는 산업디자인전문회사로 등록된 전문기관일 것.(‘산업디자인전문회사 신고확인증’ 제출 必)"
+        },
+        {
+          "key": "researchers",
+          "type": "STAFF",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "해당 분야의 상근 책임연구원 1명 + 연구원(연구보조원) 2명 이상을 보유한 산업디자인법에서 정하는 산업디자인전문회사로 등록된 전문기관일 것.(‘산업디자인전문회사 신고확인증’ 제출 必)"
+        },
+        {
+          "key": "size",
+          "type": "COMPANY_SIZE",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "「중소기업기본법」 제2조에 따른 소기업자 또는「소기업 및 소상공인 지원을 위한 특별조치법」 제2조에 따른 소기업 또는 소상공인으로서 「중·소기업·소상공인 및 장애인기업 확인요령」에 따라 발급된 소기업·소상공인확인서 (입찰 마감일 전일까지 발급된 것으로 유효기간 내에 있어야 함)를 소지한 자"
+        }
+      ],
+      "extra_raws": [
+        "협력기관 대상은 브랜드 & 디자인 업체(책임연구원의 경우 산업디자인 전문인력 확인서 등록자 및 관련 경력 4년 이상)이며 변리업체 부사업자 컨소시엄을 필수 구성할 필요 없으나, 제안요청서 상의 권리화 방안 및 등록시까지 OA대응 방안 등 명기하고 IP 출원/등록 등이 원활히 수행할 수 있도록 특허사무소와 연계가 되어야 함",
+        "­ 학위 박사/석사/학사/전문학사/고졸 취득 후 해당분야 경력 4년/8년/12년/14년/16년 이상인 자",
+        "­ 학위 박사/석사/학사/전문학사/고졸 취득 후 해당분야 경력 박사 학위자 0년/5년/7년/9년/11년 이상인 자",
+        "- 전문학사 졸업이상",
+        "- 고졸 후 관련경력 2년 이상"
+      ]
+    },
+    {
+      "source_id": "01697220-000",
+      "notice_no": "R26BK01697220",
+      "title": "순천이수중 옹벽 개선공사 감독권한대행 등 건설사업관리용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 4,
+      "REACHED": 0,
+      "DROPPED": 0,
+      "UNMAPPED": 3,
+      "MISSED": 1,
+      "extras": 2,
+      "placements": [
+        {
+          "key": "industry:atom1",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "4.1.1. 건설기술진흥법령에 의한 건설엔지니어링업(종합) 또는 건설엔지니어링업(설계․사업관리-일반) 또는 건설엔지니어링업(설계․사업관리-건설사업관리)로 등록한 자"
+        },
+        {
+          "key": "industry:atom2",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "4.1.1. 건설기술진흥법령에 의한 건설엔지니어링업(종합) 또는 건설엔지니어링업(설계․사업관리-일반) 또는 건설엔지니어링업(설계․사업관리-건설사업관리)로 등록한 자"
+        },
+        {
+          "key": "industry:atom3",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "4.1.1. 건설기술진흥법령에 의한 건설엔지니어링업(종합) 또는 건설엔지니어링업(설계․사업관리-일반) 또는 건설엔지니어링업(설계․사업관리-건설사업관리)로 등록한 자"
+        },
+        {
+          "key": "members",
+          "type": "STAFF",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": [
+        "3.2. 조달청에 입찰참가자격등록을 한 자이어야 합니다.",
+        "3.3. 나라장터시스템 전자입찰 이용자 등록을 한 자이어야 합니다."
+      ]
+    },
+    {
+      "source_id": "01706001-000",
+      "notice_no": "R26BK01706001",
+      "title": "2026년 공동자원화 시설개보수 지원사업(재공고)",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 2,
+      "REACHED": 0,
+      "DROPPED": 0,
+      "UNMAPPED": 2,
+      "MISSED": 0,
+      "extras": 2,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "국가종합전자조달시스템 입찰참가 자격등록규정에 따라 가축분뇨처리시설 설비 제작.설치 업체에 한하여 국가종합전자도달시스템 입찰참가자격등록규정에 따라 나라장터(G2B)에 가축분뇨처리시설 설계.시공업[업종코드:6315]등록후 슬러지퇴비화장치 [물품코드:4710152401] 를 또는 계분건조기 [물품코드:2110198301] 품목으로 입찰참가 등록한 업체로, 규격서에 따라 납품이 가능한 업체"
+        },
+        {
+          "key": "conflict",
+          "type": "REGISTRATION_CERTIFICATION",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "입찰공고일 전일 기준 직접 생산확인 증명서 및 공장등록증 제출이 가능한 업체"
+        }
+      ],
+      "extra_raws": [
+        "에스컬레이트식 퇴비교반기(퇴비상태 감응형 속도자동가변 방식) 및 퇴비 자동포장 시스템 시설 관련 특허 보유 업체",
+        "본 입찰은 전자입찰 방식에 의하여 집행하므로 조달청 전자입찰 이용자 등록한 업체만이 입찰에 참여할 수 있습니다."
+      ]
+    },
+    {
+      "source_id": "01685616-000",
+      "notice_no": "R26BK01685616",
+      "title": "2026년 혈액장비[검체원심분리기(스탠드형)] 공동구매(2차_재공고)",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 3,
+      "REACHED": 3,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "company_permit",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "체외진단의료기기법 제5조, 제11조 및 의료기기법 제17조에 의하여 의료기기의 제조․수입․판매의 허가(신고)를 마친 자"
+        },
+        {
+          "key": "product_permit",
+          "type": "REGISTRATION_CERTIFICATION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "식품의약품안전처의 의료기기 품목허가를 득한 제품"
+        },
+        {
+          "key": "size",
+          "type": "COMPANY_SIZE",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "「중소기업제품 구매촉진 및 판로지원에 관한 법률」제2조 및「소상공인 보호 및 지원에 관한 법률」제2조에 의거한 중·소기업·소상공인으로서 중·소기업·소상공인 확인서를 소지한 자(전자입찰서 제출마감일 전일까지 발급된 것으로 유효기간내에 있어야 함)"
+        }
+      ],
+      "extra_raws": [
+        "「중소기업제품 구매촉진 및 판로지원에 관한 법률」제2조 및「소상공인 보호 및 지원에 관한 법률」제2조에 의거한 중·소기업·소상공인으로서 중·소기업·소상공인 확인서를 소지한 자(전자입찰서 제출마감일 전일까지 발급된 것으로 유효기간내에 있어야 함)"
+      ]
+    },
+    {
+      "source_id": "01688607-000",
+      "notice_no": "R26BK01688607",
+      "title": "인천시티투어 신규 2층버스 구매 및 구조변경",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 0,
+      "DROPPED": 3,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "manufacturer",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "가. 「국가종합전자조달시스템 입찰참가자격등록규정(조달청 고시)」에 의하여 전자입찰서 제출 마감일 전일까지 아래 1)과 2)의 자격을 등록한 업체\n\n1) ｢자동차관리법 제30조에 의한 제작자 등(자동차-국내 제작·조립[업종코드: 5898])\n\n2) ｢자동차관리법 제53조에 의한 자동차관리사업(자동차종합정비업[업종코드: 5815]) 또는 제34조에 의한 제작자 등(자동차-튜닝[업종코드: 7607])"
+        },
+        {
+          "key": "tuning_or:atom1",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "가. 「국가종합전자조달시스템 입찰참가자격등록규정(조달청 고시)」에 의하여 전자입찰서 제출 마감일 전일까지 아래 1)과 2)의 자격을 등록한 업체\n\n1) ｢자동차관리법 제30조에 의한 제작자 등(자동차-국내 제작·조립[업종코드: 5898])\n\n2) ｢자동차관리법 제53조에 의한 자동차관리사업(자동차종합정비업[업종코드: 5815]) 또는 제34조에 의한 제작자 등(자동차-튜닝[업종코드: 7607])"
+        },
+        {
+          "key": "tuning_or:atom2",
+          "type": "INDUSTRY",
+          "outcome": "DROPPED",
+          "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "가. 「국가종합전자조달시스템 입찰참가자격등록규정(조달청 고시)」에 의하여 전자입찰서 제출 마감일 전일까지 아래 1)과 2)의 자격을 등록한 업체\n\n1) ｢자동차관리법 제30조에 의한 제작자 등(자동차-국내 제작·조립[업종코드: 5898])\n\n2) ｢자동차관리법 제53조에 의한 자동차관리사업(자동차종합정비업[업종코드: 5815]) 또는 제34조에 의한 제작자 등(자동차-튜닝[업종코드: 7607])"
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01694234-000",
+      "notice_no": "R26BK01694234",
+      "title": "문태고등학교 학교급식 조리용 로봇 구매 및 설치",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 1,
+      "REACHED": 0,
+      "DROPPED": 0,
+      "UNMAPPED": 1,
+      "MISSED": 0,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "company_size_conflict",
+          "type": "COMPANY_SIZE",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "다. ｢중소기업제품 구매촉진 및 판로지원에 관한 법률｣의 중소기업자 우선조달제도에 따라 소기업 또는 소상공인으로서 계약조건을 수행할 수 있는 업체이어야 합니다."
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01699215-000",
+      "notice_no": "R26BK01699215",
+      "title": "2027학년도 칠금중학교 신입생 교복(동복 및 하복) 학교주관 구매 재공고",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "SUCCEEDED",
+      "golden_total": 2,
+      "REACHED": 1,
+      "DROPPED": 0,
+      "UNMAPPED": 1,
+      "MISSED": 0,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "region",
+          "type": "REGION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "나. 입찰자는 입찰공고일 전일부터 입찰일(입찰자가 입찰하는 날)까지, 낙찰자는 계약체결일까지 주된 영업소가 충청북도로 되어 있고, 매장이 실제로 존재하여야 하며, 제작․판매 후 3년이상 A/S(1년 무상)가 가능한 업체이어야 합니다."
+        },
+        {
+          "key": "size",
+          "type": "COMPANY_SIZE",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "가. 「중소기업제품 구매촉진 및 판로지원에 관한 법률」 및 「소기업 및 소상공인 지원을 위한 특별조치법」제2조에 따른 소기업 또는 소상공인으로 「중․소기업․소상공인 및 장애인기업 확인요령」에 따라 발급된 소기업 또는 소상공인확인서를 소지한 업체이어야 합니다."
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01699574-000",
+      "notice_no": "R26BK01699574",
+      "title": "노후 PC 교체 (재공고)",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 2,
+      "REACHED": 2,
+      "DROPPED": 0,
+      "UNMAPPED": 0,
+      "MISSED": 0,
+      "extras": 1,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "라. 입찰참가자격등록 마감일시까지 「국가종합전자조달시스템 입찰참가자격등록규정」 및 「소프트웨어진흥법」제24조에 따라 소프트웨어사업자(컴퓨터관련 서비스사업) (업종코드 : 1468)으로 입찰참가를 등록한 업체"
+        },
+        {
+          "key": "direct_production",
+          "type": "REGISTRATION_CERTIFICATION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "마. 「중소기업제품 구매촉진 및 판로지원에 관한 법률」 제9조 및 동법 시행령 제10조의 규정에 따른 직접생산확인증명서(데스크톱컴퓨터-4321150701)를 소지한 업체(전자입찰서 제출 마감일 전일까지 발급된 것으로, 전자입찰서 제출 마감일까지 계속 유지되어야 함)"
+        }
+      ],
+      "extra_raws": [
+        "가. 「국가종합전자조달시스템 입찰참가자격등록규정」에 따라 반드시 전자입찰서 제출 마감일 전일까지 국가종합전자조달시스템(나라장터)에 입찰참가 자격을 등록한 자"
+      ]
+    },
+    {
+      "source_id": "01686972-001",
+      "notice_no": "R26BK01686972",
+      "title": "2026년 안동중앙문화의거리 공공디자인 환경개선 용역",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 4,
+      "REACHED": 1,
+      "DROPPED": 1,
+      "UNMAPPED": 2,
+      "MISSED": 0,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "industry:atom1",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "라. 「산업디자인진흥법령」에 따른 산업디자인 전문회사로 「국가종합전자조달시스템 입찰참가자격등록규정」에 의하여 반드시 나라장터(G2B)에 입찰서 제출마감일 전일까지 환경디자인분야(업종코드: 4442) 또는 종합디자인분야(업종코드: 4444)로 입찰참가자격을 등록한 자"
+        },
+        {
+          "key": "industry:atom2",
+          "type": "INDUSTRY",
+          "outcome": "UNMAPPED",
+          "reason_code": null,
+          "matched_raw": "라. 「산업디자인진흥법령」에 따른 산업디자인 전문회사로 「국가종합전자조달시스템 입찰참가자격등록규정」에 의하여 반드시 나라장터(G2B)에 입찰서 제출마감일 전일까지 환경디자인분야(업종코드: 4442) 또는 종합디자인분야(업종코드: 4444)로 입찰참가자격을 등록한 자"
+        },
+        {
+          "key": "region",
+          "type": "REGION",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "다. 입찰공고일 전일부터 입찰일(낙찰자는 계약체결일)까지 법인 등기부등본상 본점 소재지(개인사업자의 경우 사업자등록증에 기재된 사업장의 소재지)가 경상북도에 소재하고 있는 업체"
+        },
+        {
+          "key": "sign_code",
+          "type": "REGISTRATION_CERTIFICATION",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "바. 「중소기업제품 구매촉진 및 판로지원에 관한 법률 제9조 및 같은 법 시행령 제10조에 따라 직접생산확인증명서[세부품명: 조형물(세부품명번호 10자리: 6012100201)] 그리고 직접생산확인증명서[세부품명:간판(세부품명번호 10자리:551290401)]를 소지한 자"
+        }
+      ],
+      "extra_raws": []
+    },
+    {
+      "source_id": "01634169-001",
+      "notice_no": "R26BK01634169",
+      "title": "2026년 마켓프런티어(Global) 프로그램(대만) 운영",
+      "run_index": 0,
+      "run_id": null,
+      "analysis_status": "PARTIAL",
+      "golden_total": 3,
+      "REACHED": 1,
+      "DROPPED": 1,
+      "UNMAPPED": 0,
+      "MISSED": 1,
+      "extras": 0,
+      "placements": [
+        {
+          "key": "industry",
+          "type": "INDUSTRY",
+          "outcome": "REACHED",
+          "reason_code": null,
+          "matched_raw": "기타자유업(업종코드: 9999) 업종을 등록한 업체"
+        },
+        {
+          "key": "size",
+          "type": "COMPANY_SIZE",
+          "outcome": "DROPPED",
+          "reason_code": "DETAIL_NOT_FOUND_IN_SOURCE",
+          "matched_raw": "「중소기업기본법」 제2조에 따른 중·소기업자 또는 「소상공인 보호 및 지원에 관한 법률」 제2조에 따른 소상공인으로서 「중소기업 범위 및 확인에 관한 규정」에 따라 발급된 중·소기업ㆍ소상공인 확인서(용도: 공공기관 입찰용)를 소지한 자"
+        },
+        {
+          "key": "pending_certificate",
+          "type": "COMPANY_SIZE",
+          "outcome": "MISSED",
+          "reason_code": null,
+          "matched_raw": null
+        }
+      ],
+      "extra_raws": []
+    }
+  ]
+}

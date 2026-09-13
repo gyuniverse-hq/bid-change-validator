@@ -1,14 +1,11 @@
 """안전 가드가 조항의 장식(법령 인용·조문 번호·괄호 설명)이 아니라 조항 자체를 보는지.
 
-제품 추출 결과를 골든셋과 대조해 보니, 정답 요건이 판정기에 도달한 비율이 12.5% 였고
-가장 큰 이유가 이 가드였다. "「…법률」 제21조에 따른 건설폐기물중간처리업(업종코드
-1253)을 등록한 업체" 는 판정이 업종코드 보유 여부로 단순한데 '법률' 이 있어서
-절차 규정으로 막혔다. 골든셋 canonical raw 는 인용을 뗀 채 작성돼 있어 골든 러너로는
-이 실패가 보이지 않았다.
+"「…법률」 제21조에 따른 건설폐기물중간처리업(업종코드 1253)을 등록한 업체" 는
+판정이 업종코드 보유 여부로 단순한데 '법률' 문자열 때문에 절차 규정으로 막혔다.
+canonical raw 가 인용을 뗀 형태라면 골든 러너에서도 이 제품 경로 실패가 보이지 않는다.
 
-장식을 벗긴 뒤 같은 패턴을 대면 골든 러너에서 정답 일치 104 -> 110, 안전한 보류
-34 -> 28, 잘못된 확정 0 -> 0 이다. 여기서는 그 경계를 고정한다 — 장식은 통과시키고
-진짜 복합·부정·절차 조항은 여전히 막는다.
+여기서는 그 경계를 고정한다 — 장식은 통과시키고 진짜 복합·부정·절차 조항은 여전히
+막는다. 전체 측정 수치는 fixture bundle을 포함한 골든 러너 결과로 별도 검증한다.
 """
 
 from apps.api.app.qualification.rules.clause_safety import strip_decorations
@@ -62,3 +59,17 @@ def test_stripping_removes_decorations_but_keeps_the_clause() -> None:
     assert "제20조" not in stripped and "제24조" not in stripped
     assert "법인등기일" not in stripped
     assert "본점이 전남에 있는 업체" in stripped
+
+
+def test_a_real_restriction_inside_parentheses_is_not_hidden() -> None:
+    raw = "업종코드 1253 등록업체(공동수급은 허용하지 않음)"
+
+    assert "공동수급" in strip_decorations(raw)
+    assert unsafe_clause_reason(raw) == "COMPOSITE_PARTY_RULE"
+
+
+def test_a_real_alternative_inside_parentheses_is_not_hidden() -> None:
+    raw = "중소기업(소기업 또는 소상공인)만 참가할 수 있음"
+
+    assert "소기업 또는 소상공인" in strip_decorations(raw)
+    assert unsafe_clause_reason(raw) == "ALTERNATIVE_OR_EXCEPTION_RULE"

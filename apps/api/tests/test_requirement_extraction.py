@@ -284,3 +284,33 @@ def test_successful_retry_is_not_penalized_by_previous_rejection():
     assert result["status"] == "ok"
     assert len(result["slots"]) == 1
     assert result["notes"] == ""
+
+
+def test_section_body_under_korean_sub_labels_is_kept_as_children():
+    """'3. 입찰참가자격' 아래의 가·나·다 항목은 그 절의 본문이지 다음 절이 아니다.
+
+    예전에는 한 글자 한글 기호를 상위 제목으로 봐서 첫 '가.' 에서 자식 수집이 멈췄다.
+    자격 절 본문이 통째로 빠졌고 그 항목들은 제목에 키워드가 없어 앵커도 못 됐다.
+    골든셋 20공고에서 정답 요건 59행 중 20행이 이렇게 LLM 에 보내지지도 않았다
+    (선별기 수정만으로 39/59 -> 54/59).
+    """
+    blocks = canonical_source_blocks(
+        document_id="doc-k",
+        text_sha256="sha-k",
+        blocks=[
+            {"block_index": 0, "page": 1, "location": "p.1", "text": "3. 입찰참가자격"},
+            {"block_index": 1, "page": 1, "location": "p.1", "text": "가. 나라장터 입찰참가등록을 마친 자"},
+            {"block_index": 2, "page": 1, "location": "p.1", "text": "나. 식품위생법에 의거 단체급식업 등록업체(업종코드 1450)"},
+            {"block_index": 3, "page": 1, "location": "p.1", "text": "1) 등록증 사본 제출"},
+            {"block_index": 4, "page": 1, "location": "p.1", "text": "다. 충청북도에 주된 영업소가 있는 업체"},
+            {"block_index": 5, "page": 1, "location": "p.1", "text": "4. 입찰방법"},
+            {"block_index": 6, "page": 1, "location": "p.1", "text": "가. 전자입찰"},
+        ],
+    )
+    chunks = chunk_source_blocks(blocks)
+
+    selected = "\n".join(chunk["text"] for chunk in select_eligibility_chunks(chunks))
+
+    assert "1450" in selected and "충청북도" in selected and "등록증 사본" in selected
+    # 다음 상위 절("4. 입찰방법")과 그 아래는 들어오지 않는다.
+    assert "전자입찰" not in selected

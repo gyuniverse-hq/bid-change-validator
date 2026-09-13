@@ -137,6 +137,47 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 
 _TOP_LEVEL_LABEL_RE = re.compile(r"^(?:\d+|[가-힣]|[IVXivx]+|제\d+조(?:의\d+)?|제\d+장)$")
 
+# 한국 공고의 항목 위계. 숫자 1. 아래에 가. 아래에 1) 아래에 가) 가 온다.
+# 예전에는 이 넷을 전부 "상위 제목"으로 봐서, "3. 입찰참가자격" 의 자식을 걷다가
+# 바로 다음 "가." 에서 멈췄다. 자격 절의 본문(가·나·다 …)이 통째로 빠졌고, 그 항목들은
+# 제목에 키워드가 없어 앵커도 못 됐다. 골든셋 20공고에서 정답 요건 59행 중 25행이
+# 이렇게 LLM 에 보내지지도 않았다.
+_LABEL_RANK_PATTERNS = (
+    (re.compile(r"^(?:제\d+장|제\d+조(?:의\d+)?)$"), 0),   # 제N장 · 제N조
+    (re.compile(r"^(?:\d+|[IVXivx]+)$"), 1),                # 1.  Ⅰ.
+    (re.compile(r"^[가-힣]$"), 2),                           # 가.
+    (re.compile(r"^\d+\)$"), 3),                            # 1)
+    (re.compile(r"^[가-힣]\)$"), 4),                         # 가)
+    (re.compile(r"^\(\d+\)$"), 5),                          # (1)
+)
+
+
+# 청커는 라벨에서 괄호를 뗀다 — "1)" 도 "1." 도 clause_label 은 '1' 이다. 위계는
+# 본문 첫 줄에 남아 있는 실제 기호로 읽는다.
+_HEADING_MARKER_RE = re.compile(
+    r"^\s*(?:(?P<paren_num>\(\d+\))|(?P<num_paren>\d+\))|(?P<han_paren>[가-힣]\))"
+    r"|(?P<dotted>\d+(?:\.\d+)+)|(?P<num>\d+)\s*[.．]|(?P<han>[가-힣])\s*[.．]"
+    r"|(?P<article>제\d+(?:장|조(?:의\d+)?)))"
+)
+_MARKER_RANK = {"article": 0, "num": 1, "han": 2, "num_paren": 3, "han_paren": 4, "paren_num": 5}
+
+
+def _label_rank(chunk: dict[str, Any]) -> int | None:
+    """항목 기호의 위계. 낮을수록 상위. 기호가 없으면 None."""
+    label = str(chunk.get("clause_label") or "").strip()
+    if not label:
+        return None
+    marker = _HEADING_MARKER_RE.match(_heading_text(chunk))
+    if marker:
+        if marker.lastgroup == "dotted":
+            # 3.1 은 3. 아래, 3.1.2 는 그 아래. 점 개수가 깊이다.
+            return 1 + marker.group("dotted").count(".")
+        return _MARKER_RANK[marker.lastgroup]
+    for pattern, rank in _LABEL_RANK_PATTERNS:
+        if pattern.match(label):
+            return rank
+    return None
+
 
 def _is_top_level(chunk: dict[str, Any]) -> bool:
     label = chunk.get("clause_label")
@@ -154,7 +195,8 @@ def _heading_text(chunk: dict[str, Any]) -> str:
 
 
 def _is_eligibility_section_anchor(chunk: dict[str, Any]) -> bool:
-    if not _is_top_level(chunk):
+    rank = _label_rank(chunk)
+    if rank is None or rank > 2:
         return False
     heading = _heading_text(chunk)
     return any(keyword in heading for keyword in _SECTION_HEADER_KEYWORDS)
@@ -169,12 +211,16 @@ def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, An
         anchor = chunks[index]
         selected[index] = anchor
         anchor_document_id = _chunk_document_id(anchor)
+        anchor_rank = _label_rank(anchor)
         for child_index in range(index + 1, len(chunks)):
             candidate = chunks[child_index]
             candidate_document_id = _chunk_document_id(candidate)
             if anchor_document_id is not None and candidate_document_id is not None and candidate_document_id != anchor_document_id:
                 break
-            if _is_top_level(candidate):
+            # 앵커와 같거나 더 상위인 기호가 나오면 절이 끝난 것이다. 더 깊은 기호
+            # (3. 아래의 가., 가. 아래의 1))는 그 절의 본문이므로 계속 걷는다.
+            candidate_rank = _label_rank(candidate)
+            if candidate_rank is not None and (anchor_rank is None or candidate_rank <= anchor_rank):
                 break
             selected[child_index] = candidate
 

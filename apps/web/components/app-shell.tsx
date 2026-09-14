@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -18,8 +18,7 @@ type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
 };
 
-const WORKSPACE_ROUTES = new Set(['/qualification', '/ask-back', '/evidence', '/evaluation', '/changes']);
-const ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
+const LEGACY_ACTIVE_CASE_KEY = 'bidcheck:active-case-id';
 
 const PAGE_INFO: Array<{ match: (pathname: string) => boolean; page: PageInfo }> = [
   {
@@ -108,9 +107,7 @@ function pageInfoFor(pathname: string): PageInfo {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const page = pageInfoFor(pathname);
-  const caseId = searchParams.get('caseId');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
   const [authFailure, setAuthFailure] = useState<string | null>(null);
@@ -127,6 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       .catch((cause) => {
         if (!active) return;
         if (cause instanceof ApiError && cause.status === 401) {
+          window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
           setUser(null);
           router.replace('/login');
           return;
@@ -140,16 +138,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [authAttempt, pathname, router]);
-
-  useEffect(() => {
-    if (!WORKSPACE_ROUTES.has(pathname)) return;
-    if (caseId) {
-      window.sessionStorage.setItem(ACTIVE_CASE_KEY, caseId);
-      return;
-    }
-    const remembered = window.sessionStorage.getItem(ACTIVE_CASE_KEY);
-    if (remembered) router.replace(`${pathname}?caseId=${encodeURIComponent(remembered)}`);
-  }, [caseId, pathname, router]);
 
   if (pathname === '/login') return children;
 
@@ -187,10 +175,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     setLogoutFailure(null);
     try {
       await logout();
+      window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
       setUser(null);
       router.replace('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
+        window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
         setUser(null);
         router.replace('/login');
         return;

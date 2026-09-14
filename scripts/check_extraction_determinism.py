@@ -90,6 +90,9 @@ def main() -> int:
     ap.add_argument("--source-id", required=True, help="골든셋 source_id (예: 01633750-002)")
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--golden-dir", type=Path, default=GOLDEN_DIR)
+    ap.add_argument("--model", default=None, help="모델을 바꿔 비교할 때 (기본: OPENAI_MODEL_DEFAULT)")
+    ap.add_argument("--temperature", type=float, default=None,
+                    help="기본은 결정성 고정값 0. 분산을 일부러 볼 때만 올린다")
     ap.add_argument("--env-file", type=Path, default=REPO_ROOT / ".env")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
@@ -116,7 +119,9 @@ def main() -> int:
     if version_id is None:
         raise SystemExit(f"골든셋에 {args.source_id} 가 없습니다.")
 
-    extractor = OpenAIStructuredExtractor()
+    extractor = OpenAIStructuredExtractor(
+        model=args.model, temperature=args.temperature
+    )
     if not extractor.available:
         raise SystemExit("OPENAI_API_KEY 가 필요합니다.")
     print(f"모델 {extractor.model} · temperature {extractor.temperature} · seed {extractor.seed}")

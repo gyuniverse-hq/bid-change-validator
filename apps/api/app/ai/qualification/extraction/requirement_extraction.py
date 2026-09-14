@@ -123,7 +123,7 @@ SLOT_SCHEMA: dict[str, Any] = {
 SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출하는 도구다. 규칙:
 1. 본문에 명시된 요건만 추출한다. 없는 요건을 만들어내지 마라. 없으면 빈 배열.
 2. raw에는 원문 문장을 그대로 담는다. 요약하거나 수치·코드·enum으로 변환하지 마라.
-3. 모든 *_raw 필드는 제공된 원문 표현을 그대로 담고, 해당 표현이 없으면 null로 둔다.
+3. 모든 *_raw 필드는 원문에서 **연속된 한 구간을 그대로 복사**한다. 요약·축약·조사 수정 금지. ※ ○ ▶ 같은 기호도 원문에 있으면 함께 복사한다. 해당 표현이 없으면 null로 둔다. 여러 조건을 쉼표·세미콜론으로 이어 붙이지 마라 — 조건이 여럿이면 각각 별도 requirement로 낸다. 복사한 구간이 원문과 한 글자라도 다르면 그 값은 버려진다.
 4. 실적요건은 기간/금액/건수/경험분야/실적기관 표현을 같은 슬롯에 함께 담을 수 있다.
 5. 업종·업태 자체가 참가 제한이면 유형=업종요건, 업종_raw에 원문 명칭을 담는다. 등록·면허·인증 보유 여부와 혼동하지 마라.
 6. 금액·건수와 독립적으로 특정 경험 분야 보유 자체를 요구하는 경우에만 유형=경험분야요건을 사용한다.
@@ -270,6 +270,76 @@ def _squash(value: str) -> str:
     return re.sub(r"\s+", "", normalized)
 
 
+def _squash_with_map(value: str) -> tuple[str, list[int]]:
+    """`_squash` 와 같은 결과에, 글자마다 원문 어디서 왔는지를 함께 낸다.
+
+    글자 단위로 돌리는 이유는 NFKC 가 길이를 바꾸기 때문이다(㈜ -> (주)). 통째로
+    정규화한 뒤 위치를 세면 어긋난다.
+    """
+    squashed: list[str] = []
+    origin: list[int] = []
+    for index, char in enumerate(value):
+        piece = unicodedata.normalize("NFKC", char.translate(_GROUNDING_PUNCTUATION))
+        piece = _DECORATION_MARKS_RE.sub("", piece)
+        piece = re.sub(r"\s+", "", piece)
+        for produced in piece:
+            squashed.append(produced)
+            origin.append(index)
+    return "".join(squashed), origin
+
+
+# 모델이 같은 문장에서 어디까지 끊어 적을지가 실행마다 다르다. 실측(2026-09-14) —
+#
+#   run0  "각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영"
+#   run1  "단체급식소"                                   <- 판정에 쓸 수 없을 만큼 짧다
+#   run2  "각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적"
+#
+# 원문 구간으로 스냅해도 이건 안 잡힌다. 스냅은 "원문과 다른 글자" 를 없앨 뿐
+# "어디부터 어디까지" 를 정하지 않는다. 그래서 구간을 **문장 경계까지 넓힌다** —
+# 셋 다 같은 문장 안이므로 같은 값이 된다.
+#
+# 넓히는 필드를 경험분야 하나로 둔다. 지역·업종·인증처럼 값 자체를 회사 프로필과
+# 맞대는 필드를 문장으로 넓히면 비교가 깨진다.
+_SENTENCE_LEVEL_FIELDS = ("경험분야_raw",)
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?:(?<=다[.])|(?<=[.!?。]))\s|\n")
+
+
+def _sentence_span(source: str, start: int, end: int) -> tuple[int, int]:
+    """[start, end) 를 감싸는 문장의 경계."""
+    left = 0
+    right = len(source)
+    for match in _SENTENCE_BOUNDARY_RE.finditer(source):
+        if match.end() <= start:
+            left = match.end()
+        elif match.start() >= end:
+            right = match.start()
+            break
+    return left, right
+
+
+def snap_to_source_span(detail: str, source: str, *, whole_sentence: bool = False) -> str | None:
+    """모델이 적은 세부값을 **원문의 실제 구간**으로 바꿔 준다. 없으면 None.
+
+    모델은 원문을 그대로 옮기라고 해도 옮기지 않는다. ※ 를 빼고, 값 둘을 쉼표로 잇고,
+    조사를 다듬는다. 그 결과가 실행마다 다르고, 판정과 차수 비교가 그 글자를 본다.
+
+    그래서 모델 값은 **가리키는 손가락**으로만 쓰고, 저장되는 값은 원문에서 잘라 온다.
+    같은 구간을 가리키면 모델이 뭐라고 적었든 같은 글자가 저장된다.
+    """
+    squashed_source, origin = _squash_with_map(source)
+    squashed_detail = _squash(detail)
+    if not squashed_detail or not squashed_source:
+        return None
+    position = squashed_source.find(squashed_detail)
+    if position < 0:
+        return None
+    start = origin[position]
+    end = origin[position + len(squashed_detail) - 1] + 1
+    if whole_sentence:
+        start, end = _sentence_span(source, start, end)
+    return source[start:end].strip()
+
+
 def _normalize_reference(value: str) -> str:
     return re.sub(r"^(?:조항|제)\s*", "", value.strip()).rstrip(".)조항 ")
 
@@ -382,15 +452,22 @@ def validate_extracted_slot(
     if source_chunk is None:
         return False, "raw가 본문에 존재하지 않음(과잉 추출 의심)", None
 
-    source_text = _squash(source_chunk.get("text") or "")
+    source_original = source_chunk.get("text") or ""
+    source_text = _squash(source_original)
     haystack = _notice_haystack(chunks) if notice_text is None else notice_text
     for field_name in _DETAIL_RAW_FIELDS:
         detail = (slot.get(field_name) or "").strip()
         if not detail:
             continue
+        # 모델이 적은 글자를 그대로 저장하지 않는다. 원문의 실제 구간으로 바꿔 넣는다 —
+        # 같은 구간을 가리키면 모델이 뭐라고 적었든 같은 글자가 남는다.
+        snapped = snap_to_source_span(
+            detail, source_original, whole_sentence=field_name in _SENTENCE_LEVEL_FIELDS
+        )
+        if snapped:
+            slot[field_name] = snapped
+            continue
         squashed_whole = _squash(detail)
-        if squashed_whole and squashed_whole in source_text:
-            continue  # 통째로 찾히면 쪼갤 이유가 없다
         if squashed_whole and squashed_whole in haystack:
             slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
             continue

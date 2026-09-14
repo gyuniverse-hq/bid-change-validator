@@ -476,3 +476,58 @@ def test_a_comma_inside_one_value_is_not_made_worse_by_splitting():
     )
     assert not ok
     assert "등록인증_raw" in reason
+
+
+def test_the_stored_detail_is_the_source_span_not_what_the_model_wrote():
+    """모델이 적은 글자를 그대로 저장하지 않는다. 원문에서 잘라 온다.
+
+    모델은 원문을 그대로 옮기라고 해도 옮기지 않는다 — ※ 를 빼고, 조사를 다듬는다.
+    그 결과가 실행마다 다르고 판정과 차수 비교가 그 글자를 본다. 모델 값은 가리키는
+    손가락으로만 쓰고, 저장은 원문에서 한다.
+    """
+    source = "다. 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체"
+    slot = {"raw": source, "건수_raw": "2개이상"}
+
+    ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok, reason
+    assert slot["건수_raw"] == "2개 이상"  # 모델이 적은 "2개이상" 이 아니다
+
+
+def test_a_prose_detail_is_widened_to_its_sentence():
+    """모델이 같은 문장에서 어디까지 끊어 적을지가 실행마다 다르다.
+
+    스냅은 '원문과 다른 글자' 를 없앨 뿐 '어디부터 어디까지' 를 정하지 않는다.
+    경험분야는 문장 경계까지 넓혀 셋이 같은 값이 되게 한다.
+    """
+    source = (
+        "나. 단체급식업 등록업체이어야 한다.\n"
+        "다. 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체\n"
+        "라. 설명회에 참가한 업체"
+    )
+    # 항목 라벨("다.")은 문장 경계로 떨어져 나간다. 값에 들어가 봐야 도움이 안 된다.
+    sentence = "2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체"
+
+    widened = set()
+    for written in [
+        "각 단체급식소(1일 평균 800식 이상)를 1년 이상 운영",
+        "단체급식소",
+        "각 단체급식소(1일 평균 800식 이상)를 1년 이상 운영한 실적",
+    ]:
+        slot = {"raw": source, "경험분야_raw": written}
+        ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+        assert ok, reason
+        widened.add(slot["경험분야_raw"])
+
+    assert widened == {sentence}
+
+
+def test_a_value_matched_detail_is_not_widened():
+    """지역·업종처럼 값 자체를 회사 프로필과 맞대는 필드는 넓히면 비교가 깨진다."""
+    source = "가. 주된 영업소의 소재지가 전북특별자치도에 있는 업체만 참가할 수 있다."
+    slot = {"raw": source, "지역_raw": "전북특별자치도"}
+
+    ok, _, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok
+    assert slot["지역_raw"] == "전북특별자치도"

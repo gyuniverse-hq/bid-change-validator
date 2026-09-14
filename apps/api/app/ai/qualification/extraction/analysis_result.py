@@ -117,9 +117,14 @@ _DIAGNOSTIC_MESSAGES = {
     "UNMAPPED_REGISTRATION_CERTIFICATION": "등록·면허·인증 요건의 명칭을 구조화하지 못했습니다.",
     "UNMAPPED_COMPANY_SIZE": "기업규모 요건의 비교값을 구조화하지 못했습니다.",
     "UNKNOWN_LEGACY_TYPE": "지원하지 않는 슬롯 유형이라 판정하지 않고 근거와 함께 기록합니다.",
+    "SALVAGED_CLOSED_IDENTIFIER": "분류가 기타요건이었으나 원문의 닫힌 식별자(업종코드·세부품명번호)로 유형을 되살렸습니다.",
 }
 
 _NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
+
+# 요건을 하나 **살려낸** 기록이다. 무엇이 안 된 기록이 아니므로 분석을 PARTIAL 로
+# 내리지 않는다. 그래도 남기는 이유는 모델 분류가 틀렸다는 신호이기 때문이다.
+_INFORMATIONAL_PIPELINE_CODES = {"SALVAGED_CLOSED_IDENTIFIER"}
 
 
 def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
@@ -127,7 +132,9 @@ def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
     is_notice_fact = code in _NOTICE_FACT_CODES
     return AnalysisDiagnostic(
         code=code,
-        severity="INFO" if is_notice_fact else "WARNING",
+        severity="INFO"
+        if is_notice_fact or code in _INFORMATIONAL_PIPELINE_CODES
+        else "WARNING",
         message=_DIAGNOSTIC_MESSAGES.get(code, "Canonical 변환 과정에서 확인이 필요합니다."),
         details={
             key: value
@@ -172,7 +179,9 @@ def build_requirement_analysis_result(
             ),
         )
         status: AnalysisStatus = "PARTIAL" if requirements or evidence else "FAILED"
-    elif any(item.kind == "PIPELINE" for item in diagnostics):
+    elif any(
+        item.kind == "PIPELINE" and item.severity != "INFO" for item in diagnostics
+    ):
         status = "PARTIAL"
     else:
         status = "SUCCEEDED"

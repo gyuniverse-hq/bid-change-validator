@@ -25,6 +25,36 @@ _SIZE_EXCLUSION_RE = re.compile(
 )
 
 
+# 닫힌 식별자 — 사람이 달리 쓸 수 없는 값. 업종코드 4자리, 세부품명번호 10자리.
+# 모델이 유형을 뭐라고 붙이든 이 숫자는 원문에 그대로 있다.
+_PRODUCT_CODE_RE = re.compile(r"(?<![0-9])([0-9]{10})(?![0-9])")
+_REGISTRATION_CONTEXT_RE = re.compile(r"등록|신고|영업|허가|면허")
+_PRODUCT_CONTEXT_RE = re.compile(r"직접\s*생산\s*확인|세부\s*품명|품명\s*번호")
+
+
+def salvage_closed_identifier(raw: str) -> tuple[RequirementType, str] | None:
+    """분류가 '기타요건' 으로 와도 원문의 닫힌 식별자로 유형을 되살린다.
+
+    되살리는 기준을 좁게 둔다 — 식별자가 **정확히 하나**이고, 그것이 등록·신고 맥락에
+    쓰였을 때만. 여러 개면 AND/OR 관계를 모르므로 살리지 않는다(이미 업종요건 경로가
+    같은 이유로 멈춘다). 숫자가 아닌 표현은 건드리지 않는다 — 지역명·인증명처럼 사람이
+    달리 쓸 수 있는 값을 여기서 추측하기 시작하면 틀린 확정으로 간다.
+    """
+    industry_codes = {
+        code
+        for group in _INDUSTRY_CODE_RE.findall(raw)
+        for code in re.findall(r"[0-9]{4}", group)
+    }
+    if len(industry_codes) == 1 and _REGISTRATION_CONTEXT_RE.search(raw):
+        return "INDUSTRY", next(iter(industry_codes))
+
+    product_codes = set(_PRODUCT_CODE_RE.findall(raw))
+    if len(product_codes) == 1 and _PRODUCT_CONTEXT_RE.search(raw):
+        return "REGISTRATION_CERTIFICATION", next(iter(product_codes))
+
+    return None
+
+
 def _op(word: str | None) -> RequirementOperator | None:
     return {"이상": ">=", "초과": ">", "이하": "<=", "미만": "<"}.get(word)  # type: ignore[return-value]
 
@@ -236,7 +266,23 @@ def adapt_legacy_slot(
             diagnostics.append({"code": "UNMAPPED_COMPANY_SIZE", "raw": raw})
 
     elif slot_type == "기타요건":
-        diagnostics.append({"code": "UNMAPPED_REQUIREMENT", "raw": raw})
+        # [재현 2026-09-14] '기타요건' 은 통째로 버려졌다. 그런데 모델은 업종코드가 박힌
+        # 조항을 '기타요건' 으로 분류하는 일이 잦다 — 구내식당 공고의 "영업신고(업종코드 :
+        # 1450)를 하여 집단급식소 영업이 가능한 법인사업자" 가 그랬고, 골든셋은 이것을
+        # INDUSTRY 1450 으로 본다. 분류는 실행마다 흔들려도 **원문의 숫자는 흔들리지 않는다.**
+        # 그래서 코드가 직접 읽어 살린다.
+        salvaged = salvage_closed_identifier(raw)
+        if salvaged is None:
+            diagnostics.append({"code": "UNMAPPED_REQUIREMENT", "raw": raw})
+        else:
+            salvaged_type, salvaged_value = salvaged
+            add(salvaged_type, salvaged_type, operator="MATCH", value=salvaged_value)
+            diagnostics.append({
+                "code": "SALVAGED_CLOSED_IDENTIFIER",
+                "raw": raw,
+                "salvaged_type": salvaged_type,
+                "value": salvaged_value,
+            })
     else:
         diagnostics.append({"code": "UNKNOWN_LEGACY_TYPE", "type": slot_type, "raw": raw})
 

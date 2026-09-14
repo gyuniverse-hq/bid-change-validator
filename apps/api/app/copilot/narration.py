@@ -269,7 +269,8 @@ def _compact_required_checks_fallback(
 ) -> CopilotChatResponse:
     """Keep REQUIRED_CHECKS useful even when optional narration fails."""
     manual_count = _manual_review_count(summary)
-    answerable_count = len(checks.questions)
+    answerable_count = sum(item.askable for item in checks.questions)
+    unanswerable_count = sum(not item.askable for item in checks.questions)
     status = STATUS_CONCLUSION[summary.overall_status]
 
     if answerable_count:
@@ -280,7 +281,7 @@ def _compact_required_checks_fallback(
             f"다만 공고 원문에서 직접 확인해야 할 항목이 {manual_count}건 있습니다."
         )
     else:
-        conclusion = f"{status} 현재 추가로 입력하거나 직접 확인할 항목은 없습니다."
+        conclusion = f"{status} 현재 시스템이 추가 답변을 받을 항목은 0건입니다."
 
     allowed = {item.requirement_key for item in checks.questions}
     old_presentation = result.presentation
@@ -299,6 +300,8 @@ def _compact_required_checks_fallback(
             reasons.append(reason.model_copy(update={"evidence_refs": evidence_ids}))
 
     limitations = []
+    if unanswerable_count:
+        limitations.append(f"현재 입력으로 해결할 수 없는 항목은 {unanswerable_count}건이며 별도 확인이 필요합니다.")
     if manual_count:
         limitations.append("자동 판정에 포함되지 않은 항목은 참가자격 화면에서 원문과 함께 확인해 주세요.")
     presentation = Presentation(conclusion=conclusion, reasons=reasons, limitations=limitations)

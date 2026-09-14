@@ -27,6 +27,7 @@ from .product_tools import (
 from .context import ConversationContext, ReplyContext, compact, depends_on_context, resolve_context
 from .presentation import attach_analysis_scope, NextAction, Presentation, present_product, render_answer
 from .source_map import SourceMap, cited_sources, source_identity
+from .v31_contracts import AnswerEnvelope
 
 Intent = Literal["QUALIFICATION_SUMMARY", "REQUIREMENT_EVIDENCE", "REQUIRED_CHECKS",
                  "PROFILE_SNAPSHOT", "DOCUMENT_QA", "ACTION_REQUEST", "CHANGED_NOTICE", "UNKNOWN"]
@@ -43,6 +44,10 @@ class CopilotChatRequest(BaseModel):
     public_document_question: str | None = Field(default=None, min_length=1, max_length=2000)
     allow_external_processing: StrictBool = False
     conversation_context: ConversationContext | None = None
+    response_version: Literal['legacy', '3.1'] = 'legacy'
+    conversation_id: UUID | None = None
+    context_revision: int | None = Field(default=None, ge=0)
+    target_id: str | None = Field(default=None, max_length=100)
 
 
 class ProductSource(BaseModel):
@@ -70,6 +75,7 @@ class CopilotChatResponse(BaseModel):
     external_processing_scope: Literal["PUBLIC_NOTICE_DOCUMENT"] | None = None
     reply_context: ReplyContext | None = None
     presentation: Presentation | None = None
+    envelope: 'AnswerEnvelope | None' = None
 
 
 REVALIDATION_VERB = r"(?:재검증|다시(?:검토|검증|판정|봐|보))"

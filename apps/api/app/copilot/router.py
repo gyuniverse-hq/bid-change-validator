@@ -114,7 +114,10 @@ def copilot_chat(
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
     user: AppUser | None = Depends(get_optional_current_user),
 ):
-    authorize_case_access(db, user, payload.case_id)
+    case = authorize_case_access(db, user, payload.case_id)
+    if payload.response_version == '3.1':
+        from .orchestration import chat_v31
+        return chat_v31(db, payload, user, case, semantic_processing)
     try:
         payload, _ = resolve_chat_payload(
             payload,

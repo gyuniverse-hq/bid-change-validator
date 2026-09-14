@@ -1,8 +1,9 @@
 import { apiFetch, ApiError } from './api';
+import { validateEnvelope } from './copilot-v31';
 import type { CopilotChatRequest, CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot-api';
 
 export type Turn = { id: number; question: string; response?: CopilotChatResponse };
-export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext };
+export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext; conversationId?: string; serverRevision?: number; targetId?: string };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
 type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean; document_processing?: boolean };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
@@ -21,7 +22,7 @@ async function sendConversationMessage(request: ConversationRequest): Promise<Co
       'Content-Type': 'application/json',
       ...(semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, response_version: semantic_processing ? '3.1' : 'legacy' }),
   });
   if (!response.ok) {
     const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
@@ -124,6 +125,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
 }
 
 export function validateSources(response: CopilotChatResponse) {
+  if (response.envelope) { validateEnvelope(response.envelope); return; }
   const refs = response.sources.map(s => s.ref);
   const used = [...new Set([...response.answer.matchAll(/\[(S\d+)\]/g)].map(m => m[1]))];
   const required = response.presentation?.reasons.flatMap(r => r.evidence_refs) ?? [];
@@ -152,6 +154,14 @@ export class ConversationStore {
   }
   focus(caseId: string, key: string | null, reply?: ReplyContext | null) {
     this.update(caseId, { focus: key, reply: reply ?? this.get(caseId).reply, revision: this.get(caseId).revision + 1, busy: false });
+  }
+  selectTarget(caseId: string, targetId: string) {
+    this.update(caseId, { targetId, focus: null });
+  }
+  newConversation(caseId: string) {
+    const revision = this.get(caseId).revision + 1;
+    this.failed.delete(caseId);
+    this.update(caseId, { ...empty(), revision });
   }
   publish(caseId: string, response: CopilotChatResponse) {
     validateSources(response);
@@ -196,6 +206,7 @@ export class ConversationStore {
 
     const request: ConversationRequest = {
         case_id: caseId, message: question, intent: intent ?? inferE1Intent(question),
+        conversation_id: old.conversationId, context_revision: old.serverRevision, target_id: old.targetId,
         requirement_key: hasOrdinalReference(question) ? undefined : old.focus,
         semantic_processing: semanticProcessing || undefined,
         document_processing: documentProcessing || undefined,
@@ -209,10 +220,13 @@ export class ConversationStore {
     try {
       const response = await this.transport(request);
       validateSources(response);
+      if (response.envelope) validateEnvelope(response.envelope, caseId);
       if (this.get(caseId).revision !== revision) return;
       this.failed.delete(caseId);
       const current = this.get(caseId);
       this.update(caseId, { busy: false, reply: conversationReply(response.reply_context ?? undefined, current.reply),
+        conversationId: response.envelope?.conversation_id ?? current.conversationId,
+        serverRevision: response.envelope?.context_revision ?? current.serverRevision, targetId: undefined,
         focus: response.reply_context?.requirement_key ?? null,
         turns: current.turns.map(t => t.id === revision ? { ...t, response } : t) });
     } catch (error) {

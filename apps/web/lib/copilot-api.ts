@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from './api';
+import type { CopilotEnvelope } from './copilot-v31';
 import type { EvidenceLocation, QualificationQuestion } from './qualification-api';
 
 // Pydantic app/copilot/{chat,contracts,actions}.py is the source of truth.
@@ -79,6 +80,7 @@ export type RequirementChange = {
 };
 export type ChangedNoticeResult = { provenance: RevalidationProvenance; changes: RequirementChange[] };
 export type CopilotChatRequest = {
+  response_version?: 'legacy' | '3.1'; conversation_id?: string; context_revision?: number; target_id?: string;
   case_id: string; message: string; requirement_key?: string | null; intent?: CopilotIntent | null;
   user_input?: ActionInput | null;
   conversation_context?: ConversationContext;
@@ -87,6 +89,7 @@ export type CopilotChatRequest = {
   allow_external_processing?: boolean;
 };
 export type CopilotChatResponse = {
+  envelope?: CopilotEnvelope | null;
   answer: string; intent: CopilotIntent;
   presentation?: Presentation | null; reply_context?: ReplyContext | null;
   // Backend has no discriminator on product_state; narrow by field presence, not intent alone.

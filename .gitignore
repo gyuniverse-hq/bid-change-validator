@@ -1,5 +1,6 @@
 # Python
 .venv/
+.venv-copilot-v31/
 venv/
 __pycache__/
 *.py[cod]
@@ -46,3 +47,4 @@ data/document-rag/
 
 # Ephemeral CI evidence
 .ci-results/
+.pnpm-store/

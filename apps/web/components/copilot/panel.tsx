@@ -7,6 +7,7 @@ import { Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ActionCard } from './action-card';
 import { CopilotMascot } from './mascot';
+import { EnvelopeAnswer } from './envelope-answer';
 import { useActions, useCopilot } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { getCopilotStatusLabel, getSourceLocationLabel } from '@/lib/copilot-view-model';
@@ -98,7 +99,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
         <label className="copilot-semantic-toggle" htmlFor="copilot-semantic-processing" aria-label="AI 상세 설명 사용">
           <input id="copilot-semantic-processing" type="checkbox" checked={semanticProcessing} disabled={state.busy}
             onChange={event => setSemanticProcessing(event.target.checked)} />
-          <span><strong>AI 상세 설명 사용</strong><small>켜면 질문 이해와 자연스러운 설명을 위해 현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용합니다. AI는 참가 가능 여부를 새로 판정하거나 저장하지 않습니다.</small></span>
+          <span><strong>AI 상세 설명 사용</strong><small>켜면 질문·관련 대화·현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용합니다. AI는 참가 가능 여부를 새로 판정하거나 저장하지 않습니다. 대화는 서버 재시작 시 초기화됩니다.</small></span>
         </label>
         <label className="copilot-semantic-toggle" htmlFor="copilot-document-processing" aria-label="공고문 근거 답변 사용">
           <input id="copilot-document-processing" type="checkbox" checked={documentProcessing} disabled={state.busy}
@@ -108,11 +109,15 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
       </div>}
       {caseId && <div className="copilot-suggestions">{suggestions.map(([text, intent]) =>
         <Button type="button" variant="ghost" className="copilot-quiet" key={text} disabled={state.busy} onClick={() => { store.focus(caseId, null); ask(text, intent); }}>{text}</Button>)}</div>}
+      {caseId && <Button type="button" variant="ghost" disabled={state.busy} onClick={() => store.newConversation(caseId)}>새 대화</Button>}
       {state.focus && <button type="button" className="copilot-focus" onClick={() => store.focus(caseId, null)}>선택한 요건 해제 · 전체 보기</button>}
       <div role="log" aria-label="공고 도우미 대화" aria-live="polite">
         {state.turns.map(turn => <div key={turn.id} className="copilot-turn">
           <p className="copilot-question">{turn.question}</p>
-          {turn.response && <Answer response={turn.response} caseId={caseId} onSelect={key => {
+          {turn.response && <Answer response={turn.response} caseId={caseId} onTarget={id => {
+            store.selectTarget(caseId, id);
+            ask('이 항목 원문 보여줘');
+          }} onSelect={key => {
             store.focus(caseId, key, turn.response?.reply_context);
             ask('그 조건 근거 보여줘', 'REQUIREMENT_EVIDENCE');
           }} />}
@@ -150,7 +155,7 @@ function SourceChip({ source, caseId, analysisRunId }: { source: CopilotSource; 
   </Link>;
 }
 
-function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void }) {
+function Answer({ response, caseId, onSelect, onTarget }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void; onTarget: (id: string) => void }) {
   const p = response.presentation;
   const { controller, action } = useActions(caseId);
   const router = useRouter();
@@ -173,10 +178,10 @@ function Answer({ response, caseId, onSelect }: { response: CopilotChatResponse;
     {reason.requirement_key && <button type="button" className="copilot-detail-link" onClick={() => onSelect(reason.requirement_key!)}>이 요건 근거 보기</button>}
   </div>;
   return <article className={`copilot-answer${insufficient ? ' copilot-no-evidence' : ''}`} data-state={kind}>
-    {p ? <>
+    {response.envelope ? <EnvelopeAnswer envelope={response.envelope} onTarget={onTarget} /> : p ? <>
       <p className="copilot-conclusion">{p.conclusion}</p>
       {reasons.map(renderReason)}
-      {outside.length > 0 && <div className="copilot-scope"><strong>{response.intent === 'DOCUMENT_QA' ? '사용한 공고문 근거' : '판정 밖 확인사항 · 답변 반영 대상 아님'}</strong>{outside.map(renderReason)}
+      {outside.length > 0 && <div className="copilot-scope"><strong>{response.intent === 'DOCUMENT_QA' ? '사용한 공고문 근거' : '직접 확인할 공고 항목'}</strong>{outside.map(renderReason)}
         {response.intent !== 'DOCUMENT_QA' && <Link className="copilot-detail-link" href={`${href('/qualification', caseId)}#analysis-scope`}>참가자격 화면에서 함께 확인</Link>}
       </div>}
       {p.limitations.map((text, i) => <p className="copilot-limitation" key={i}>{text}</p>)}

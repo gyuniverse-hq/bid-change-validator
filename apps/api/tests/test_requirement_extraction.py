@@ -436,3 +436,43 @@ def test_one_ungrounded_part_still_rejects_the_slot():
     assert not ok
     assert "기간_raw" in reason
     assert slot["_rejected_detail"]["part"] == "5년 이상"
+
+
+def test_a_decoration_mark_the_model_omits_does_not_break_grounding():
+    """공고문은 눈에 띄라고 ※ 를 찍고, 모델은 인용할 때 그것을 빼고 적는다.
+
+    실측(2026-09-14)에서 나온 실제 값이다. 같은 문장인데 기호 하나로 대조가 어긋났다.
+    """
+    source = "다. 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체"
+    slot = {"raw": source, "경험분야_raw": "각 단체급식소(1일 평균 800식 이상)를 1년 이상 운영"}
+
+    ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok, reason
+
+
+def test_comma_joined_details_are_checked_part_by_part():
+    source = "나. 식품위생법에 따른 인·허가를 득하고 영업신고(업종코드 : 1450)를 한 업체"
+    slot = {"raw": source, "등록인증_raw": "식품위생법에 따른 인·허가, 영업신고(업종코드 : 1450)"}
+
+    ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok, reason
+
+
+def test_a_comma_inside_one_value_is_not_made_worse_by_splitting():
+    """쉼표가 값 안에 있으면 쪼개기가 틀린다. 그래도 결과는 쪼개기 전과 같아야 한다."""
+    source = "다. 대표자 전원의 성명을 모두 등재, 각자대표도 해당하는 업체"
+    # 통째로 찾히는 경우 — 쪼개지 않는다
+    ok, _, _ = validate_extracted_slot(
+        {"raw": source, "등록인증_raw": "대표자 전원의 성명을 모두 등재, 각자대표도 해당"},
+        [{"text": source}],
+    )
+    assert ok
+    # 지어낸 값은 쪼개도 조각이 원문에 없어 그대로 버려진다
+    ok, reason, _ = validate_extracted_slot(
+        {"raw": source, "등록인증_raw": "대표자 전원의 성명을 모두 등재, 감사 선임 완료"},
+        [{"text": source}],
+    )
+    assert not ok
+    assert "등록인증_raw" in reason

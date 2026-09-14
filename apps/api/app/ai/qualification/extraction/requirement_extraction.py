@@ -254,11 +254,19 @@ _GROUNDING_PUNCTUATION = str.maketrans(
 )
 
 
+# 공고문이 눈에 띄라고 찍는 기호들. 모델은 인용할 때 이것을 빼고 적는 일이 잦다 —
+# 원문 "각 단체급식소※(1일 평균 800식 이상)" 에 대해 모델은 "각 단체급식소(1일 평균
+# 800식 이상)" 라고 쓴다. 같은 문장인데 대조가 어긋나 DETAIL_NOT_FOUND_IN_SOURCE 가 났다.
+# 비교할 때만 지운다. 저장되는 raw 는 그대로다.
+_DECORATION_MARKS_RE = re.compile(r"[※▶▷◆◇■□●○◦☞‣✓✔★☆]")
+
+
 def _squash(value: str) -> str:
     """Normalize source text only for containment checks; stored raw stays untouched."""
     # U+2024 (ONE DOT LEADER) becomes an ASCII period under NFKC, so translate
     # punctuation variants first and apply compatibility normalization afterward.
     normalized = unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION))
+    normalized = _DECORATION_MARKS_RE.sub("", normalized)
     return re.sub(r"\s+", "", normalized)
 
 
@@ -319,15 +327,19 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
     return None
 
 
-# 한 필드에 조건이 둘 이상이면 모델은 세미콜론으로 잇는다. 실측(2026-09-14)에서 본 값 —
+# 한 필드에 조건이 둘 이상이면 모델은 세미콜론이나 쉼표로 잇는다. 실측(2026-09-14) 값 —
 #
 #   기간_raw     "입찰 공고일 기준 2년 내에; 1년 이상"
-#   등록인증_raw "단체급식업 등록업체; 식품위생법에 따른 인·허가; 영업신고(업종코드:1450)"
+#   등록인증_raw "식품위생법에 따른 인·허가, 영업신고(업종코드:1450)"
 #
 # 조각은 전부 원문에 있는데 **이어붙인 문자열**이 원문에 없다. 그것을 통째로 찾다가
 # DETAIL_NOT_FOUND_IN_SOURCE 로 버렸다 — 지어낸 값이 아니라 우리 대조가 못 따라간 것이다.
-# 조각마다 따로 확인한다. 조각 하나라도 근거가 없으면 그대로 버린다.
-_DETAIL_PART_SPLIT_RE = re.compile(r"[;；]")
+#
+# 통째로 먼저 찾고, 없을 때만 쪼갠다. 쉼표는 값 안에도 나오므로("대표자 전원의 성명을
+# 모두 등재, 각자대표도 해당") 쪼개는 것이 항상 옳지는 않다. 그래도 안전한 이유는
+# **조각 하나라도 원문에 없으면 그대로 버리기** 때문이다 — 쪼개기가 틀렸으면 조각이
+# 원문에 없고, 결과는 쪼개기 전과 같다.
+_DETAIL_PART_SPLIT_RE = re.compile(r"[;；,，]")
 
 
 def _detail_parts(detail: str) -> list[str]:
@@ -375,6 +387,12 @@ def validate_extracted_slot(
     for field_name in _DETAIL_RAW_FIELDS:
         detail = (slot.get(field_name) or "").strip()
         if not detail:
+            continue
+        squashed_whole = _squash(detail)
+        if squashed_whole and squashed_whole in source_text:
+            continue  # 통째로 찾히면 쪼갤 이유가 없다
+        if squashed_whole and squashed_whole in haystack:
+            slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
             continue
         for part in _detail_parts(detail):
             squashed = _squash(part)

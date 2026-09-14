@@ -7,13 +7,13 @@ const path = require('node:path');
 const ts = require('typescript');
 const vm = require('node:vm');
 
-function workspaceModule({ stale = false, noCurrent = false, missingVersion = false } = {}) {
+function workspaceModule({ stale = false, noCurrent = false, missingVersion = false, ruleVersion = 'qualification-rules-v0.3' } = {}) {
   const calls = [];
   const caseItem = { id: 'case', notice_id: 'notice', company_id: 'company', baseline_version_number: 1, current_version_number: 2 };
   const baseline = { id: 'a1', notice_version_id: 'v1', status: 'SUCCEEDED' };
   const current = { id: 'a2', notice_version_id: 'v2', status: 'SUCCEEDED' };
-  const j1 = { id: 'j1', analysis_run_id: 'a1', notice_version_id: 'v1', company_id: 'company', rule_version: 'qualification-rules-v0.2' };
-  const j2 = { id: 'j2', analysis_run_id: stale ? 'old' : 'a2', notice_version_id: 'v2', company_id: 'company', rule_version: 'qualification-rules-v0.2' };
+  const j1 = { id: 'j1', analysis_run_id: 'a1', notice_version_id: 'v1', company_id: 'company', rule_version: ruleVersion };
+  const j2 = { id: 'j2', analysis_run_id: stale ? 'old' : 'a2', notice_version_id: 'v2', company_id: 'company', rule_version: ruleVersion };
   const mocks = {
     getPreflightCase: async (id) => { if (id !== 'case') throw new Error('not found'); return caseItem; },
     getNotice: async () => ({ latest: { id: 'v3' } }),
@@ -38,6 +38,14 @@ test('current questions and evidence use the current judgment; baseline is only 
   assert.equal(w.sourceJudgment.id, 'j1');
   assert.equal(w.displayJudgment.analysis_run_id, w.currentAnalysis.id);
   assert.deepEqual(workspaceApi.calls, ['j2']);
+});
+
+test('previous rule judgments are not displayed or used as question sources', async () => {
+  const workspaceApi = workspaceModule({ ruleVersion: 'qualification-rules-v0.2' });
+  const w = await workspaceApi.loadCaseWorkspace('case');
+  assert.equal(w.sourceJudgment, null);
+  assert.equal(w.displayJudgment, null);
+  assert.deepEqual(workspaceApi.calls, []);
 });
 
 test('reanalysis or missing current judgment never falls back to a baseline/old result', async () => {

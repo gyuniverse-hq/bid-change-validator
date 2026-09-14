@@ -48,6 +48,14 @@ test('previous rule judgments are not displayed or used as question sources', as
   assert.deepEqual(workspaceApi.calls, []);
 });
 
+test('summary matching skips previous rule results before selecting a judgment', () => {
+  const workspaceApi = workspaceModule();
+  const analysis = { id: 'a2', notice_version_id: 'v2', status: 'SUCCEEDED' };
+  const base = { analysis_run_id: 'a2', notice_version_id: 'v2', company_id: 'company' };
+  assert.equal(workspaceApi.judgmentMatchesAnalysis({ ...base, rule_version: 'qualification-rules-v0.2' }, analysis, 'company'), false);
+  assert.equal(workspaceApi.judgmentMatchesAnalysis({ ...base, rule_version: 'qualification-rules-v0.3' }, analysis, 'company'), true);
+});
+
 test('reanalysis or missing current judgment never falls back to a baseline/old result', async () => {
   for (const scenario of [{ stale: true }, { noCurrent: true }]) {
     const workspaceApi = workspaceModule(scenario);

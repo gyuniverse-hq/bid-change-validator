@@ -43,7 +43,8 @@ function requirementValue(requirement: QualificationRequirement) {
   구조화된 값이 같은지 본다. 비교할 필드를 우리가 고르지 않고 백엔드
   requirement_diff.py의 decision_payload()를 그대로 따른다 — 백엔드가 MODIFIED/UNCHANGED를
   가르는 기준이 그 목록이라, 우리가 따로 정하면 두 기준이 조용히 어긋난다. (#132 리뷰)
-  거기서 raw(원문)만 뺀다. 여기서 말하려는 것이 「구조화 값은 같고 원문 표기만 다르다」이기 때문이다.
+  거기서 raw(원문)만 뺀다. 여기서 말하려는 것이 「구조화 값은 같고 원문만 다르다」이기 때문이다.
+  원문 차이가 단순 표기인지 뜻이 바뀐 걸 추출기가 놓친 건지는 여기서 판정하지 않는다 — 그래서 배지도 「표기 차이」라 하지 않는다. (#132 리뷰)
   raw는 판정 전 조항 안전성 검사에도 쓰이므로 「판정 영향 없음」이라고는 쓰지 않는다.
 */
 const STRUCTURED_FIELDS = [
@@ -130,7 +131,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
   /*
     「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
-    원문 표기만 바뀐 것도 섞인다. 구조화된 값이 실제로 달라진 것이 몇 건인지 따로 센다.
+    원문만 바뀐 것도 섞인다. 구조화된 값이 실제로 달라진 것이 몇 건인지 따로 센다.
   */
   const structuredChangedCount = affectedChanges.filter(
     (item) => !item.baseline || !item.current || !sameStructuredValue(item.baseline, item.current),
@@ -213,7 +214,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
                           <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
                           <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
                           {comparable && (sameStructured
-                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 표기 차이</span>
+                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 차이 있음</span>
                             : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[12px] font-bold text-[#9a2b2b]">구조화 값 변경</span>)}
                         </span>
                         <span className="mt-1 block truncate text-[12.5px] text-[var(--product-muted)]">{summary}</span>

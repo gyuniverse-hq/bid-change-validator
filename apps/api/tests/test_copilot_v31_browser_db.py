@@ -47,7 +47,8 @@ def test_browser_login_chat_selected_target_against_real_db(state, authenticated
     run_http_browser(state, authenticated_api)
 
 
-def test_browser_source_bound_confirmation(state, authenticated_api):
+@pytest.mark.parametrize('legal_permission', [False, True])
+def test_browser_source_bound_confirmation(state, authenticated_api, legal_permission):
     from sqlalchemy import select
     from apps.api.app.analysis_models import QualificationRequirementRecord
     from apps.api.tests.test_source_condition_contracts import RAW
@@ -63,7 +64,7 @@ def test_browser_source_bound_confirmation(state, authenticated_api):
     db.commit()
     response = authenticated_api.post(f'/api/v1/preflight-cases/{case.id}/qualification-judgments', json={'analysis_run_id': str(analysis.id)})
     assert response.status_code == 200, response.text
-    run_http_browser(state, authenticated_api, 'check-source-confirmation-browser.mjs')
+    run_http_browser(state, authenticated_api, 'check-source-confirmation-browser.mjs', {'COPILOT_LEGAL_PERMISSION': str(legal_permission).lower()})
 
 
 def test_browser_account_switch_and_rule_recovery(state, authenticated_api):

@@ -8,6 +8,7 @@ const { chromium } = loaded.default ?? loaded;
 const browser = await chromium.launch({headless:true, channel:'chrome'});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
 const errors = [], writes = [], pending = [];
+const legalPermission = process.env.COPILOT_LEGAL_PERMISSION !== 'false';
 page.setDefaultTimeout(30000);
 page.on('pageerror', e => errors.push(e.message));
 page.on('response', r => {
@@ -31,12 +32,20 @@ try {
   await card.getByLabel(fields[2]).selectOption('true');
   await card.getByLabel('증빙을 보유하고 있나요?').selectOption('false');
   assert(await card.getByRole('button', {name:'반영 제안 받기 · 아직 저장 안 함'}).isDisabled());
+  await card.getByRole('button', {name:'작업 닫기', exact:true}).click();
+  assert.equal(writes.length, 0, 'cancelling an incomplete draft must not write');
+  await page.getByRole('heading', {name:/다음 조건을 각각 확인/}).locator('..').getByRole('button', {name:'이 요건 답변 입력 · 아직 저장 안 함'}).click();
+  for (const label of fields) assert.equal(await card.getByLabel(label).inputValue(), '', 'cancelled values must not be silently reused');
+  await card.getByLabel(fields[2]).selectOption('true');
+  await card.getByLabel('증빙을 보유하고 있나요?').selectOption('false');
   await card.getByLabel(fields[0]).selectOption('true');
-  await card.getByLabel(fields[1]).selectOption('true');
+  await card.getByLabel(fields[1]).selectOption(String(legalPermission));
   await card.getByRole('button', {name:'반영 제안 받기 · 아직 저장 안 함'}).click();
   await card.getByRole('button', {name:'내용 확인 후 실행'}).waitFor();
   assert.equal(writes.length, 0);
-  await page.screenshot({path:path.join(process.env.COPILOT_DB_EVIDENCE,'source-confirmation-before.png'), fullPage:true});
+  assert(await card.getByText('직접 운반의 법적 허가 조건 충족',{exact:false}).count());
+  assert(!(await card.innerText()).includes('\"basis\"'));
+  await page.screenshot({path:path.join(process.env.COPILOT_DB_EVIDENCE,`source-confirmation-${legalPermission}-before.png`), fullPage:true});
   const confirmed = page.waitForResponse(r => r.url().endsWith('/copilot/actions/confirm'));
   await card.getByRole('button', {name:'내용 확인 후 실행'}).click();
   await confirmed;
@@ -44,9 +53,10 @@ try {
   assert.equal(writes.length, 1);
   assert.equal(writes[0].status, 200);
   const j = writes[0].body.result.judgments.find(j => j.requirement_key === 'REQ-REGISTRATION');
-  assert.equal(j.status, 'SATISFIED');
+  assert.equal(j.status, legalPermission ? 'SATISFIED' : 'UNSATISFIED');
+  await card.getByText('반영 후 새 판정 결과를 확인했습니다.',{exact:true}).waitFor();
   assert.equal(j.value_source, 'askback');
   assert.equal(errors.length, 0, errors.join('\n'));
   assert.equal(await page.locator('[data-nextjs-dialog], vite-error-overlay').count(),0);
-  fs.writeFileSync(path.join(process.env.COPILOT_DB_EVIDENCE,'source-confirmation-browser.json'),JSON.stringify({status:'PASS',writes,errors},null,2));
+  fs.writeFileSync(path.join(process.env.COPILOT_DB_EVIDENCE,`source-confirmation-${legalPermission}-browser.json`),JSON.stringify({status:'PASS',writes,errors},null,2));
 } finally { await browser.close(); }

@@ -17,9 +17,13 @@ python scripts/run_golden_regression.py                       # 게이트 적용
 python scripts/run_golden_regression.py --no-gate --out r.json  # 결과만
 ```
 
-게이트는 둘이다 — **잘못된 확정 0**, **정답 일치가 기준선 아래로 내려가지 않음**.
-보류가 느는 것은 막지 않는다. 보류는 안전한 쪽이고, 그것을 막으면 다음 사람이 가드를
-못 좁힌다.
+게이트는 둘이다 — **잘못된 확정 0**, **초안 기대값 일치가 기준선 아래로 내려가지
+않음**. 보류 자체에 별도 상한을 두지는 않지만, 기준 일치였던 행이 UNKNOWN 으로 바뀌어
+일치 수가 기준선 아래로 내려가는 회귀는 막는다.
+
+workflow는 누락되는 판정 의존 모듈이 없도록 `develop`·`main` 대상 모든 PR에서 실행한다.
+실제 merge 차단에는 GitHub ruleset에서 `golden-regression / judge`를 required status
+check로 별도 지정해야 한다. workflow 파일만으로 required check가 설정되지는 않는다.
 
 ## 원본이 바뀌면
 

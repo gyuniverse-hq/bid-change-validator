@@ -336,10 +336,14 @@ _REGION_PARENT: dict[str, str] = {
 # 표를 정확히 일치로만 찾으면 표기 하나에 위계가 사라지고 다시 미달을 확정한다.
 # 통합 전후를 가리키는 꾸밈말만 떼어내고 표를 찾는다. 떼어낸 열쇠는 표 조회에만 쓰고,
 # 두 문구가 같은 곳인지 보는 비교(_string_match)는 원래 값으로 한다.
-_REGION_PREFIXES = ("종전의", "종전", "옛", "구")
+_REGION_PREFIXES = ("종전의", "종전", "옛")
 # 괄호는 _norm 이 지우므로 "광주광역시(종전)" 은 "광주광역시종전" 으로 들어온다.
-# "구" 는 접미로 떼지 않는다 — 광주광역시 남구의 그 구다.
 _REGION_SUFFIXES = ("소재지", "소재", "관내", "일원", "전역", "지역", "종전의", "종전", "옛")
+# "구"를 범용 prefix로 떼면 구미시·구리시·구례군 같은 실제 지명이 훼손된다.
+# 확인된 과거 명칭 표현만 명시적으로 alias 처리한다.
+_REGION_ALIASES = {
+    "구광주광역시": "광주광역시",
+}
 
 
 def _region_key(value: object) -> str:
@@ -354,7 +358,7 @@ def _region_key(value: object) -> str:
         for suffix in _REGION_SUFFIXES:
             if key.endswith(suffix) and len(key) > len(suffix):
                 key, changed = key[: -len(suffix)], True
-    return key
+    return _REGION_ALIASES.get(key, key)
 
 
 def _region_relation(observed: str, required: object) -> str:

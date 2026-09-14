@@ -5,14 +5,14 @@
 frozen fixture(samples/golden/qualification-v0.2) 의 케이스 40건에 대해
 `rules.judge_requirements` 를 돌리고, 행마다 넷 중 하나로 분류한다.
 
-    MATCH_DRAFT_TARGET          정답 일치
+    MATCH_DRAFT_TARGET          초안 기대값 일치
     SAFE_ABSTENTION             UNKNOWN 으로 보류 (안전)
     WRONG_DETERMINATE_POSITIVE  틀린 확정 — 충족이라 했는데 아님
     WRONG_DETERMINATE_NEGATIVE  틀린 확정 — 미달이라 했는데 아님
 
-게이트는 둘이다. **잘못된 확정은 0 이어야 하고, 정답 일치는 summary.json 에 적힌
-기준선 아래로 내려가면 안 된다.** 보류가 늘어나는 것은 막지 않는다 — 보류는 안전한
-쪽이고, 그것을 게이트로 걸면 다음 사람이 가드를 못 좁힌다.
+게이트는 둘이다. **잘못된 확정은 0 이어야 하고, 초안 기대값 일치는 summary.json 에
+적힌 기준선 아래로 내려가면 안 된다.** 보류 자체에 별도 상한을 두지는 않지만,
+기준 일치가 UNKNOWN 으로 바뀌어 일치 수가 하락하는 회귀는 막는다.
 
 무엇을 재지 않나
 ---------------
@@ -51,7 +51,7 @@ def sha256_of(path: Path) -> str:
 
 
 def verify_checksums(golden_dir: Path) -> None:
-    """checksums.sha256 과 실제 파일이 다르면 멈춘다. 기준선이 바뀐 것을 모른 채 재면 안 된다."""
+    """checksums·summary와 실제 fixture가 다르면 멈춘다."""
     expected = {}
     for line in (golden_dir / "checksums.sha256").read_text(encoding="utf-8").splitlines():
         # sha256sum 은 "<digest>  name" 또는 바이너리 모드 "<digest> *name" 으로 쓴다.
@@ -68,6 +68,20 @@ def verify_checksums(golden_dir: Path) -> None:
                 f"  기록 {digest[:16]}… / 실제 {actual[:16]}…\n"
                 "fixture 를 바꿨다면 checksums.sha256 과 summary.json 을 함께 갱신하세요."
             )
+
+    fixture_path = golden_dir / "fixture_bundle.json"
+    summary_path = golden_dir / "summary.json"
+    if not summary_path.is_file():
+        raise SystemExit("골든셋 summary.json 이 없습니다.")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    actual_fixture_sha = sha256_of(fixture_path)
+    summary_fixture_sha = summary.get("fixture_sha256")
+    if summary_fixture_sha != actual_fixture_sha:
+        raise SystemExit(
+            "summary.json 의 fixture_sha256 이 실제 fixture_bundle.json 과 다릅니다:\n"
+            f"  summary {str(summary_fixture_sha)[:16]}… / 실제 {actual_fixture_sha[:16]}…\n"
+            "fixture 를 바꿨다면 checksums.sha256 과 summary.json 을 함께 갱신하세요."
+        )
 
 
 def main() -> int:
@@ -172,12 +186,13 @@ def main() -> int:
     if wrong > wrong_limit:
         failures.append(f"잘못된 확정 {wrong}건 ({wrong_limit} 이어야 함)")
     if counts["MATCH_DRAFT_TARGET"] < baseline_match:
-        failures.append(f"정답 일치 {counts['MATCH_DRAFT_TARGET']} < 기준선 {baseline_match}")
+        failures.append(f"초안 기대값 일치 {counts['MATCH_DRAFT_TARGET']} < 기준선 {baseline_match}")
     if failures:
         print("\n[골든셋 회귀] " + " / ".join(failures))
         return 1
     print(
-        f"\n[골든셋 회귀] 통과 — 정답 일치 {counts['MATCH_DRAFT_TARGET']} (기준선 {baseline_match}), "
+        f"\n[골든셋 회귀] 통과 — 초안 기대값 일치 {counts['MATCH_DRAFT_TARGET']} "
+        f"(기준선 {baseline_match}), "
         f"보류 {counts['SAFE_ABSTENTION']}, 잘못된 확정 0"
     )
     return 0

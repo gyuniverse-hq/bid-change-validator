@@ -1,7 +1,8 @@
 # 골든셋 v0.2 로 판정 코드의 회귀를 잰다. DB·API 키 없이 돈다.
 #
-# 게이트: 잘못된 확정 0, 정답 일치가 기준선(samples/golden/qualification-v0.2/summary.json)
-# 아래로 안 내려감. 상세 결과는 artifact 로만 남기고 리포에 쌓지 않는다.
+# 게이트: 잘못된 확정 0, 초안 기대값 일치가
+# 기준선(samples/golden/qualification-v0.2/summary.json) 아래로 안 내려감.
+# 상세 결과는 artifact 로만 남기고 리포에 쌓지 않는다.
 #
 # 이 잡이 초록이어도 제품 추출 경로는 보증하지 않는다 — canonical 요건을 판정 코드에
 # 직접 넣기 때문이다. 추출 재현율은 run_extraction_recall.py 로 따로 잰다.
@@ -10,13 +11,6 @@ name: golden-regression
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - "apps/api/app/qualification/**"
-      - "apps/api/app/ai/qualification/**"
-      - "apps/api/app/ai/contracts.py"
-      - "samples/golden/qualification-v0.2/**"
-      - "scripts/run_golden_regression.py"
-      - ".github/workflows/golden-regression.yml"
   push:
     branches: [develop]
 
@@ -58,6 +52,7 @@ jobs:
           apps/api/tests/test_extraction_recall.py
           apps/api/tests/test_qualification_judgment.py
           apps/api/tests/test_region_hierarchy.py
+          apps/api/tests/test_golden_regression_runner.py
           apps/api/tests/test_askability.py
 
       - name: Golden regression (gate)

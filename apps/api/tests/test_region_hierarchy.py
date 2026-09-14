@@ -12,6 +12,7 @@ from datetime import date
 from apps.api.app.ai.contracts import QualificationRequirement
 from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot
 from apps.api.app.qualification.rules.judgment import ProfileCompleteness
+from apps.api.app.qualification.rules.judgment import _region_key
 from apps.api.app.qualification.rules.judgment import judge_requirement
 
 
@@ -93,3 +94,10 @@ def test_decoration_stripping_does_not_merge_different_regions() -> None:
     # 표에 없는 지역은 떼어내도 표에 없다 — 예전과 같은 결과.
     assert _judge("구미시", "종전 광주광역시") == "UNSATISFIED"
     assert _judge("전북특별자치도", "충청북도") == "UNSATISFIED"
+
+
+def test_gu_is_not_stripped_from_real_place_names() -> None:
+    assert _region_key("구미시") == "구미시"
+    assert _region_key("구리시") == "구리시"
+    assert _region_key("구례군") == "구례군"
+    assert _region_key("구 광주광역시") == "광주광역시"

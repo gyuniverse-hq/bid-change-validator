@@ -107,7 +107,14 @@ export function currentVersion(workspace: CaseWorkspace) {
 }
 
 export function judgmentMatchesAnalysis(judgment: QualificationJudgmentSummary, analysis: QualificationAnalysisSummary | null, companyId: string | null) {
-  return Boolean(analysis && analysis.status !== 'FAILED' && judgment.analysis_run_id === analysis.id && judgment.notice_version_id === analysis.notice_version_id && judgment.company_id === companyId);
+  return Boolean(
+    analysis
+    && analysis.status !== 'FAILED'
+    && judgment.analysis_run_id === analysis.id
+    && judgment.notice_version_id === analysis.notice_version_id
+    && judgment.company_id === companyId
+    && judgment.rule_version === CURRENT_QUALIFICATION_RULE_VERSION
+  );
 }
 
 export async function loadCurrentJudgment(caseItem: PreflightCase) {

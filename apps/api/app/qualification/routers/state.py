@@ -39,3 +39,9 @@ def get_qualification_state(
     except SQLAlchemyError as error:
         # SQL/DB 주소/예외 원문을 노출하지 않고, 빈 목록을 반환하지도 않는다.
         raise ApiError(503, "QUALIFICATION_STATE_UNAVAILABLE", "판정 상태를 불러오지 못했습니다. 다시 조회해 주세요.") from error
+
+
+# 부모 judgment router의 /api/v1 prefix를 그대로 사용한다.
+from .catalog import router as catalog_router
+
+router.include_router(catalog_router)

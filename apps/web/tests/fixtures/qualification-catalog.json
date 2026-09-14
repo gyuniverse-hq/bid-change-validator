@@ -1,0 +1,221 @@
+{
+  "contract_version": "qualification-catalog-v1",
+  "company_id": "05f19dbc-e0d1-5e86-a2fa-7bdf912558f0",
+  "query": "",
+  "business_type": null,
+  "status_filter": null,
+  "query_total": 5,
+  "scope_total": 5,
+  "total": 5,
+  "business_counts": {
+    "CONSTRUCTION": 1,
+    "GOODS": 1,
+    "SERVICE": 3
+  },
+  "status_counts": {
+    "eligible": 2,
+    "insufficient_data": 1,
+    "ineligible": 1,
+    "unreviewed": 1
+  },
+  "limit": 20,
+  "offset": 0,
+  "items": [
+    {
+      "id": "91a37d80-b15d-5dad-ab64-9385db409949",
+      "bid_notice_no": "R-bad-0",
+      "title": "공고 bad-0",
+      "business_type": "CONSTRUCTION",
+      "notice_kind": null,
+      "institution_name": null,
+      "current_version": 1,
+      "notice_version_id": "a5384bd3-aaf9-5c11-8013-e6b23de42bcc",
+      "case_id": "2cf85a99-2fc4-5d8e-99f8-98420b112ecf",
+      "state": {
+        "scope": {
+          "case_id": "2cf85a99-2fc4-5d8e-99f8-98420b112ecf",
+          "notice_id": "91a37d80-b15d-5dad-ab64-9385db409949",
+          "notice_version_id": "a5384bd3-aaf9-5c11-8013-e6b23de42bcc",
+          "company_id": "05f19dbc-e0d1-5e86-a2fa-7bdf912558f0",
+          "rule_version": "qualification-rules-v0.3"
+        },
+        "lookup_state": "OK",
+        "execution_state": "SUCCEEDED",
+        "coverage_state": "UNVERIFIED",
+        "judgment_state": "AVAILABLE",
+        "freshness_state": "CHECKS_INCOMPLETE",
+        "display_state": "RESULT_AVAILABLE",
+        "analysis_run_id": "8dfca4fd-9ef8-5eed-aea5-806ff1e8b709",
+        "observed_judgment_run_id": "99b24146-f48b-5ad7-88ac-a6c82d6ada42",
+        "selected_judgment_run_id": "99b24146-f48b-5ad7-88ac-a6c82d6ada42",
+        "stored_overall_status": "ineligible",
+        "stored_reference_date": "2026-09-15",
+        "requested_reference_date": null,
+        "profile_check": "MATCH",
+        "reference_date_check": "NOT_REQUESTED",
+        "answer_basis_check": "NOT_APPLICABLE",
+        "reasons": [
+          "REFERENCE_DATE_NOT_REQUESTED",
+          "ANALYSIS_COMPLETENESS_UNVERIFIED"
+        ],
+        "unknown_reasons": [],
+        "full_notice_eligibility_asserted": false,
+        "contract_version": "qualification-state-v1",
+        "state_sha256": "1e3bc3e4c81c3ca2bfbcf7425958092cb58912c3291a54d13c57b74f265528ec"
+      },
+      "status_bucket": "ineligible",
+      "review_basis": "STORED_JUDGMENT"
+    },
+    {
+      "id": "66425b63-ddb7-5a1b-8ffd-46eee3c6e889",
+      "bid_notice_no": "R-attention-0",
+      "title": "공고 attention-0",
+      "business_type": "GOODS",
+      "notice_kind": null,
+      "institution_name": null,
+      "current_version": 1,
+      "notice_version_id": "b5831033-7f9a-531b-939e-ffcd439189f3",
+      "case_id": "fe2a3767-24bb-5e18-b807-e346a83cd65a",
+      "state": {
+        "scope": {
+          "case_id": "fe2a3767-24bb-5e18-b807-e346a83cd65a",
+          "notice_id": "66425b63-ddb7-5a1b-8ffd-46eee3c6e889",
+          "notice_version_id": "b5831033-7f9a-531b-939e-ffcd439189f3",
+          "company_id": "05f19dbc-e0d1-5e86-a2fa-7bdf912558f0",
+          "rule_version": "qualification-rules-v0.3"
+        },
+        "lookup_state": "OK",
+        "execution_state": "PARTIAL",
+        "coverage_state": "INCOMPLETE",
+        "judgment_state": "AVAILABLE",
+        "freshness_state": "CHECKS_INCOMPLETE",
+        "display_state": "ANALYSIS_INCOMPLETE",
+        "analysis_run_id": "cae6660f-c85b-5d93-af1a-87949736afc8",
+        "observed_judgment_run_id": "67889410-9fe9-5425-806d-951059b15207",
+        "selected_judgment_run_id": "67889410-9fe9-5425-806d-951059b15207",
+        "stored_overall_status": "eligible",
+        "stored_reference_date": "2026-09-15",
+        "requested_reference_date": null,
+        "profile_check": "MATCH",
+        "reference_date_check": "NOT_REQUESTED",
+        "answer_basis_check": "NOT_APPLICABLE",
+        "reasons": [
+          "REFERENCE_DATE_NOT_REQUESTED",
+          "ANALYSIS_INCOMPLETE"
+        ],
+        "unknown_reasons": [],
+        "full_notice_eligibility_asserted": false,
+        "contract_version": "qualification-state-v1",
+        "state_sha256": "c0c6a72ad5f82fa7a864516694148585703d1263dc60274921bb0b4d5755a10a"
+      },
+      "status_bucket": "insufficient_data",
+      "review_basis": "STORED_JUDGMENT"
+    },
+    {
+      "id": "300594ad-1e1b-598d-a01b-838d5e7509a2",
+      "bid_notice_no": "R--0",
+      "title": "공고 -0",
+      "business_type": "SERVICE",
+      "notice_kind": null,
+      "institution_name": null,
+      "current_version": 1,
+      "notice_version_id": "f6235c24-11e3-5513-b577-a6af34fa4f39",
+      "case_id": "c07e48b5-252e-5456-9c15-0f442b4f18fe",
+      "state": {
+        "scope": {
+          "case_id": "c07e48b5-252e-5456-9c15-0f442b4f18fe",
+          "notice_id": "300594ad-1e1b-598d-a01b-838d5e7509a2",
+          "notice_version_id": "f6235c24-11e3-5513-b577-a6af34fa4f39",
+          "company_id": "05f19dbc-e0d1-5e86-a2fa-7bdf912558f0",
+          "rule_version": "qualification-rules-v0.3"
+        },
+        "lookup_state": "OK",
+        "execution_state": "SUCCEEDED",
+        "coverage_state": "UNVERIFIED",
+        "judgment_state": "AVAILABLE",
+        "freshness_state": "CHECKS_INCOMPLETE",
+        "display_state": "RESULT_AVAILABLE",
+        "analysis_run_id": "a1404dc1-0b4d-5d8f-95d2-e6b96f8b7060",
+        "observed_judgment_run_id": "700d6523-3e88-5059-beeb-e80d53725803",
+        "selected_judgment_run_id": "700d6523-3e88-5059-beeb-e80d53725803",
+        "stored_overall_status": "eligible",
+        "stored_reference_date": "2026-09-15",
+        "requested_reference_date": null,
+        "profile_check": "MATCH",
+        "reference_date_check": "NOT_REQUESTED",
+        "answer_basis_check": "NOT_APPLICABLE",
+        "reasons": [
+          "REFERENCE_DATE_NOT_REQUESTED",
+          "ANALYSIS_COMPLETENESS_UNVERIFIED"
+        ],
+        "unknown_reasons": [],
+        "full_notice_eligibility_asserted": false,
+        "contract_version": "qualification-state-v1",
+        "state_sha256": "7c047becaf603f0b5c38870e789ff1275a670ec3fc731eec992e57ed82a1f963"
+      },
+      "status_bucket": "eligible",
+      "review_basis": "STORED_JUDGMENT"
+    },
+    {
+      "id": "0e3be406-0033-53ea-8e63-df82cfa25673",
+      "bid_notice_no": "R-notyet-0",
+      "title": "공고 notyet-0",
+      "business_type": "SERVICE",
+      "notice_kind": null,
+      "institution_name": null,
+      "current_version": 1,
+      "notice_version_id": "43a9e356-ece4-5de6-9ac7-2d8fcba52ecd",
+      "case_id": null,
+      "state": null,
+      "status_bucket": "unreviewed",
+      "review_basis": "NO_CURRENT_JUDGMENT"
+    },
+    {
+      "id": "51036544-beac-5cd0-b8f8-408e048d8076",
+      "bid_notice_no": "R--1",
+      "title": "공고 -1",
+      "business_type": "SERVICE",
+      "notice_kind": null,
+      "institution_name": null,
+      "current_version": 1,
+      "notice_version_id": "9959bf0e-99be-58b6-8960-12f1d64ae52f",
+      "case_id": "bc36e387-d7ae-5e0e-bcba-2b65115739e5",
+      "state": {
+        "scope": {
+          "case_id": "bc36e387-d7ae-5e0e-bcba-2b65115739e5",
+          "notice_id": "51036544-beac-5cd0-b8f8-408e048d8076",
+          "notice_version_id": "9959bf0e-99be-58b6-8960-12f1d64ae52f",
+          "company_id": "05f19dbc-e0d1-5e86-a2fa-7bdf912558f0",
+          "rule_version": "qualification-rules-v0.3"
+        },
+        "lookup_state": "OK",
+        "execution_state": "SUCCEEDED",
+        "coverage_state": "UNVERIFIED",
+        "judgment_state": "AVAILABLE",
+        "freshness_state": "CHECKS_INCOMPLETE",
+        "display_state": "RESULT_AVAILABLE",
+        "analysis_run_id": "22eea315-b437-59ca-bb61-403f4e64f4a4",
+        "observed_judgment_run_id": "6f70b56e-0dcf-5615-846f-82ad94c1085b",
+        "selected_judgment_run_id": "6f70b56e-0dcf-5615-846f-82ad94c1085b",
+        "stored_overall_status": "eligible",
+        "stored_reference_date": "2026-09-15",
+        "requested_reference_date": null,
+        "profile_check": "MATCH",
+        "reference_date_check": "NOT_REQUESTED",
+        "answer_basis_check": "NOT_APPLICABLE",
+        "reasons": [
+          "REFERENCE_DATE_NOT_REQUESTED",
+          "ANALYSIS_COMPLETENESS_UNVERIFIED"
+        ],
+        "unknown_reasons": [],
+        "full_notice_eligibility_asserted": false,
+        "contract_version": "qualification-state-v1",
+        "state_sha256": "7a8cfdb1c596caa1e6f639390b3dd66ef7b1cd1cd502997c034eb439b0a04737"
+      },
+      "status_bucket": "eligible",
+      "review_basis": "STORED_JUDGMENT"
+    }
+  ],
+  "scope_sha256": "ea9506682670eb7f0e26715effe9287db1d94ca54664ce0ddd3d046271cdb706",
+  "full_notice_eligibility_asserted": false
+}

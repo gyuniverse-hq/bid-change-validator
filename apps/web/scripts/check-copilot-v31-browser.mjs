@@ -12,7 +12,10 @@ async function loadPlaywright() {
   return import(pathToFileURL(entry).href);
 }
 
-const { chromium } = await loadPlaywright();
+const loadedPlaywright = await loadPlaywright();
+const playwright = loadedPlaywright.default ?? loadedPlaywright;
+const chromium = loadedPlaywright.chromium ?? playwright.chromium;
+if (!chromium) throw Error('Playwright chromium export not found');
 
 (async () => {
   const origin = process.env.COPILOT_UI_URL;

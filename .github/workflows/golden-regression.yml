@@ -57,6 +57,7 @@ jobs:
           apps/api/tests/test_requirement_extraction.py
           apps/api/tests/test_extraction_recall.py
           apps/api/tests/test_qualification_judgment.py
+          apps/api/tests/test_region_hierarchy.py
           apps/api/tests/test_askability.py
 
       - name: Golden regression (gate)

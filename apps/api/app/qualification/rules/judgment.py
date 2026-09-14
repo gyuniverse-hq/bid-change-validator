@@ -22,7 +22,7 @@ from ...ai.contracts import Judgment, QualificationRequirement
 from .clause_safety import unsafe_clause_reason
 
 
-RULE_VERSION = "qualification-rules-v0.2"
+RULE_VERSION = "qualification-rules-v0.3"
 OverallQualificationStatus = Literal["eligible", "ineligible", "insufficient_data"]
 
 

@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { ArrowRight, CheckCircle2, CircleHelp, FileCheck2, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 
 const STEPS = [
   {
@@ -46,34 +47,35 @@ const SCREEN_GROUPS = [
   {
     when: '공고를 고를 때',
     items: [
-      { name: '공고 찾기', href: '/notices', body: '공고를 검색하고 판정 상태로 거릅니다' },
+      { name: '공고 찾기', href: '/notices', body: '공고를 검색하고 판정 상태로 거릅니다', note: null },
     ],
   },
   {
     when: '자격을 확인할 때',
     items: [
-      { name: '참가자격 검토', href: '/qualification', body: '요건별 판정과 근거 문장을 봅니다' },
-      { name: '확인 필요', href: '/ask-back', body: '판정하지 못한 항목에 답하면 그 줄만 다시 판정합니다' },
-      { name: '근거 원문', href: '/evidence', body: '판정과 공고 원문을 나란히 놓고 봅니다' },
+      { name: '참가자격 검토', href: '/qualification', body: '요건별 판정과 근거 문장을 봅니다', note: null },
+      { name: '확인 필요', href: null, body: '판정하지 못한 항목에 답하면 그 줄만 다시 판정합니다', note: '검토 건에서 이동' },
+      { name: '근거 원문', href: null, body: '판정과 공고 원문을 나란히 놓고 봅니다', note: '검토 건에서 이동' },
     ],
   },
   {
     when: '제출을 준비할 때',
     items: [
-      { name: '평가 대응', href: '/evaluation', body: '공고가 요구한 항목이 제안서 어디에 있는지 찾아줍니다' },
-      { name: '변경 이력', href: '/changes', body: '차수별 변경과 자격에 미친 영향을 봅니다' },
-      { name: '회사 프로필', href: '/company', body: '판정에 쓰는 회사 정보를 관리합니다' },
-      { name: '서류함', href: null, body: '준비 중입니다' },
+      { name: '평가 대응', href: null, body: '공고가 요구한 항목이 제안서 어디에 있는지 찾아줍니다', note: '검토 건에서 이동' },
+      { name: '변경 이력', href: null, body: '차수별 변경과 자격에 미친 영향을 봅니다', note: '검토 건에서 이동' },
+      { name: '회사 프로필', href: '/company', body: '판정에 쓰는 회사 정보를 관리합니다', note: null },
+      { name: '서류함', href: null, body: '준비 중입니다', note: '준비 중' },
     ],
   },
 ];
 
+/* 라벨과 색은 공통 맵에서 가져온다. 여기에 문구를 또 적으면 화면마다 다른 이름이 된다 (#138 리뷰). */
 const BADGES = [
-  { label: '응찰 가능', icon: CheckCircle2, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700', body: '판정한 필수 항목에서 미달이 없습니다.' },
-  { label: '확인 필요', icon: CircleHelp, tone: 'border-amber-200 bg-amber-50 text-amber-700', body: '회사 정보가 없거나 근거를 찾지 못해 판정하지 않았습니다.' },
-  { label: '자격 미달', icon: XCircle, tone: 'border-rose-200 bg-rose-50 text-rose-700', body: '미달 항목이 있어 지금 상태로는 참가할 수 없습니다.' },
-  { label: '미검토', icon: FileCheck2, tone: 'border-slate-200 bg-slate-50 text-slate-600', body: '아직 검토를 시작하지 않은 공고입니다.' },
-];
+  { key: 'eligible', icon: CheckCircle2, body: '판정한 필수 항목에서 미달이 없습니다.' },
+  { key: 'insufficient_data', icon: CircleHelp, body: '회사 정보가 없거나 근거를 찾지 못해 판정하지 않았습니다.' },
+  { key: 'ineligible', icon: XCircle, body: '미달 항목이 있어 지금 상태로는 참가할 수 없습니다.' },
+  { key: 'unreviewed', icon: FileCheck2, body: '아직 검토를 시작하지 않은 공고입니다.' },
+] as const;
 
 const LIMITS = [
   { title: '근거가 없으면 판정하지 않습니다', body: '억지로 결론을 내지 않고 「확인 필요」로 남깁니다.' },
@@ -136,14 +138,18 @@ export default function GuidePage() {
               <div key={when} className="border-t border-[var(--product-line)] pt-6">
                 <h3 className="text-[13px] font-bold leading-[1.7] text-[var(--product-muted)]">{when}</h3>
                 <dl className="mt-3 space-y-3">
-                  {items.map(({ name, href, body }) => (
+                  {items.map(({ name, href, body, note }) => (
                     <div key={name} className="grid gap-x-5 gap-y-0.5 sm:grid-cols-[168px_minmax(0,1fr)]">
                       <dt className="text-[15px] font-bold leading-[1.75]">
                         {href
                           ? <Link href={href} className="text-[var(--product-accent-deep)] hover:underline">{name}</Link>
-                          : <span className="text-[var(--product-faint)]">{name}</span>}
+                          : <span className="text-[var(--product-ink)]">{name}</span>}
                       </dt>
-                      <dd className={`max-w-[58ch] text-[15px] leading-[1.75] ${href ? 'text-[var(--product-body)]' : 'text-[var(--product-faint)]'}`}>{body}</dd>
+                      <dd className="max-w-[58ch] text-[15px] leading-[1.75] text-[var(--product-body)]">
+                        {body}
+                        {/* 검토 건이 있어야 열리는 화면은 링크를 걸지 않는다. 주소로 바로 들어가면 「caseId가 필요합니다」가 뜬다. */}
+                        {note && <span className="ml-2 whitespace-nowrap rounded-full bg-[var(--product-tint)] px-2.5 py-0.5 text-[13px] text-[var(--product-muted)]">{note}</span>}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -157,10 +163,10 @@ export default function GuidePage() {
           <h2 className="text-[21px] font-extrabold leading-[1.4] tracking-[-0.03em] text-[var(--product-ink)]">공고 목록의 판정 표시</h2>
 
           <dl className="mt-5 space-y-4">
-            {BADGES.map(({ label, icon: Icon, tone, body }) => (
-              <div key={label} className="grid gap-x-5 gap-y-1.5 sm:grid-cols-[136px_minmax(0,1fr)] sm:items-baseline">
+            {BADGES.map(({ key, icon: Icon, body }) => (
+              <div key={key} className="grid gap-x-5 gap-y-1.5 sm:grid-cols-[136px_minmax(0,1fr)] sm:items-baseline">
                 <dt>
-                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-bold leading-[1.7] ${tone}`}><Icon className="size-4" />{label}</span>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-bold leading-[1.7] ${OVERALL_STATUS_BADGE[key].className}`}><Icon className="size-4" />{OVERALL_STATUS_BADGE[key].label}</span>
                 </dt>
                 <dd className="max-w-[58ch] text-[15px] leading-[1.75] text-[var(--product-muted)]">{body}</dd>
               </div>

@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  Sparkles,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -33,7 +32,7 @@ import {
 } from '@/lib/qualification-api';
 import { loadCurrentJudgment } from '@/lib/case-workspace';
 import { productProfileCoverage } from '@/lib/product-profile';
-import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf } from '@/lib/status-copy';
+import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf, OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
 type StatusFilter = 'all' | OverallStatus;
 type CaseStatusMeta = { caseItem: PreflightCase; judgment: QualificationJudgmentSummary | null };
@@ -54,13 +53,6 @@ const HYDRATE_CONCURRENCY = 6;
 /* 첫 화면에 20줄은 길다. 위에 「회사 기준으로 판정 가능한 공고」가 있고 원하는 건 검색으로 찾는 구조라 10줄로 줄인다. */
 const VISIBLE_NOTICE_LIMIT = 10;
 
-const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> = {
-  eligible: { label: '응찰 가능', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  insufficient_data: { label: '확인 필요', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  ineligible: { label: '자격 미달', className: 'border-rose-200 bg-rose-50 text-rose-700' },
-  unreviewed: { label: '미검토', className: 'border-slate-200 bg-slate-50 text-slate-600' },
-};
-
 export default function NoticesPage() {
   const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
@@ -70,6 +62,8 @@ export default function NoticesPage() {
   const [caseMeta, setCaseMeta] = useState<Record<string, CaseStatusMeta>>({});
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  /* 목록을 10줄로 줄이면서 11번째 이후를 볼 방법이 없어졌다 (#138 리뷰 4). 10줄씩 늘린다. */
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_NOTICE_LIMIT);
   // 사업 유형은 목록 API가 그대로 주는 값이라 추측이 없다. 용역만 하는 회사에게 물품·공사는 볼 이유가 없다.
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -254,9 +248,9 @@ export default function NoticesPage() {
   */
   const quickTiles: QuickTile[] = [
     { label: '전체', value: notices.length, icon: LayoutGrid, filter: 'all' },
-    { label: '응찰 가능', value: metaLoading ? '—' : counts.eligible, icon: CheckCircle2, filter: 'eligible' },
+    { label: '참가 가능', value: metaLoading ? '—' : counts.eligible, icon: CheckCircle2, filter: 'eligible' },
     { label: '확인 필요', value: metaLoading ? '—' : counts.insufficient_data, icon: CircleHelp, filter: 'insufficient_data' },
-    { label: '자격 미달', value: metaLoading ? '—' : counts.ineligible, icon: XCircle, filter: 'ineligible' },
+    { label: '참가 불가', value: metaLoading ? '—' : counts.ineligible, icon: XCircle, filter: 'ineligible' },
     { label: '미검토', value: metaLoading ? '—' : counts.unreviewed, icon: FileCheck2, filter: 'unreviewed' },
   ];
   /*
@@ -390,7 +384,7 @@ export default function NoticesPage() {
           */}
           <div className="mt-5 grid overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
             {quickTiles.map(({ label, value, icon: Icon, filter }) => (
-              <button key={label} type="button" aria-pressed={statusFilter === filter} onClick={() => setStatusFilter(filter)} className={`border-b border-r border-[var(--product-line)] px-3 py-4 text-center transition-colors last:border-r-0 hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#eef1ff]' : ''}`}>
+              <button key={label} type="button" aria-pressed={statusFilter === filter} onClick={() => { setStatusFilter(filter); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`border-b border-r border-[var(--product-line)] px-3 py-4 text-center transition-colors last:border-r-0 hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#eef1ff]' : ''}`}>
                 <Icon className={`mx-auto size-5 ${statusFilter === filter ? 'text-[var(--product-accent-deep)]' : 'text-[var(--product-accent)]'}`} />
                 <span className="mt-1.5 block text-[13px] font-medium text-[var(--product-muted)]">{label}</span>
                 <strong className="mt-0.5 block text-[21px] leading-7 text-[var(--product-ink)]">{value}</strong>
@@ -401,13 +395,13 @@ export default function NoticesPage() {
           {/* 사업 유형은 라벨을 칩 줄 안에 넣어 한 줄로 끝낸다. 라벨만 따로 열을 차지할 값어치가 없다. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="mr-0.5 text-[13px] font-bold text-[var(--product-muted)]">사업 유형</span>
-            <button type="button" aria-pressed={businessTypeFilter === 'all'} onClick={() => setBusinessTypeFilter('all')} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === 'all' ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>전체 {notices.length}</button>
-            {businessTypeOptions.map(([type, count]) => <button key={type} type="button" aria-pressed={businessTypeFilter === type} onClick={() => setBusinessTypeFilter(type)} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === type ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{labelOf(BUSINESS_TYPE_LABEL, type)} {count}</button>)}
+            <button type="button" aria-pressed={businessTypeFilter === 'all'} onClick={() => { setBusinessTypeFilter('all'); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === 'all' ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>전체 {notices.length}</button>
+            {businessTypeOptions.map(([type, count]) => <button key={type} type="button" aria-pressed={businessTypeFilter === type} onClick={() => { setBusinessTypeFilter(type); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === type ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{labelOf(BUSINESS_TYPE_LABEL, type)} {count}</button>)}
           </div>
 
           {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[15px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
           {/* DL-007 — 「전체 공고」가 아니라 「검색으로 좁힌 결과의 상위 N건」이라는 사실은 남기되, 문장이 아니라 수치로 적는다. */}
-          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 · 불러온 {notices.length}건{businessTypeFilter !== 'all' || statusFilter !== 'all' ? ` · 필터 ${activeNotices.length}건` : ''} · 표시 {Math.min(activeNotices.length, VISIBLE_NOTICE_LIMIT)}건</p>}
+          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 · 불러온 {notices.length}건{businessTypeFilter !== 'all' || statusFilter !== 'all' ? ` · 필터 ${activeNotices.length}건` : ''} · 표시 {Math.min(activeNotices.length, visibleCount)}건</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
             /*
@@ -420,7 +414,7 @@ export default function NoticesPage() {
               <div className="hidden grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px] items-center gap-3 bg-[var(--product-tint)] px-5 py-3 text-[13px] font-bold text-[var(--product-muted)] lg:grid">
                 <span>검토 상태</span><span>공고명 · 공고번호</span><span>공고기관</span><span>유형</span><span>변경</span><span className="text-right">조치</span>
               </div>
-              {activeNotices.slice(0, VISIBLE_NOTICE_LIMIT).map((notice) => {
+              {activeNotices.slice(0, visibleCount).map((notice) => {
                 const status = noticeStatus(notice.id);
                 const meta = caseMeta[notice.id];
                 const changed = notice.current_version > 1;
@@ -428,7 +422,7 @@ export default function NoticesPage() {
                   <div key={notice.id} className="grid grid-cols-1 items-center gap-3 border-t border-[var(--product-line-2)] px-5 py-4 transition-colors hover:bg-[var(--product-tint)] lg:grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px]">
                     <div>{metaLoading && !meta
                       ? <span className="inline-block rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[13px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
-                      : <span className={`inline-block rounded-full border px-3 py-1 text-[13px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span>}</div>
+                      : <span className={`inline-block rounded-full border px-3 py-1 text-[13px] font-semibold ${OVERALL_STATUS_BADGE[status].className}`}>{OVERALL_STATUS_BADGE[status].label}</span>}</div>
                     <div className="min-w-0">
                       <strong className="block truncate text-[15px] font-bold text-[var(--product-ink)]">{notice.title}</strong>
                       <span className="mt-1 block text-[13px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 판정 ${meta.judgment.judgment_count}건 · 확인 필요 ${meta.judgment.unknown_count}건 · 미달 ${meta.judgment.unsatisfied_count}건` : ''}</span>
@@ -445,21 +439,28 @@ export default function NoticesPage() {
                   </div>
                 );
               })}
+              {activeNotices.length > visibleCount && (
+                <div className="border-t border-[var(--product-line-2)] px-5 py-4 text-center">
+                  <Button type="button" variant="outline" className="rounded-full px-6" onClick={() => setVisibleCount((count) => count + VISIBLE_NOTICE_LIMIT)}>
+                    <ChevronDown /> 더 보기 · 남은 {activeNotices.length - visibleCount}건
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center">
               <Search className="mx-auto size-8 text-[var(--product-faint)]" />
               {emptyReason === 'only-rejected' ? (
                 <>
-                  <p className="mt-3 font-semibold">검색 결과 {rejectedNotices.length}건이 모두 자격 미달입니다.</p>
-                  <p className="mt-1 text-sm text-[var(--product-muted)]">회사 프로필 기준으로 참가가 어려운 공고라 아래 「자격 미달로 접어둔 공고」에 있습니다. 숨기지 않았습니다.</p>
+                  <p className="mt-3 font-semibold">검색 결과 {rejectedNotices.length}건이 모두 참가 불가입니다.</p>
+                  <p className="mt-1 text-sm text-[var(--product-muted)]">회사 프로필 기준으로 참가가 어려운 공고라 아래 「참가 불가로 접어둔 공고」에 있습니다. 숨기지 않았습니다.</p>
                   <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => setShowRejected(true)}>아래에서 보기 ↓</Button>
                 </>
               ) : emptyReason === 'filtered-out' ? (
                 <>
                   <p className="mt-3 font-semibold">검색 결과 {notices.length}건이 켜둔 필터에 걸려 표시되지 않았습니다.</p>
                   <p className="mt-1 text-sm text-[var(--product-muted)]">사업 유형 또는 검토 상태 필터를 해제하면 보입니다.</p>
-                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => { setBusinessTypeFilter('all'); setStatusFilter('all'); }}>필터 모두 해제</Button>
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => { setBusinessTypeFilter('all'); setStatusFilter('all'); setVisibleCount(VISIBLE_NOTICE_LIMIT); }}>필터 모두 해제</Button>
                 </>
               ) : (
                 <>
@@ -472,12 +473,12 @@ export default function NoticesPage() {
         </section>
 
         <section className="mt-12 overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-[var(--product-tint)]">
-          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${rejectedOpen ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[15px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[15px] font-medium">{rejectedOpen ? '접기' : '펼치기'}</span></button>
+          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${rejectedOpen ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">참가 불가로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[15px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[15px] font-medium">{rejectedOpen ? '접기' : '펼치기'}</span></button>
           {rejectedOpen && <div className="border-t border-[var(--product-line)] bg-white px-6">{rejectedNotices.length ? rejectedNotices.map((notice) => {
             const meta = caseMeta[notice.id];
-            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[13px] font-semibold ${STATUS_COPY.ineligible.className}`}>자격 미달</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong>{/* 공고번호로 검색해 찾아온 행에 공고번호가 없으면 같은 건인지 확인할 수 없다. 판정 요약과 같이 적는다. */}
+            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[13px] font-semibold ${OVERALL_STATUS_BADGE.ineligible.className}`}>{OVERALL_STATUS_BADGE.ineligible.label}</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong>{/* 공고번호로 검색해 찾아온 행에 공고번호가 없으면 같은 건인지 확인할 수 없다. 판정 요약과 같이 적는다. */}
               <span className="mt-1 block text-[13px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : ''}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[15px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
-          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 자격 미달로 판정된 공고가 없습니다.'}</p>}</div>}
+          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 참가 불가로 판정된 공고가 없습니다.'}</p>}</div>}
         </section>
 
         {/*

@@ -377,6 +377,22 @@ def _replace_analysis(
     return run
 
 
+def _preserved_baseline_id(
+    baseline: BidNoticeVersion | None,
+    *,
+    current: BidNoticeVersion,
+) -> UUID | None:
+    """Keep only a real earlier version of the same notice as the comparison baseline."""
+
+    if baseline is None:
+        return None
+    if baseline.notice_id != current.notice_id:
+        return None
+    if baseline.version_number >= current.version_number:
+        return None
+    return baseline.id
+
+
 def seed_golden_v02_accounts(
     db: Session,
     *,
@@ -429,7 +445,7 @@ def seed_golden_v02_accounts(
                 preflight_case = PreflightCase(
                     company_id=company.id,
                     notice_id=version.notice_id,
-                    baseline_version_id=version.id,
+                    baseline_version_id=None,
                     current_version_id=version.id,
                     title=title,
                     status="READY",
@@ -437,8 +453,16 @@ def seed_golden_v02_accounts(
                 db.add(preflight_case)
                 db.flush()
             else:
+                existing_baseline = (
+                    db.get(BidNoticeVersion, preflight_case.baseline_version_id)
+                    if preflight_case.baseline_version_id is not None
+                    else None
+                )
                 preflight_case.notice_id = version.notice_id
-                preflight_case.baseline_version_id = version.id
+                preflight_case.baseline_version_id = _preserved_baseline_id(
+                    existing_baseline,
+                    current=version,
+                )
                 preflight_case.current_version_id = version.id
                 preflight_case.status = "READY"
             seeded_cases.append(

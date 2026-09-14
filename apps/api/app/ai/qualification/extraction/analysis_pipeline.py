@@ -17,11 +17,13 @@ callers may still override the normalizer in tests or experiments.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
+
+from .review_execution import ReviewOptions
 
 from pydantic import BaseModel, Field, model_validator
 
-from .analysis_result import RequirementAnalysisResult, build_requirement_analysis_result
+from .analysis_result import AnalysisDiagnostic, RequirementAnalysisResult, build_requirement_analysis_result
 from .backend_blocks import canonical_source_blocks
 from ..canonical.canonicalize import canonicalize_validated_slots
 from .chunking import chunk_source_blocks
@@ -108,27 +110,46 @@ def analyze_qualification_documents(
     normalize_value: ValueNormalizer = default_normalize_value,
     max_retry: int = 1,
     max_chunk_chars: int = 1800,
+    extraction_strategy: Literal["legacy", "review_v1"] = "legacy",
+    review_options: ReviewOptions | None = None,
 ) -> RequirementAnalysisResult:
     """Run one qualification Requirement analysis without touching Backend state."""
     document_ids = [document.document_id for document in analysis_input.documents]
-    chunks = _build_global_chunks(analysis_input.documents, max_chunk_chars=max_chunk_chars)
+    if extraction_strategy not in {"legacy", "review_v1"}:
+        raise ValueError("unsupported extraction_strategy")
+    if extraction_strategy == "review_v1":
+        from .review_extraction import extract_review_slots
 
-    if not chunks:
-        return build_requirement_analysis_result(
-            notice_id=analysis_input.notice_id,
-            notice_version_id=analysis_input.notice_version_id,
-            document_ids=document_ids,
-            canonicalized={"requirements": [], "evidence": [], "diagnostics": []},
-            extraction_status="failed",
-            extraction_notes="분석 가능한 extracted_blocks가 없습니다.",
-            target_chunk_ids=[],
+        # 새로운 경로는 backend의 text를 strip/청킹하기 전 그대로 보존한다.
+        # document ID/hash는 backend가 소유하며 block 안의 동일 이름 값을 신뢰하지 않는다.
+        source_blocks = [
+            {**block, "document_id": document.document_id,
+             "source_sha256": document.file_sha256,
+             "extracted_text_sha256": document.extracted_text_sha256}
+            for document in analysis_input.documents for block in document.extracted_blocks
+        ]
+        extraction = extract_review_slots(
+            source_blocks, notice_version_id=analysis_input.notice_version_id,
+            structured_extract=structured_extract,
+            options=review_options or ReviewOptions(max_retries=max_retry),
         )
-
-    extraction = extract_legacy_slots(
-        chunks,
-        structured_extract=structured_extract,
-        max_retry=max_retry,
-    )
+    else:
+        if review_options is not None:
+            raise ValueError("review_options requires extraction_strategy='review_v1'")
+        chunks = _build_global_chunks(analysis_input.documents, max_chunk_chars=max_chunk_chars)
+        if not chunks:
+            return build_requirement_analysis_result(
+                notice_id=analysis_input.notice_id,
+                notice_version_id=analysis_input.notice_version_id,
+                document_ids=document_ids,
+                canonicalized={"requirements": [], "evidence": [], "diagnostics": []},
+                extraction_status="failed",
+                extraction_notes="분석 가능한 extracted_blocks가 없습니다.",
+                target_chunk_ids=[],
+            )
+        extraction = extract_legacy_slots(
+            chunks, structured_extract=structured_extract, max_retry=max_retry,
+        )
 
     normalized_slots = _normalize_extracted_slots(
         list(extraction.get("slots") or []),
@@ -141,7 +162,7 @@ def analyze_qualification_documents(
         source_type="NOTICE_DOCUMENT",
     )
 
-    return build_requirement_analysis_result(
+    result = build_requirement_analysis_result(
         notice_id=analysis_input.notice_id,
         notice_version_id=analysis_input.notice_version_id,
         document_ids=document_ids,
@@ -153,3 +174,20 @@ def analyze_qualification_documents(
         ),
         target_chunk_ids=list(extraction.get("target_chunk_ids") or []),
     )
+
+    if extraction_strategy == "review_v1":
+        # 모델이 REQUIREMENT로 분류했지만 canonical이 지원하지 못한 것을
+        # 일반 NOTICE_FACT로 성공 처리하지 않는다. legacy 동작은 이 분기 밖에서 보존한다.
+        unresolved = [item for item in result.diagnostics
+                      if item.code.startswith(("UNMAPPED_", "UNKNOWN_LEGACY_"))]
+        diagnostics = [item.model_copy(update={"kind": "PIPELINE", "severity": "WARNING",
+            "message": "검토 후보를 판정 가능한 요건으로 구조화하지 못했습니다."})
+            if item in unresolved else item for item in result.diagnostics]
+        diagnostics.append(AnalysisDiagnostic(
+            code="REVIEW_EXECUTION_AUDIT", severity="INFO",
+            message="후보 처리 내역입니다. COMPLETE는 의미 정확성이나 참가 가능을 보증하지 않습니다.",
+            details=extraction["review_audit"],
+        ))
+        status = "PARTIAL" if unresolved and result.status == "SUCCEEDED" else result.status
+        return result.model_copy(update={"diagnostics": diagnostics, "status": status})
+    return result

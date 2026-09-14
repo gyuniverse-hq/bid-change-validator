@@ -89,6 +89,9 @@ def test_followup_rereads_origin_adapter(monkeypatch, kind):
     summary, checks, profile, _ = _fixture(with_question=True)
     for name, value in [('get_qualification_summary', summary), ('get_required_checks', checks), ('get_judgment_profile_snapshot', profile)]:
         monkeypatch.setattr('apps.api.app.copilot.product_tools.' + name, lambda *a, v=value: v)
+    monkeypatch.setattr('apps.api.app.copilot.product_tools.get_explanation_evidence',
+        lambda db, cid, keys: [SimpleNamespace(provenance=summary.provenance,
+            requirement=SimpleNamespace(requirement_key=key), evidence=[]) for key in keys])
     p = summary.provenance
     case = SimpleNamespace(id=p.case_id, company_id=p.company_id, notice_id=p.notice_id, current_version_id=p.notice_version_id)
     db = SimpleNamespace(refresh=lambda *a: None)

@@ -7,7 +7,7 @@ from uuid import uuid4
 from ..errors import ApiError
 from ..qualification.judgment import QualificationJudgmentError
 from .answer_validation import compose
-from .acceptance import profile_only_request
+from .acceptance import profile_only_request, answerable_checks_request
 from .conversation_state import conversations
 from .model_gateway import ModelGateway
 from .tool_adapters import ProductTools
@@ -63,6 +63,8 @@ def plan_turn(request, state, gateway):
         return TaskPlan(goal=request.message, tasks=[Task(kind='ACKNOWLEDGE_ACTION', question=request.message)]), False
     if request.user_input is None and profile_only_request(request.message):
         return TaskPlan(goal=request.message, tasks=[Task(kind='READ_PROFILE', question=request.message)]), False
+    if request.user_input is None and answerable_checks_request(request.message):
+        return TaskPlan(goal=request.message, tasks=[Task(kind='READ_CHECKS', question=request.message)]), False
     control = _action_control(request)
     if control in {'answer', 'revalidate', 'cancel', 'partial_scope'}:
         read = 'READ_CHANGES' if control == 'revalidate' else 'READ_CHECKS'
@@ -291,7 +293,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
             if fid in seen: continue
             seen.add(fid)
             fact = facts[fid]
-            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'}:
+            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'} or fact.entity_ref == 'checks_empty':
                 continue
             counters[fact.target_kind] = counters.get(fact.target_kind, 0) + 1
             targets.append(Target(target_id=str(uuid4()), kind=fact.target_kind, label=claim.text[:200],

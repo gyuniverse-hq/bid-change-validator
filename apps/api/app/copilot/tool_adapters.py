@@ -89,25 +89,36 @@ class ProductTools:
         text = '판정 당시 회사정보: ' + json.dumps(_profile_for_ai(profile.profile_snapshot), ensure_ascii=False)
         self._fact('PROFILE_FACT', text, [self._source('PRODUCT', text)], origin='READ_PROFILE', entity='profile_snapshot')
 
-    def required_checks(self):
+    def required_checks(self, *, answerable_only=False):
         summary = self._summary()
         checks = product_tools.get_required_checks(self.db, self.case.id)
         if checks.provenance != summary.provenance:
             raise ValueError('PRODUCT_SCOPE_CHANGED')
         self.checks = checks
-        scope = summary.analysis_scope
-        self.bundle.capabilities.update(answerable_count=sum(q.askable for q in checks.questions),
-                                        unanswerable_count=sum(not q.askable for q in checks.questions),
+        scope = None if answerable_only else summary.analysis_scope
+        questions = [q for q in checks.questions if q.askable] if answerable_only else checks.questions
+        evidence = product_tools.get_explanation_evidence(self.db, self.case.id, [q.requirement_key for q in questions]) if questions else []
+        if any(e.provenance != summary.provenance for e in evidence):
+            raise ValueError('PRODUCT_SCOPE_CHANGED')
+        by_key = {e.requirement.requirement_key:e.evidence for e in evidence}
+        self.bundle.capabilities.update(answerable_count=sum(q.askable for q in questions),
+                                        unanswerable_count=sum(not q.askable for q in questions),
                                         manual_review_count=(len(scope.notice_facts) + len(scope.dropped_requirements)) if scope else 0)
-        for q in checks.questions:
+        for q in questions:
             text = ('답변 입력 가능: ' if q.askable else '직접 확인 필요·현재 입력 불가: ') + q.question
-            self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='REQUIREMENT', key=q.requirement_key, origin='READ_CHECKS')
+            ids = [self._source('PRODUCT', text)]
+            ids += [self._source('DOCUMENT', e.quote, evidence=e) for e in by_key[q.requirement_key] if e.quote.strip()]
+            self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=q.requirement_key, origin='READ_CHECKS')
+        if answerable_only and not questions:
+            text = '현재 저장된 판정에서 추가 답변을 입력할 수 있는 확인 질문은 없습니다. 모든 참가조건이 충족됐다는 뜻은 아닙니다.'
+            self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], origin='READ_CHECKS', entity='checks_empty')
         if scope:
             for item in scope.notice_facts:
-                for e in item.evidence:
-                    if e.quote.strip():
-                        sid = self._source('DOCUMENT', e.quote, evidence=e)
-                        self._fact('NOTICE_FACT', e.quote, [sid], target='MANUAL', origin='READ_CHECKS', entity=sid)
+                cited = [e for e in item.evidence if e.quote.strip()]
+                ids = list(dict.fromkeys(self._source('DOCUMENT', e.quote, evidence=e) for e in cited))
+                if ids:
+                    self._fact('NOTICE_FACT', '\n'.join(e.quote for e in cited), ids, target='MANUAL', origin='READ_CHECKS',
+                               entity='manual-' + digest([item.code, ids])[:20])
             for item in scope.dropped_requirements:
                 # Raw dropped requirement alone has no original locator; never invent a citation.
                 self.bundle.limitations.append('구조화에서 제외된 항목은 참가자격 화면에서 원문을 확인해 주세요: ' + item.raw)
@@ -177,7 +188,9 @@ class ProductTools:
     def execute(self, task):
         if task.kind == 'READ_JUDGMENT': self.judgment()
         elif task.kind == 'READ_PROFILE': self.profile()
-        elif task.kind == 'READ_CHECKS': self.required_checks()
+        elif task.kind == 'READ_CHECKS':
+            from .acceptance import answerable_checks_request
+            self.required_checks(answerable_only=answerable_checks_request(task.question))
         elif task.kind == 'READ_DOCUMENT': self.documents(task.question)
         elif task.kind == 'READ_CHANGES': self.changes()
         self.bundle.coverage.setdefault(task.kind, 'FOUND')

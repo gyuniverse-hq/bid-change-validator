@@ -49,6 +49,14 @@ def freeze_document_acceptance(plan):
                        '일반 청렴·안전 서약의 제재 상세, 계약 후 수행·정산, 빈 서식 항목의 열거는 이 참가자격 요청의 완료 조건이 아니다.') if narrow else ()))
 
 
+def answerable_checks_request(question):
+    """Only narrow an explicit request for additional answer/input questions."""
+    compact = re.sub(r'\s+', '', question).rstrip('.!?。')
+    return bool(re.fullmatch(
+        r'(?:추가(?:로)?답변(?:이)?필요한|답변입력가능한|추가입력이필요한)'
+        r'(?:확인)?질문(?:만|을|들을|목록을)?(?:알려줘|보여줘|정리해줘|알려주세요|보여주세요|정리해주세요)', compact))
+
+
 def profile_only_request(question):
     compact = re.sub(r'\s+', '', question)
     # A narrow, explicit read scope is authoritative. Compound requests still

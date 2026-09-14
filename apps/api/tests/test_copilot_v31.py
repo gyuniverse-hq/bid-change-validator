@@ -151,6 +151,9 @@ def test_askability_adapter_and_manual_citation(monkeypatch):
     from apps.api.tests.test_copilot_required_checks_narration import _fixture
     summary, checks, profile, _ = _fixture(with_question=True)
     checks.questions[0].askable = False
+    monkeypatch.setattr('apps.api.app.copilot.product_tools.get_explanation_evidence',
+        lambda db, cid, keys: [SimpleNamespace(provenance=summary.provenance,
+            requirement=SimpleNamespace(requirement_key=key), evidence=[]) for key in keys])
     monkeypatch.setattr('apps.api.app.copilot.product_tools.get_qualification_summary', lambda *a: summary)
     monkeypatch.setattr('apps.api.app.copilot.product_tools.get_required_checks', lambda *a: checks)
     p = summary.provenance

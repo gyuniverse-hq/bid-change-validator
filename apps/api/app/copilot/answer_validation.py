@@ -38,6 +38,10 @@ def mechanical(claim, bundle):
     sources = {s.source_id: s for s in bundle.sources}
     if not claim.fact_ids or not claim.source_ids or not set(claim.fact_ids) <= facts.keys() or not set(claim.source_ids) <= sources.keys():
         return 'INVALID_REFERENCE'
+    check_entities = {facts[f].entity_ref or facts[f].requirement_key or f
+                      for f in claim.fact_ids if facts[f].origin_tool == 'READ_CHECKS'}
+    if len(check_entities) > 1:
+        return 'MIXED_CHECK_ENTITIES'
     allowed = {s for f in claim.fact_ids for s in facts[f].source_ids}
     if not set(claim.source_ids) <= allowed:
         return 'UNRELATED_SOURCE'
@@ -131,6 +135,7 @@ def compose(bundle, plan, state, gateway):
 상태 카드 자체는 서버가 작성한다. 질문에 필요한 설명/비교를 제공한다. 전체 조건을 세 개로 제한하지 않는다.
 각 claim은 독립적으로 읽혀야 하며 다른 생성 문장에 의존하는 결론/다음 행동을 만들지 않는다.'''
     prompt += '\n같은 사실을 결론·본문에서 반복하지 않는다. 필요한 조건과 예외를 보존하되 질문에 직접 답하는 간결한 산문으로 쓴다.'
+    prompt += '\nREAD_CHECKS의 확인 질문은 항목별로 분리한다. 한 claim에 서로 다른 entity_ref의 확인 항목을 합치거나 다른 항목의 근거를 붙이지 않는다.'
     prompt += '\n본문에는 회사/공고/판정 UUID나 내부 필드명을 나열하지 않는다. 근거 연결은 fact_ids/source_ids로 제공한다.'
     prompt += '\n회사정보만 요청하면 저장 프로필만 요약한다. 프로필 completeness나 빈 배열을 특정 요건의 미충족/미확인 판정 원인으로 추론하지 않는다.'
     prompt += '\nacceptance의 각 필수 항목을 충족한다. CHECKLIST는 회사의 충족을 판정하는 일이 아니라 질문·확인할 일을 제시하는 일이다. '

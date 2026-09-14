@@ -105,7 +105,9 @@ def build_semantic_question(requirement: QualificationRequirement) -> str:
     from .source_contracts import valid_contract, confirmation_fields
     contract = valid_contract(requirement)
     if contract and confirmation_fields(contract):
-        return '다음 조건을 각각 확인해 주세요. 단순 장비 보유만으로 법적 운반 자격을 인정하지 않습니다. — 원문 조건: ' + raw
+        fields = ' / '.join(label for _, label in confirmation_fields(contract))
+        caution = ' 단순 장비 보유만으로 법적 운반 자격을 인정하지 않습니다.' if contract['kind'] == 'WASTE_TRANSPORT' else ''
+        return '다음 조건을 각각 확인해 주세요: ' + fields + '.' + caution + ' — 원문 조건: ' + raw
     value = str(requirement.value) if requirement.value not in {None, ""} else raw
 
     prefix = {

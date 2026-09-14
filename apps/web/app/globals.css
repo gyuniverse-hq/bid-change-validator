@@ -91,7 +91,9 @@ body {
   --product-background: #f7f9fc;
   --product-line: #e4e7ed;
   --product-text: #1f2937;
-  --product-muted: #667085;
+  /* 본문 보조색. #667085는 흰 배경에서 대비가 낮아 15px 본문이 흐리게 읽혔다.
+     한 단계 진하게 내려 4.5:1을 확보한다. */
+  --product-muted: #55607a;
   --product-soft: #eef2ff;
   --product-card-radius: 20px;
   --product-panel-radius: 24px;

@@ -6,21 +6,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
-  Building2,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   FileCheck2,
-  FileText,
+  LayoutGrid,
   LoaderCircle,
   RefreshCw,
   Search,
   ShieldCheck,
-  Sparkles,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
 
+import { CachedNoticeMatches } from '@/components/product/cached-notice-matches';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { findPreflightCasesByNotice, getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
@@ -32,7 +32,7 @@ import {
 } from '@/lib/qualification-api';
 import { loadCurrentJudgment } from '@/lib/case-workspace';
 import { productProfileCoverage } from '@/lib/product-profile';
-import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf } from '@/lib/status-copy';
+import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf, OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
 type StatusFilter = 'all' | OverallStatus;
 type CaseStatusMeta = { caseItem: PreflightCase; judgment: QualificationJudgmentSummary | null };
@@ -50,14 +50,8 @@ const HYDRATE_CONCURRENCY = 6;
   「검색으로 좁혀서 고른다」는 이 화면의 전제와 어긋난다 (DL-007).
   목록형으로 바꾸면서 한 화면에 비교할 수 있는 양으로 올린다.
 */
-const VISIBLE_NOTICE_LIMIT = 20;
-
-const STATUS_COPY: Record<OverallStatus, { label: string; className: string }> = {
-  eligible: { label: '응찰 가능', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  insufficient_data: { label: '확인 필요', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  ineligible: { label: '자격 미달', className: 'border-rose-200 bg-rose-50 text-rose-700' },
-  unreviewed: { label: '미검토', className: 'border-slate-200 bg-slate-50 text-slate-600' },
-};
+/* 첫 화면에 20줄은 길다. 위에 「회사 기준으로 판정 가능한 공고」가 있고 원하는 건 검색으로 찾는 구조라 10줄로 줄인다. */
+const VISIBLE_NOTICE_LIMIT = 10;
 
 export default function NoticesPage() {
   const router = useRouter();
@@ -68,6 +62,8 @@ export default function NoticesPage() {
   const [caseMeta, setCaseMeta] = useState<Record<string, CaseStatusMeta>>({});
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  /* 목록을 10줄로 줄이면서 11번째 이후를 볼 방법이 없어졌다 (#138 리뷰 4). 10줄씩 늘린다. */
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_NOTICE_LIMIT);
   // 사업 유형은 목록 API가 그대로 주는 값이라 추측이 없다. 용역만 하는 회사에게 물품·공사는 볼 이유가 없다.
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -242,18 +238,25 @@ export default function NoticesPage() {
     return result;
   }, [notices, caseMeta]);
 
-  const proposalDocumentCount = cases.reduce((sum, caseItem) => sum + caseItem.documents.length, 0);
   const unknownTotal = Object.values(caseMeta).reduce((sum, item) => sum + (item.judgment?.unknown_count ?? 0), 0);
   const firstUnknownCase = Object.values(caseMeta).find((item) => (item.judgment?.unknown_count ?? 0) > 0)?.caseItem;
 
+  /*
+    타일과 「검토 상태」 칩은 같은 statusFilter를 건드리는 같은 컨트롤이었다.
+    한 상태를 두 군데서 조작하면 사용자는 둘이 다른 일을 하는 줄 안다.
+    칩 줄을 없애고 타일 하나로 합쳤다. 대신 되돌릴 자리가 필요해 「전체」를 맨 앞에 세운다.
+  */
   const quickTiles: QuickTile[] = [
-    { label: '응찰 가능', value: metaLoading ? '—' : counts.eligible, icon: CheckCircle2, filter: 'eligible' },
+    { label: '전체', value: notices.length, icon: LayoutGrid, filter: 'all' },
+    { label: '참가 가능', value: metaLoading ? '—' : counts.eligible, icon: CheckCircle2, filter: 'eligible' },
     { label: '확인 필요', value: metaLoading ? '—' : counts.insufficient_data, icon: CircleHelp, filter: 'insufficient_data' },
-    { label: '자격 미달', value: metaLoading ? '—' : counts.ineligible, icon: XCircle, filter: 'ineligible' },
+    { label: '참가 불가', value: metaLoading ? '—' : counts.ineligible, icon: XCircle, filter: 'ineligible' },
     { label: '미검토', value: metaLoading ? '—' : counts.unreviewed, icon: FileCheck2, filter: 'unreviewed' },
-    { label: '검색된 공고', value: noticeTotal, icon: FileText, filter: 'all' },
-    { label: '준비 문서', value: `${proposalDocumentCount}개`, icon: Building2, filter: 'all' },
   ];
+  /*
+    타일은 넷으로 줄였다. 「검색된 공고 914」와 「준비 문서 1개」는 우리 수집량이지
+    이 사람이 오늘 쓸 값이 아니다. 남긴 넷은 전부 누르면 목록이 걸러지는 필터다.
+  */
 
   async function startReview(notice: BidNoticeSummary) {
     const existing = existingCaseByNotice.get(notice.id);
@@ -308,64 +311,61 @@ export default function NoticesPage() {
   return (
     <main className="bg-white text-[var(--product-body)]">
       <section className="border-b border-[var(--product-line)] bg-[linear-gradient(120deg,#e6eeff_0%,#f0ebff_48%,#e8f4ff_100%)]">
-        {/* 아래 여백은 6타일 카드가 위로 올라와 걸칠 자리다.
-           여백에서 카드가 올라온 만큼(62px)을 뺀 값이 히어로 카드와 타일 사이의 실제 간격이 된다. */}
-        <div className="app-shell-container pt-8 pb-[96px] md:pt-[34px] md:pb-[124px]">
-          <div className="inline-flex min-h-[50px] items-center gap-3 rounded-2xl border border-white/80 bg-white/80 px-3.5 py-2 shadow-sm backdrop-blur">
-            <span className={`grid size-8 place-items-center rounded-full ${profileReady ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{profileReady ? <CheckCircle2 className="size-5" /> : <CircleHelp className="size-5" />}</span>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <strong>{company ? `${company.name} 프로필 ${profile.filled}/${profile.total} 영역 연결` : '회사 프로필이 필요합니다'}</strong>
-              <span className="text-[var(--product-muted)]">{profileReady ? '판정에 필요한 기본 정보가 준비됐습니다' : `${missingProfile.slice(0, 2).join(' · ')}${missingProfile.length > 2 ? ` 외 ${missingProfile.length - 2}개` : ''} 비어 있음 · 채우면 걸러드립니다`}</span>
-              {!profileReady && <Link href="/company" className="font-semibold text-[var(--product-accent-deep)]">채우러 가기 →</Link>}
-            </div>
+        <div className="app-shell-container pt-9 pb-10 md:pt-10 md:pb-12">
+          {/*
+            상자를 걷어낸다. 전에는 프로필 안내·검색·소개가 각각 상자여서 첫 화면에만 상자가 셋이었다.
+            프로필 안내는 배경 위에 한 줄로 얹고, 소개는 아래 검색 상자 안으로 넣어 상자를 하나로 줄인다.
+          */}
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[15px] text-[var(--product-body)]">
+            <span className={profileReady ? 'text-emerald-700' : 'text-amber-700'}>{profileReady ? <CheckCircle2 className="size-[18px]" /> : <CircleHelp className="size-[18px]" />}</span>
+            {/* 상태 한 줄이면 된다. 「채우면 걸러드립니다」 같은 설명은 링크가 이미 말한다. */}
+            <strong className="font-bold">{company ? `${company.name} · 프로필 ${profile.filled}/${profile.total}` : '회사 프로필이 필요합니다'}</strong>
+            {!profileReady && <Link href="/company" className="font-semibold text-[var(--product-accent-deep)]">채우면 걸러드립니다 →</Link>}
           </div>
 
-          {/*
-            업무 시작점은 검색이다. 이전에는 검색 카드(372px) 옆에 소개 배너가 더 크게 붙어
-            화면의 주인공이 소개문이었다. 검색을 전체 너비로 올리고, 제품 원칙을 말하는 배너는
-            지우지 않고 한 줄로 줄인다 — 「근거 없으면 판정하지 않는다」는 이 제품의 약속이라 뺄 수 없다.
-          */}
-          <form onSubmit={(event) => { event.preventDefault(); void initialize(query); }} className="mt-[22px] rounded-[24px] bg-white p-7 shadow-[0_16px_48px_rgba(55,70,120,0.12)]">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          {/* 업무 시작점은 검색이다. 검색 상자 하나에 제목·입력·단계 띠를 모두 담아 첫 화면의 상자를 하나로 유지한다. */}
+          <form onSubmit={(event) => { event.preventDefault(); void initialize(query); }} className="mt-4 overflow-hidden rounded-[24px] bg-white shadow-[0_16px_48px_rgba(55,70,120,0.12)]">
+            <div className="flex flex-col gap-5 p-7 lg:flex-row lg:items-end lg:justify-between">
               <div className="min-w-0">
-                <h1 className="text-[30px] font-extrabold leading-[1.3] tracking-[-0.04em] text-[var(--product-ink)]">검토할 공고를 바로 찾기</h1>
-                <p className="mt-2 text-[14px] leading-6 text-[var(--product-muted)]">공고번호나 공고명으로 좁힌 뒤, 검토를 시작하면 회사 프로필 기준 판정 상태가 함께 붙습니다.</p>
+                <h1 className="text-[28px] font-extrabold leading-[1.25] tracking-[-0.04em] text-[var(--product-ink)]">검토할 공고를 바로 찾기</h1>
               </div>
               <div className="flex h-[56px] w-full items-center rounded-2xl border border-[var(--product-line)] bg-white px-4 focus-within:border-[var(--product-accent)] lg:max-w-[520px]">
                 <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-auto flex-1 border-0 bg-transparent px-0 text-[15px] shadow-none focus-visible:ring-0" placeholder="공고번호 또는 공고명" aria-label="공고 검색" />
                 <button type="submit" className="grid size-10 place-items-center rounded-full bg-[var(--product-accent)] text-white" aria-label="검색">{loading ? <LoaderCircle className="size-5 animate-spin" /> : <Search className="size-5" />}</button>
               </div>
             </div>
+            {/*
+              세 단계는 이름만 있으면 읽힌다. 단계마다 설명을 두 문장씩 붙였더니
+              첫 화면이 「읽을거리」가 됐다. 무엇을 하는 서비스인지는 이름 셋이면 전달된다.
+            */}
+            <div className="flex flex-col gap-2 bg-[var(--product-accent-deep)] px-7 py-4 text-white lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {[
+                  { icon: <Search className="size-[18px]" />, title: '공고 찾기' },
+                  { icon: <FileCheck2 className="size-[18px]" />, title: '자격 판정' },
+                  { icon: <RefreshCw className="size-[18px]" />, title: '변경 재검증' },
+                ].map((step, index) => (
+                  <span key={step.title} className="flex items-center gap-3">
+                    {index > 0 && <ChevronRight className="size-4 text-white/40" />}
+                    <span className="flex items-center gap-2 text-[15px] font-bold">{step.icon}{step.title}</span>
+                  </span>
+                ))}
+              </div>
+              {/* 「근거 없으면 판정하지 않는다」는 이 제품의 약속이라 한 줄로 남긴다. */}
+              <span className="flex items-center gap-2 text-[13px] text-white/75"><ShieldCheck className="size-4" />근거가 없으면 판정하지 않고 「확인 필요」로 남깁니다</span>
+            </div>
           </form>
-
-          <div className="mt-4 flex flex-col gap-2 rounded-2xl bg-[var(--product-accent-deep)] px-5 py-4 text-white sm:flex-row sm:items-center sm:gap-4">
-            <span className="flex shrink-0 items-center gap-2 text-[13px] font-bold"><ShieldCheck className="size-4" />근거 우선</span>
-            <p className="text-[13px] leading-6 text-white/80">공고 원문에서 구조화된 자격조건과 회사 프로필을 비교합니다. 근거가 없거나 정보가 부족하면 억지로 결론 내리지 않고 확인 필요로 남깁니다.</p>
-          </div>
         </div>
 
       </section>
 
       {/*
-        6타일 카드는 히어로 경계에 걸쳐 보이게 둔다.
-        이전에는 transform으로 아래로 밀고(-mb + translate-y) 다음 섹션이 고정 pt로 피하는 구조였는데,
-        transform은 레이아웃 높이를 바꾸지 않아 118 - 62 - 62 = -6px 만큼 항상 아래를 덮었다.
-        (「공고 조회」 라벨 윗부분이 잘려 보이던 원인)
-        이제는 섹션 밖에서 위로 당긴다. 카드의 실제 높이가 아래 내용을 밀어내므로 겹칠 수 없다.
+        이 사람이 나라장터를 놔두고 여기 오는 이유는 「우리 회사가 넣을 수 있는 공고」 하나다.
+        그래서 검색 바로 다음이 그 목록이어야 한다. 전에는 화면 맨 아래에 있었다.
       */}
-      <div className="app-shell-container relative z-10 -mt-[62px]">
-          <div className="grid overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-white shadow-[0_18px_46px_rgba(35,50,90,0.1)] sm:grid-cols-2 lg:grid-cols-6">
-            {quickTiles.map(({ label, value, icon: Icon, filter }) => (
-              <button key={label} type="button" onClick={() => setStatusFilter(filter)} className={`min-h-[124px] border-b border-r border-[var(--product-line)] px-4 py-5 text-center transition-colors hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#f4f6ff]' : ''}`}>
-                <Icon className="mx-auto size-6 text-[var(--product-accent)]" />
-                <span className="mt-2 block text-[13px] font-medium text-[var(--product-muted)]">{label}</span>
-                <strong className="mt-1 block text-[24px] leading-8 text-[var(--product-ink)]">{value}</strong>
-              </button>
-            ))}
-          </div>
-      </div>
+      <CachedNoticeMatches />
 
-      <div className="app-shell-container pb-20 pt-14">
+      <div className="app-shell-container pb-20 pt-2">
         {/* 실패를 알리기만 하면 사용자가 할 수 있는 일이 없다. 같은 조회를 바로 다시 걸 수 있게 둔다. */}
         {error && <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
           <span className="flex items-start gap-2"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</span>
@@ -375,28 +375,33 @@ export default function NoticesPage() {
         </div>}
 
         <section>
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-            <div>
-              <p className="text-[13px] font-semibold text-[var(--product-accent-deep)]">공고 조회</p>
-              <h2 className="mt-1 text-[34px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
-              <p className="mt-2 text-[14px] text-[var(--product-muted)]">나라장터에서 수집한 공고입니다. 검토를 시작하면 판정 상태가 붙습니다. 아래 「회사 기준으로 판정 가능한 공고」는 이 중 분석이 끝난 것만 모은 자리입니다.</p>
-            </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="w-[62px] shrink-0 text-[12px] font-bold text-[var(--product-muted)]">사업 유형</span>
-                <button type="button" onClick={() => setBusinessTypeFilter('all')} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${businessTypeFilter === 'all' ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>전체 {notices.length}</button>
-                {businessTypeOptions.map(([type, count]) => <button key={type} type="button" onClick={() => setBusinessTypeFilter(type)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${businessTypeFilter === type ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{labelOf(BUSINESS_TYPE_LABEL, type)} {count}</button>)}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="w-[62px] shrink-0 text-[12px] font-bold text-[var(--product-muted)]">검토 상태</span>
-                {(['all', 'eligible', 'insufficient_data', 'unreviewed'] as StatusFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setStatusFilter(filter)} className={`rounded-full border px-4 py-2 text-[13px] font-medium ${statusFilter === filter ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{filter === 'all' ? '전체' : STATUS_COPY[filter].label}</button>)}
-              </div>
-            </div>
+          {/* 눈썹(「공고 조회」)과 제목(「조회된 공고」)이 같은 말이었다. 제목만 남긴다. */}
+          <h2 className="text-[28px] font-extrabold tracking-[-0.04em] text-[var(--product-ink)]">조회된 공고</h2>
+
+          {/*
+            타일은 이 목록의 검토 상태 필터다. 그래서 목록과 같은 섹션 안, 제목 바로 아래에 둔다.
+            전에는 매칭 카드와 이 섹션 사이에 혼자 떠 있어서 어느 쪽에 속한 값인지 읽히지 않았다.
+          */}
+          <div className="mt-5 grid overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            {quickTiles.map(({ label, value, icon: Icon, filter }) => (
+              <button key={label} type="button" aria-pressed={statusFilter === filter} onClick={() => { setStatusFilter(filter); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`border-b border-r border-[var(--product-line)] px-3 py-4 text-center transition-colors last:border-r-0 hover:bg-[var(--product-tint)] lg:border-b-0 ${statusFilter === filter ? 'bg-[#eef1ff]' : ''}`}>
+                <Icon className={`mx-auto size-5 ${statusFilter === filter ? 'text-[var(--product-accent-deep)]' : 'text-[var(--product-accent)]'}`} />
+                <span className="mt-1.5 block text-[13px] font-medium text-[var(--product-muted)]">{label}</span>
+                <strong className="mt-0.5 block text-[21px] leading-7 text-[var(--product-ink)]">{value}</strong>
+              </button>
+            ))}
           </div>
 
-          {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
-          {/* DL-007 — 「전체 공고」가 아니라 「검색으로 좁힌 결과의 상위 N건」이라는 사실을 화면이 말한다. */}
-          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 중 상위 {notices.length}건을 불러왔습니다{businessTypeFilter !== 'all' || statusFilter !== 'all' ? ` · 필터에 맞는 ${activeNotices.length}건` : ''} · 이 중 {Math.min(activeNotices.length, VISIBLE_NOTICE_LIMIT)}건 표시{activeNotices.length > VISIBLE_NOTICE_LIMIT ? ' · 원하는 공고는 검색으로 좁혀보세요' : ''}</p>}
+          {/* 사업 유형은 라벨을 칩 줄 안에 넣어 한 줄로 끝낸다. 라벨만 따로 열을 차지할 값어치가 없다. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="mr-0.5 text-[13px] font-bold text-[var(--product-muted)]">사업 유형</span>
+            <button type="button" aria-pressed={businessTypeFilter === 'all'} onClick={() => { setBusinessTypeFilter('all'); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === 'all' ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>전체 {notices.length}</button>
+            {businessTypeOptions.map(([type, count]) => <button key={type} type="button" aria-pressed={businessTypeFilter === type} onClick={() => { setBusinessTypeFilter(type); setVisibleCount(VISIBLE_NOTICE_LIMIT); }} className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${businessTypeFilter === type ? 'border-[var(--product-accent)] bg-[#eef1ff] text-[var(--product-accent-deep)]' : 'border-[var(--product-line)] bg-white text-[var(--product-muted)]'}`}>{labelOf(BUSINESS_TYPE_LABEL, type)} {count}</button>)}
+          </div>
+
+          {metaLoading && metaProgress.total > 0 && <p className="mt-3 flex items-center gap-2 text-[15px] text-[var(--product-muted)]"><LoaderCircle className="size-4 animate-spin" />판정 상태를 불러오는 중입니다 · {metaProgress.done}/{metaProgress.total}건</p>}
+          {/* DL-007 — 「전체 공고」가 아니라 「검색으로 좁힌 결과의 상위 N건」이라는 사실은 남기되, 문장이 아니라 수치로 적는다. */}
+          {!loading && <p className="mt-3 text-[13px] text-[var(--product-muted)]">검색 결과 {noticeTotal.toLocaleString()}건 · 불러온 {notices.length}건{businessTypeFilter !== 'all' || statusFilter !== 'all' ? ` · 필터 ${activeNotices.length}건` : ''} · 표시 {Math.min(activeNotices.length, visibleCount)}건</p>}
 
           {loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-7 animate-spin text-[var(--product-accent)]" /></div> : activeNotices.length ? (
             /*
@@ -406,49 +411,56 @@ export default function NoticesPage() {
               공고마다 버전을 따로 부르면 방금 없앤 N+1이 되살아난다 — 백엔드에 필드 추가를 요청해둔다.
             */
             <div className="mt-6 overflow-hidden rounded-[20px] border border-[var(--product-line)] bg-white">
-              <div className="hidden grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px] items-center gap-3 bg-[var(--product-tint)] px-5 py-3 text-[12px] font-bold text-[var(--product-muted)] lg:grid">
+              <div className="hidden grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px] items-center gap-3 bg-[var(--product-tint)] px-5 py-3 text-[13px] font-bold text-[var(--product-muted)] lg:grid">
                 <span>검토 상태</span><span>공고명 · 공고번호</span><span>공고기관</span><span>유형</span><span>변경</span><span className="text-right">조치</span>
               </div>
-              {activeNotices.slice(0, VISIBLE_NOTICE_LIMIT).map((notice) => {
+              {activeNotices.slice(0, visibleCount).map((notice) => {
                 const status = noticeStatus(notice.id);
                 const meta = caseMeta[notice.id];
                 const changed = notice.current_version > 1;
                 return (
                   <div key={notice.id} className="grid grid-cols-1 items-center gap-3 border-t border-[var(--product-line-2)] px-5 py-4 transition-colors hover:bg-[var(--product-tint)] lg:grid-cols-[132px_minmax(0,1fr)_180px_96px_112px_128px]">
                     <div>{metaLoading && !meta
-                      ? <span className="inline-block rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
-                      : <span className={`inline-block rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY[status].className}`}>{STATUS_COPY[status].label}</span>}</div>
+                      ? <span className="inline-block rounded-full border border-[var(--product-line)] bg-[var(--product-tint)] px-3 py-1 text-[13px] font-semibold text-[var(--product-muted)]">판정 확인 중</span>
+                      : <span className={`inline-block rounded-full border px-3 py-1 text-[13px] font-semibold ${OVERALL_STATUS_BADGE[status].className}`}>{OVERALL_STATUS_BADGE[status].label}</span>}</div>
                     <div className="min-w-0">
                       <strong className="block truncate text-[15px] font-bold text-[var(--product-ink)]">{notice.title}</strong>
-                      <span className="mt-1 block text-[12px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 판정 ${meta.judgment.judgment_count}건 · 확인 필요 ${meta.judgment.unknown_count}건 · 미달 ${meta.judgment.unsatisfied_count}건` : ''}</span>
+                      <span className="mt-1 block text-[13px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 판정 ${meta.judgment.judgment_count}건 · 확인 필요 ${meta.judgment.unknown_count}건 · 미달 ${meta.judgment.unsatisfied_count}건` : ''}</span>
                     </div>
-                    <span className="truncate text-[13px] text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'}</span>
-                    <span className="text-[13px] text-[var(--product-muted)]">{labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</span>
+                    <span className="truncate text-[15px] text-[var(--product-muted)]">{notice.announcing_institution_name ?? '공고기관 미상'}</span>
+                    <span className="text-[15px] text-[var(--product-muted)]">{labelOf(BUSINESS_TYPE_LABEL, notice.business_type)}</span>
                     {/*
                       차수가 1보다 크면 변경공고가 있었다는 뜻이다. 횟수는 백필 이력에 따라 달라질 수 있어 단정하지 않는다.
                       반대로 차수가 1이라고 원공고라고 말할 수는 없다 — 이력 백필(#129) 전에 수집된 공고는
                       변경이 있었어도 차수가 1로 남아 있다. 확인된 것만 쓴다.
                     */}
-                    <span className={`text-[13px] ${changed ? 'font-semibold text-amber-700' : 'text-[var(--product-faint)]'}`}>{changed ? `변경 있음 · v${notice.current_version}` : '변경 여부 확인 전'}</span>
+                    <span className={`text-[15px] ${changed ? 'font-semibold text-amber-700' : 'text-[var(--product-faint)]'}`}>{changed ? `변경 있음 · v${notice.current_version}` : '변경 여부 확인 전'}</span>
                     <div className="lg:text-right"><Button size="sm" onClick={() => void startReview(notice)} disabled={creatingNoticeId !== null} className="rounded-full px-4">{creatingNoticeId === notice.id ? <LoaderCircle className="animate-spin" /> : existingCaseByNotice.has(notice.id) ? '검토 보기' : '검토 시작'}<ArrowRight /></Button></div>
                   </div>
                 );
               })}
+              {activeNotices.length > visibleCount && (
+                <div className="border-t border-[var(--product-line-2)] px-5 py-4 text-center">
+                  <Button type="button" variant="outline" className="rounded-full px-6" onClick={() => setVisibleCount((count) => count + VISIBLE_NOTICE_LIMIT)}>
+                    <ChevronDown /> 더 보기 · 남은 {activeNotices.length - visibleCount}건
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center">
               <Search className="mx-auto size-8 text-[var(--product-faint)]" />
               {emptyReason === 'only-rejected' ? (
                 <>
-                  <p className="mt-3 font-semibold">검색 결과 {rejectedNotices.length}건이 모두 자격 미달입니다.</p>
-                  <p className="mt-1 text-sm text-[var(--product-muted)]">회사 프로필 기준으로 참가가 어려운 공고라 아래 「자격 미달로 접어둔 공고」에 있습니다. 숨기지 않았습니다.</p>
+                  <p className="mt-3 font-semibold">검색 결과 {rejectedNotices.length}건이 모두 참가 불가입니다.</p>
+                  <p className="mt-1 text-sm text-[var(--product-muted)]">회사 프로필 기준으로 참가가 어려운 공고라 아래 「참가 불가로 접어둔 공고」에 있습니다. 숨기지 않았습니다.</p>
                   <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => setShowRejected(true)}>아래에서 보기 ↓</Button>
                 </>
               ) : emptyReason === 'filtered-out' ? (
                 <>
                   <p className="mt-3 font-semibold">검색 결과 {notices.length}건이 켜둔 필터에 걸려 표시되지 않았습니다.</p>
                   <p className="mt-1 text-sm text-[var(--product-muted)]">사업 유형 또는 검토 상태 필터를 해제하면 보입니다.</p>
-                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => { setBusinessTypeFilter('all'); setStatusFilter('all'); }}>필터 모두 해제</Button>
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => { setBusinessTypeFilter('all'); setStatusFilter('all'); setVisibleCount(VISIBLE_NOTICE_LIMIT); }}>필터 모두 해제</Button>
                 </>
               ) : (
                 <>
@@ -461,19 +473,23 @@ export default function NoticesPage() {
         </section>
 
         <section className="mt-12 overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-[var(--product-tint)]">
-          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${rejectedOpen ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[13px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[13px] font-medium">{rejectedOpen ? '접기' : '펼치기'}</span></button>
+          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${rejectedOpen ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">참가 불가로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[15px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[15px] font-medium">{rejectedOpen ? '접기' : '펼치기'}</span></button>
           {rejectedOpen && <div className="border-t border-[var(--product-line)] bg-white px-6">{rejectedNotices.length ? rejectedNotices.map((notice) => {
             const meta = caseMeta[notice.id];
-            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY.ineligible.className}`}>자격 미달</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong>{/* 공고번호로 검색해 찾아온 행에 공고번호가 없으면 같은 건인지 확인할 수 없다. 판정 요약과 같이 적는다. */}
-              <span className="mt-1 block text-[12px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : ''}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[13px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
-          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 자격 미달로 판정된 공고가 없습니다.'}</p>}</div>}
+            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[13px] font-semibold ${OVERALL_STATUS_BADGE.ineligible.className}`}>{OVERALL_STATUS_BADGE.ineligible.label}</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong>{/* 공고번호로 검색해 찾아온 행에 공고번호가 없으면 같은 건인지 확인할 수 없다. 판정 요약과 같이 적는다. */}
+              <span className="mt-1 block text-[13px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : ''}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[15px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
+          }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 참가 불가로 판정된 공고가 없습니다.'}</p>}</div>}
         </section>
 
-        <section className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1fr)_452px]">
-          <div className="rounded-[22px] border border-[var(--product-line)] bg-white p-7"><div className="flex items-center gap-3"><h2 className="text-[27px] font-extrabold tracking-[-0.035em]">공지사항</h2><Sparkles className="size-5 text-[var(--product-accent)]" /></div><div className="mt-5 divide-y divide-[var(--product-line-2)]">{[['데이터 연결', '공고·회사·판정 데이터를 실제 나라장터 수집 기준으로 연결합니다.'], ['근거 원칙', '판정 결과는 공고 원문 근거와 연결되는 경우에만 화면에 보여줍니다.'], ['변경공고', '변경공고는 이전 차수를 덮어쓰지 않고 판정 영향과 함께 추적합니다.']].map(([title, text]) => <div key={title} className="grid gap-2 py-5 sm:grid-cols-[130px_minmax(0,1fr)]"><strong className="text-[13px] text-[var(--product-accent-deep)]">{title}</strong><span className="text-[14px]">{text}</span></div>)}</div></div>
-          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[26px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[34px]">{metaLoading ? '—' : unknownTotal}</strong></div><p className="mt-3 text-[14px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[14px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[12px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[13px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[13px] text-white/65">{metaLoading ? '판정 상태를 불러오는 중입니다' : '지금 답할 항목이 없습니다'}</p>}</aside>        </section>
+        {/*
+          「공지사항」은 데이터 연결·근거 원칙·변경공고 세 줄이었는데, 첫 화면 소개 ①②③가
+          같은 말을 이미 한다. 두 번 말하지 않고 지운다. 확인 필요 안내만 전체 폭으로 남긴다.
+        */}
+        <section className="mt-12">
+          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[28px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[28px]">{metaLoading ? '—' : unknownTotal}</strong></div><p className="mt-3 text-[15px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[15px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[13px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[15px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[15px] text-white/65">{metaLoading ? '판정 상태를 불러오는 중입니다' : '지금 답할 항목이 없습니다'}</p>}</aside>        </section>
 
-        <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[14px] text-[var(--product-muted)]">{missingProfile.length ? `${missingProfile.join(' · ')} 영역이 아직 비어 있습니다.` : '현재 기본 프로필 영역이 모두 연결되어 있습니다.'}</p></div><div className="flex items-center gap-4"><span className="text-[13px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company"><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]">프로필 보완</Button></Link></div></section>
+        {/* 다 채운 사람에게 「모두 연결되어 있습니다」를 한 블록 크기로 알릴 이유가 없다. 빌 때만 띄운다. */}
+        {missingProfile.length > 0 && <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">{missingProfile.join(' · ')} 영역이 아직 비어 있습니다.</p></div><div className="flex items-center gap-4"><span className="text-[15px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company"><Button variant="outline" className="rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]">프로필 보완</Button></Link></div></section>}
       </div>
     </main>
   );

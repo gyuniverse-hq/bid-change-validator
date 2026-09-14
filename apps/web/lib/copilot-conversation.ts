@@ -1,8 +1,9 @@
 import { apiFetch, ApiError } from './api';
+import { validateEnvelope } from './copilot-v31';
 import type { CopilotChatRequest, CopilotChatResponse, CopilotIntent, ReplyContext } from './copilot-api';
 
 export type Turn = { id: number; question: string; response?: CopilotChatResponse };
-export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext };
+export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorCode: string; focus: string | null; revision: number; reply?: ReplyContext; conversationId?: string; serverRevision?: number; targetId?: string };
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
 type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean; document_processing?: boolean };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
@@ -21,7 +22,7 @@ async function sendConversationMessage(request: ConversationRequest): Promise<Co
       'Content-Type': 'application/json',
       ...(semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, response_version: '3.1' }),
   });
   if (!response.ok) {
     const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
@@ -38,7 +39,27 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function sameReadReceipt(a: ReplyContext['last_read_receipt'] | null | undefined, b: ReplyContext['last_read_receipt'] | null | undefined) {
+  return Boolean(a && b && canonical(a) === canonical(b));
+}
+
+function conversationReply(next: ReplyContext | undefined, previous?: ReplyContext): ReplyContext | undefined {
+  if (!next) return undefined;
+  if (next.status === 'RESOLVED' && next.visible_requirement_keys.length === 0 &&
+      previous?.visible_requirement_keys.length && sameReadReceipt(next.last_read_receipt, previous.last_read_receipt)) {
+    // A manual-review/help turn can legitimately expose no targetable requirement.
+    // Keep the last requirement list the user actually saw while Product Truth is
+    // unchanged, so a later "첫 번째 조건" still refers to that visible list.
+    return { ...next, visible_requirement_keys: [...previous.visible_requirement_keys] };
+  }
+  return next;
+}
+
 const compactQuestion = (text: string) => text.replace(/\s+/g, '').replace(/[?.!。？！]/g, '');
+
+export function hasOrdinalReference(question: string) {
+  return /(?:[+-]?\d+(?:\.\d+)?|첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)번째/.test(compactQuestion(question));
+}
 
 export function isCopilotHelpQuestion(question: string) {
   const text = compactQuestion(question);
@@ -86,7 +107,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
       reasons: [
         { text: '예: “우리 회사가 참가할 수 있는지 알려줘”, “무엇을 확인해야 해?”, “첫 번째 조건 근거 보여줘”', requirement_key: null, evidence_refs: [] },
         { text: '비교 가능한 이전 버전이 있는 공고라면 변경된 자격요건도 확인할 수 있어요.', requirement_key: null, evidence_refs: [] },
-        { text: '자연어 의미 이해를 켜면 질문과 최소 대화 맥락(이전 요청 유형·선택 여부)을 외부 AI 분류기에 보내 더 다양한 표현을 이해할 수 있어요. 회사 프로필과 저장 입력은 보내지 않아요.', requirement_key: null, evidence_refs: [] },
+        { text: 'AI 상세 설명을 켜면 질문 이해와 자연스러운 설명을 위해 현재 판정 결과·요건 상태와 판정에 필요한 회사 프로필 정보를 AI 처리에 사용해요.', requirement_key: null, evidence_refs: [] },
         { text: '공고문 근거 답변을 켜면 질문과 현재 공개 공고문을 외부 AI·임베딩 처리에 사용하고, 실제 인용 근거가 있는 경우에만 생성형 설명을 보여줘요.', requirement_key: null, evidence_refs: [] },
         { text: '답변 반영이나 재검증은 대화만으로 실행하지 않고, 제안을 확인한 뒤 명시적인 실행 버튼을 눌러야 합니다.', requirement_key: null, evidence_refs: [] },
       ],
@@ -104,6 +125,7 @@ function localHelpResponse(contextRevision: number, reply?: ReplyContext): Copil
 }
 
 export function validateSources(response: CopilotChatResponse) {
+  if (response.envelope) { validateEnvelope(response.envelope); return; }
   const refs = response.sources.map(s => s.ref);
   const used = [...new Set([...response.answer.matchAll(/\[(S\d+)\]/g)].map(m => m[1]))];
   const required = response.presentation?.reasons.flatMap(r => r.evidence_refs) ?? [];
@@ -133,10 +155,18 @@ export class ConversationStore {
   focus(caseId: string, key: string | null, reply?: ReplyContext | null) {
     this.update(caseId, { focus: key, reply: reply ?? this.get(caseId).reply, revision: this.get(caseId).revision + 1, busy: false });
   }
+  selectTarget(caseId: string, targetId: string) {
+    this.update(caseId, { targetId, focus: null });
+  }
+  newConversation(caseId: string) {
+    const revision = this.get(caseId).revision + 1;
+    this.failed.delete(caseId);
+    this.update(caseId, { ...empty(), revision });
+  }
   publish(caseId: string, response: CopilotChatResponse) {
     validateSources(response);
     const state = this.get(caseId), revision = state.revision + 1;
-    this.update(caseId, { revision, busy: false, focus: null, reply: response.reply_context ?? undefined,
+    this.update(caseId, { revision, busy: false, focus: null, reply: conversationReply(response.reply_context ?? undefined, state.reply),
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }
   async retry(caseId: string, semanticProcessing?: boolean, documentProcessing?: boolean) {
@@ -175,7 +205,9 @@ export class ConversationStore {
     }
 
     const request: ConversationRequest = {
-        case_id: caseId, message: question, intent: intent ?? inferE1Intent(question), requirement_key: old.focus,
+        case_id: caseId, message: question, intent: intent ?? inferE1Intent(question),
+        conversation_id: old.conversationId, context_revision: old.serverRevision, target_id: old.targetId,
+        requirement_key: hasOrdinalReference(question) ? undefined : old.focus,
         semantic_processing: semanticProcessing || undefined,
         document_processing: documentProcessing || undefined,
         conversation_context: { request_id: crypto.randomUUID(), context_revision: revision, source_page: page,
@@ -188,11 +220,15 @@ export class ConversationStore {
     try {
       const response = await this.transport(request);
       validateSources(response);
+      if (response.envelope) validateEnvelope(response.envelope, caseId);
       if (this.get(caseId).revision !== revision) return;
       this.failed.delete(caseId);
-      this.update(caseId, { busy: false, reply: response.reply_context ?? undefined,
+      const current = this.get(caseId);
+      this.update(caseId, { busy: false, reply: conversationReply(response.reply_context ?? undefined, current.reply),
+        conversationId: response.envelope?.conversation_id ?? current.conversationId,
+        serverRevision: response.envelope?.context_revision ?? current.serverRevision, targetId: undefined,
         focus: response.reply_context?.requirement_key ?? null,
-        turns: this.get(caseId).turns.map(t => t.id === revision ? { ...t, response } : t) });
+        turns: current.turns.map(t => t.id === revision ? { ...t, response } : t) });
     } catch (error) {
       if (this.get(caseId).revision !== revision) return;
       this.failed.set(caseId, { request: structuredClone(request), turnId: revision });

@@ -73,7 +73,7 @@ def test_revalidation_refuses_incompatible_source(scenario, override, code):
 
 def test_revalidation_refuses_source_from_previous_rule_version(scenario):
     source = judge(scenario)
-    assert source['rule_version'] == RULE_VERSION == 'qualification-rules-v0.3'
+    assert source['rule_version'] == RULE_VERSION == 'qualification-rules-v0.4'
 
     with SessionLocal() as db:
         run = db.get(QualificationJudgmentRun, source['id'])

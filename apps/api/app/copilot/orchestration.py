@@ -318,6 +318,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
                                                     task_status='PASS' if complete else 'PARTIAL' if claims or tools.card else 'FAIL',
                                                     elapsed_ms=round((monotonic() - gateway.started) * 1000),
                                                     calls=gateway.calls, validation_events=events, tools=tools.trace,
+                                                    deadline_seconds=150 if getattr(gateway, 'document_review', False) else 45,
                                                     plan=plan.model_dump(mode='json')))
     state.scope = bundle.scope
     state.targets = (state.targets + targets)[-100:]

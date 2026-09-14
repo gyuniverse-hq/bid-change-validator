@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .judgment_schemas import QualificationJudgmentRunRead
 
 
@@ -13,6 +13,8 @@ class QualificationQuestionRead(BaseModel):
     askable: bool = True
     askability_reason_code: str = "ASKABLE_SIMPLE_FACT"
     askability_reason: str = ""
+    confirmation_fields: list[dict[str, str]] = Field(default_factory=list)
+    confirmation_basis: str | None = None
 
 
 class QualificationAnswerCreate(BaseModel):

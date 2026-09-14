@@ -47,6 +47,25 @@ def test_browser_login_chat_selected_target_against_real_db(state, authenticated
     run_http_browser(state, authenticated_api)
 
 
+def test_browser_source_bound_confirmation(state, authenticated_api):
+    from sqlalchemy import select
+    from apps.api.app.analysis_models import QualificationRequirementRecord
+    from apps.api.tests.test_source_condition_contracts import RAW
+    from apps.api.app.qualification.rules.source_contracts import transport_contract
+    db, case, analysis, _ = state
+    requirement = db.scalar(select(QualificationRequirementRecord).where(QualificationRequirementRecord.analysis_run_id == analysis.id,
+        QualificationRequirementRecord.requirement_key == 'REQ-REGISTRATION'))
+    requirement.type, requirement.value_json, requirement.raw = 'INDUSTRY', '1227', RAW
+    requirement.scope, requirement.condition_complexity = {'source_contract': transport_contract(RAW)}, 'composite'
+    for evidence in analysis.evidence:
+        if evidence.evidence_key in requirement.evidence_keys:
+            evidence.quote = RAW
+    db.commit()
+    response = authenticated_api.post(f'/api/v1/preflight-cases/{case.id}/qualification-judgments', json={'analysis_run_id': str(analysis.id)})
+    assert response.status_code == 200, response.text
+    run_http_browser(state, authenticated_api, 'check-source-confirmation-browser.mjs')
+
+
 def test_browser_account_switch_and_rule_recovery(state, authenticated_api):
     import secrets
     from sqlalchemy import select

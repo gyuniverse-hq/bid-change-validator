@@ -24,15 +24,22 @@ export function ActionCard({ caseId, compact = false }: { caseId: string; compac
     </>}
     {!compact && draft && <>
       <p>{draft.label}</p>
-      {(['satisfies_requirement', 'evidence_held'] as const).map(field => <label key={field} htmlFor={`${id}-${field}`}>
+      {draft.confirmation_fields?.map(field => <label key={field.key} htmlFor={`${id}-${field.key}`}>
+        {field.label}
+        <select id={`${id}-${field.key}`} disabled={locked} value={draft.confirmation_answers?.[field.key] == null ? '' : String(draft.confirmation_answers[field.key])}
+          onChange={event => controller.editConfirmation(caseId, field.key, event.target.value === '' ? null : event.target.value === 'true')}>
+          <option value="">미확인</option><option value="true">예</option><option value="false">아니요</option>
+        </select>
+      </label>)}
+      {(draft.confirmation_fields?.length ? ['evidence_held'] as const : ['satisfies_requirement', 'evidence_held'] as const).map(field => <label key={field} htmlFor={`${id}-${field}`}>
         {field === 'satisfies_requirement' ? '이 요건을 충족하나요?' : '증빙을 보유하고 있나요?'}
         <select id={`${id}-${field}`} disabled={locked} value={draft[field] === null ? '' : String(draft[field])}
           onChange={event => controller.edit(caseId, { [field]: event.target.value === '' ? null : event.target.value === 'true' })}>
           <option value="">선택해 주세요</option><option value="true">예</option><option value="false">아니요</option>
         </select>
       </label>)}
-      <label htmlFor={`${id}-value`}>답변 값 (필요한 경우)<input id={`${id}-value`} maxLength={2000} value={draft.normalized_value} disabled={locked}
-        onChange={event => controller.edit(caseId, { normalized_value: event.target.value })} /></label>
+      {!draft.confirmation_fields?.length && <label htmlFor={`${id}-value`}>답변 값 (필요한 경우)<input id={`${id}-value`} maxLength={2000} value={draft.normalized_value} disabled={locked}
+        onChange={event => controller.edit(caseId, { normalized_value: event.target.value })} /></label>}
       <Button type="button" variant="outline" disabled={locked || draft.satisfies_requirement === null || draft.evidence_held === null}
         onClick={() => void controller.propose(caseId)}>반영 제안 받기 · 아직 저장 안 함</Button>
     </>}
@@ -40,7 +47,7 @@ export function ActionCard({ caseId, compact = false }: { caseId: string; compac
       <h4 className="font-semibold">{action.proposal.title}</h4><p>{action.proposal.consequences}</p>
       {action.proposal.action_type === 'REVALIDATE'
         ? <p>기준 v{action.proposal.expected.baseline.version_number} → 현재 v{action.proposal.expected.current.version_number}<br />범위: 변경된 참가자격 요건 전체. 특정 요건만 선택하거나 제외할 수 없습니다.</p>
-        : <p>공고 v{action.proposal.expected.version_number} · 대상: {draft?.label ?? action.proposal.requirement_key}<br />충족: {action.proposal.user_input.satisfies_requirement ? '예' : '아니요'} · 증빙: {action.proposal.user_input.evidence_held ? '예' : '아니요'}<br />값: {action.proposal.user_input.normalized_value || '미입력'}</p>}
+        : <p>공고 v{action.proposal.expected.version_number} · 대상: {draft?.label ?? action.proposal.requirement_key}<br />충족: {action.proposal.user_input.satisfies_requirement ? '예' : '아니요'} · 증빙: {action.proposal.user_input.evidence_held ? '예' : '아니요'}<br />{draft?.confirmation_fields?.length ? draft.confirmation_fields.map(f => `${f.label}: ${draft.confirmation_answers?.[f.key] ? '예' : '아니요'}`).join(' / ') : `값: ${action.proposal.user_input.normalized_value || '미입력'}`}</p>}
       <Button type="button" className="copilot-action-confirm" disabled={locked || action.stage !== 'PROPOSAL_READY'}
         onClick={() => void controller.confirm(caseId, true)}>내용 확인 후 실행</Button>
     </>}

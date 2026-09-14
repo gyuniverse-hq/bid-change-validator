@@ -27,6 +27,9 @@ class ModelGateway:
     def call(self, stage, system, body, schema):
         if not self.enabled:
             raise RuntimeError('MODEL_PROCESSING_DISABLED')
+        if stage in {'document_extract', 'document_verify', 'document_repair', 'document_revalidate'}:
+            if not getattr(self, 'document_review', False) or sum(c['stage'].startswith('document_') for c in self.calls) >= 26:
+                raise BudgetExceeded('DOCUMENT_REVIEW_BUDGET')
         quality = [c for c in self.calls if c['stage'] in {'generate', 'validate', 'repair', 'revalidate'}]
         if (stage in {'generate', 'validate', 'repair', 'revalidate'} and len(quality) >= 4) or self.remaining() < 1:
             raise BudgetExceeded('TURN_BUDGET')

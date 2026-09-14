@@ -71,7 +71,7 @@ def _render_content_type(document: NoticeDocument) -> str:
         return "application/pdf"
     if name.endswith(".hwpx") or document.text_extractor == "HWPX_XML":
         return "application/hwp+zip"
-    if name.endswith(".hwp") or document.text_extractor == "HWP5_BODYTEXT":
+    if name.endswith(".hwp") or (document.text_extractor or '').startswith("HWP5_BODYTEXT"):
         return "application/x-hwp"
     return document.content_type or "application/octet-stream"
 

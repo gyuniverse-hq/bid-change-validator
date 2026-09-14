@@ -85,6 +85,14 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
 
     baseline_analysis = _select_analysis_run(db, notice_version_id=case.baseline_version_id, explicit_run_id=payload.baseline_analysis_run_id or source.analysis_run_id, label="기준")
     current_analysis = _select_analysis_run(db, notice_version_id=case.current_version_id, explicit_run_id=payload.current_analysis_run_id, label="현재")
+    from .source_repair import source_conditions
+    from .rules.source_contracts import VERSION
+    snapshot, conditions = source_conditions(current_analysis.notice_version)
+    marker = {'version': VERSION, 'fingerprint': snapshot.fingerprint}
+    if conditions and not any(d.get('code') == 'SOURCE_CONTRACTS_APPLIED' and d.get('details', {}).get('source') == marker
+                              for d in current_analysis.diagnostics or []):
+        raise QualificationJudgmentError('SOURCE_CONTRACT_REVIEW_REQUIRED',
+            '현재 차수의 원문 조건 보완이 필요합니다. 참가자격 화면에서 저장된 분석으로 다시 판정한 뒤 재검증해 주세요.')
     baseline = analysis_run_response(baseline_analysis)
     current = analysis_run_response(current_analysis)
     changes = diff_requirements(baseline.requirements, current.requirements)

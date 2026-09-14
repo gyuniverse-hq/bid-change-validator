@@ -71,6 +71,8 @@ def run_targeted_qualification_judgment(
         db.get(CompanyQualificationProfileCompleteness, company.id)
     )
     profile = build_company_profile_snapshot(company, completeness)
+    from .source_repair import repair_analysis_from_sources
+    analysis_run = repair_analysis_from_sources(db, analysis_run)
     analysis = analysis_run_response(analysis_run)
     actual_reference_date = reference_date or date.today()
     evaluation = judge_requirements(

@@ -22,7 +22,7 @@ from ...ai.contracts import Judgment, QualificationRequirement
 from .clause_safety import unsafe_clause_reason
 
 
-RULE_VERSION = "qualification-rules-v0.3"
+RULE_VERSION = "qualification-rules-v0.4"
 OverallQualificationStatus = Literal["eligible", "ineligible", "insufficient_data"]
 
 
@@ -470,6 +470,12 @@ def _judge_industry(
     profile: CompanyProfileSnapshot,
     preflight_case_id: str,
 ) -> Judgment:
+    from .source_contracts import industry_identity
+    identity = industry_identity(requirement.value, requirement.raw)
+    if identity == ('', ''):
+        return _unknown(requirement, preflight_case_id, unsupported=True)
+    if identity:
+        requirement = requirement.model_copy(update={'value': identity[0]})
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
 
@@ -773,6 +779,21 @@ def judge_requirement(
     preflight_case_id: str,
     reference_date: date,
 ) -> Judgment:
+    from .source_contracts import valid_contract
+    contract = valid_contract(requirement)
+    if contract:
+        if contract['kind'] in {'WASTE_TRANSPORT', 'INDUSTRY_ANY'}:
+            codes = contract.get('codes', [contract.get('code')])
+            match = next((i for i in profile.industries if i.code in codes), None)
+            if match:
+                return _judgment(requirement=requirement, preflight_case_id=preflight_case_id,
+                    status='SATISFIED', basis_type='PROFILE', evidence_held=match.verified,
+                    reason_code='RULE_MATCH', profile_refs=[_profile_ref('industry', 'code', match.code)])
+            if contract['kind'] == 'INDUSTRY_ANY' and profile.completeness.industries:
+                return _judgment(requirement=requirement, preflight_case_id=preflight_case_id,
+                    status='UNSATISFIED', basis_type='PROFILE', reason_code='RULE_MISMATCH')
+        # No registration match does not disprove a legally available exception.
+        return _unknown(requirement, preflight_case_id)
     # 안전 가드가 가장 먼저다. 판정하기 위험한 조항(복합 조건·부정 조건 등)이면
     # 확장 경로라고 예외일 이유가 없다. 순서를 뒤집으면 SW등급 요건이 가드를
     # 우회해서, 하나로 줄일 수 없는 조건을 충족/미충족으로 단정하게 된다.
@@ -843,6 +864,11 @@ def derive_overall_status(
 
     for requirement in requirements:
         if requirement.requirement_role != "mandatory":
+            continue
+        source_group = requirement.scope.get('source_group')
+        if isinstance(source_group, dict) and source_group.get('relation') == 'UNRESOLVED':
+            group_key = 'unresolved-source:' + str(source_group.get('key') or requirement.requirement_key)
+            grouped.setdefault(group_key, ('ALL_OF', ['UNKNOWN']))
             continue
         group_key = requirement.requirement_group_key or requirement.requirement_key
         operator = requirement.group_operator or "ALL_OF"

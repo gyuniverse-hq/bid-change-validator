@@ -22,7 +22,7 @@ import {
   type QualificationQuestion,
 } from '@/lib/qualification-api';
 
-const CURRENT_QUALIFICATION_RULE_VERSION = 'qualification-rules-v0.3';
+const CURRENT_QUALIFICATION_RULE_VERSION = 'qualification-rules-v0.4';
 
 export type CaseWorkspace = {
   caseItem: PreflightCase;

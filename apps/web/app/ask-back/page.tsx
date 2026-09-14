@@ -92,7 +92,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-[19px] font-bold tracking-[-0.03em] text-[var(--product-ink)]">확인 필요 {totalUnknown}건 중 <span className="text-[var(--product-accent)]">답할 수 있는 것은 {askable.length}건</span>입니다</h2>
-              <p className="mt-2 text-[13.5px] text-[var(--product-muted)]">복합·예외·법적 요건은 사용자 답변만으로 판정하지 않습니다. 해당 조건은 원문 검토 대상으로 남겨둡니다.</p>
+              <p className="mt-2 text-[13.5px] text-[var(--product-muted)]">원문과 연결된 확인 항목은 조건별로 답변합니다. 구조화되지 않은 복합·예외 조건은 원문 검토 대상으로 남겨둡니다.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {/* 사용자가 직접 답한 개수가 아니라 자동 판정까지 포함한 값이라 「진행」이 아니라 「판정 완료」로 쓴다 */}

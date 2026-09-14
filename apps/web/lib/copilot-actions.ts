@@ -3,7 +3,7 @@ import { sendCopilotMessage, confirmCopilotAction, type ActionProposal, type Cop
 import { validateSources } from './copilot-conversation';
 
 export type Execution = 'IDLE' | 'DRAFT' | 'PROPOSAL_READY' | 'CONFIRMING' | 'REFRESHING' | 'COMPLETED' | 'STALE' | 'FAILED' | 'OUTCOME_UNKNOWN' | 'DONE_REFRESH_FAILED' | 'AUTH_REQUIRED';
-export type Draft = { requirement_key: string; label: string; satisfies_requirement: boolean | null; evidence_held: boolean | null; normalized_value: string; receipt: ReadReceipt };
+export type Draft = { requirement_key: string; label: string; satisfies_requirement: boolean | null; evidence_held: boolean | null; normalized_value: string; receipt: ReadReceipt; confirmation_fields?: { key: string; label: string }[]; confirmation_basis?: string | null; confirmation_answers?: Record<string, boolean | null> };
 export type ActionState = { stage: Execution; busy: boolean; externalBusy: boolean; revision: number; draft: Draft | null; proposal: ActionProposal | null; result: ConfirmActionResult | null; response: CopilotChatResponse | null; message: string };
 const initial = (): ActionState => ({ stage: 'IDLE', busy: false, externalBusy: false, revision: 0, draft: null, proposal: null, result: null, response: null, message: '' });
 export const isLocked = (state: ActionState) => state.busy || state.externalBusy || ['CONFIRMING', 'REFRESHING', 'OUTCOME_UNKNOWN', 'DONE_REFRESH_FAILED'].includes(state.stage);
@@ -69,13 +69,25 @@ export class ActionController {
       }
       if (!question?.askable || !receipt || receipt.kind !== 'product' || receipt.provenance.case_id !== caseId) throw new Error('사용자 답변이 가능한 현재 요건이 아닙니다.');
       this.update(caseId, { busy: false, stage: 'DRAFT', draft: { requirement_key: key, label: question.question,
-        satisfies_requirement: null, evidence_held: null, normalized_value: '', receipt } });
+        satisfies_requirement: null, evidence_held: null, normalized_value: '', receipt,
+        confirmation_fields: question.confirmation_fields, confirmation_basis: question.confirmation_basis,
+        confirmation_answers: Object.fromEntries((question.confirmation_fields ?? []).map(f => [f.key, null])) } });
     } catch (error) { if (this.get(caseId).revision === revision) this.fail(caseId, error); }
   }
   edit(caseId: string, patch: Partial<Pick<Draft, 'satisfies_requirement' | 'evidence_held' | 'normalized_value'>>) {
     const state = this.get(caseId);
     if (!state.draft || isLocked(state)) return;
     this.update(caseId, { draft: { ...state.draft, ...patch }, proposal: null, stage: 'DRAFT', message: '', revision: state.revision + 1 });
+  }
+  editConfirmation(caseId: string, key: string, value: boolean | null) {
+    const state = this.get(caseId), draft = state.draft;
+    if (!draft || isLocked(state) || !draft.confirmation_fields?.some(f => f.key === key)) return;
+    const answers = { ...draft.confirmation_answers, [key]: value };
+    const complete = draft.confirmation_fields.every(f => typeof answers[f.key] === 'boolean');
+    this.update(caseId, { draft: { ...draft, confirmation_answers: answers,
+      satisfies_requirement: complete ? Object.values(answers).every(v => v === true) : null,
+      normalized_value: JSON.stringify({ basis: draft.confirmation_basis, answers }) },
+      proposal: null, stage: 'DRAFT', message: '', revision: state.revision + 1 });
   }
   cancel(caseId: string) {
     const state = this.get(caseId);

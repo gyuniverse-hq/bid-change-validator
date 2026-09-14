@@ -210,6 +210,8 @@ export type QualificationJudgmentSummary = {
 };
 
 export type QualificationQuestion = {
+  confirmation_fields?: { key: string; label: string }[];
+  confirmation_basis?: string | null;
   requirement_key: string;
   requirement_type: string;
   question: string;

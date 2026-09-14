@@ -53,6 +53,8 @@ def list_questions(
         if requirement is None:
             continue
         decision = classify_askability(requirement)
+        from .rules.source_contracts import valid_contract, confirmation_fields
+        contract = valid_contract(requirement)
         questions.append(
             QualificationQuestionRead(
                 requirement_key=requirement.requirement_key,
@@ -66,6 +68,8 @@ def list_questions(
                 askable=decision.askable,
                 askability_reason_code=decision.reason_code,
                 askability_reason=decision.reason,
+                confirmation_fields=[{'key': key, 'label': label} for key, label in confirmation_fields(contract)] if contract else [],
+                confirmation_basis=contract['raw_sha256'] if contract else None,
             )
         )
 
@@ -143,12 +147,19 @@ def answer_and_rejudge(
             status_code=422,
         )
 
+    status = 'SATISFIED' if payload.satisfies_requirement else 'UNSATISFIED'
+    from .rules.source_contracts import valid_contract, confirmation_fields
+    contract = valid_contract(requirement)
+    if contract and confirmation_fields(contract):
+        from .rules.source_contracts import validate_confirmation_input
+        satisfied = validate_confirmation_input(contract, payload.normalized_value, payload.satisfies_requirement)
+        status = 'SATISFIED' if satisfied else 'UNSATISFIED'
     replacement = Judgment(
         judgment_key=f"JUDG:{case_id}:{requirement.requirement_key}",
         preflight_case_id=str(case_id),
         notice_version_id=str(source.notice_version_id),
         requirement_key=requirement.requirement_key,
-        status="SATISFIED" if payload.satisfies_requirement else "UNSATISFIED",
+        status=status,
         basis_type="USER_ANSWER",
         evidence_held=payload.evidence_held,
         value_source="askback",

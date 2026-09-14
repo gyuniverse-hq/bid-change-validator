@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
+from threading import RLock
 from apps.api.tests.test_copilot_v31_db import state, authenticated_api
 from apps.api.tests.test_copilot_v31_browser_db import test_browser_login_chat_selected_target_against_real_db as run_browser
 from apps.api.app.copilot.model_gateway import ModelGateway, BudgetExceeded
@@ -18,6 +19,7 @@ def live_model(monkeypatch):
     output = Path(os.environ['COPILOT_DB_EVIDENCE'])
     cap = float(os.environ['COPILOT_LIVE_MAX_USD'])
     reserved, traces, gateways = [0.0], [], []
+    usage_lock = RLock()
 
     def save():
         calls = [c for g in gateways for c in g.calls]
@@ -30,9 +32,10 @@ def live_model(monkeypatch):
 
     class BudgetedGateway(ModelGateway):
         def call(self, stage, system, body, schema):
-            if reserved[0] + .0068 > cap:
-                raise BudgetExceeded('EVAL_USD_BUDGET')
-            reserved[0] += .0068
+            with usage_lock:
+                if reserved[0] + .0068 > cap:
+                    raise BudgetExceeded('EVAL_USD_BUDGET')
+                reserved[0] += .0068
             trace = {'stage': stage, 'system': system, 'input': body,
                      'acceptance_sha256': hashlib.sha256(json.dumps(body.get('acceptance'), sort_keys=True).encode()).hexdigest()}
             traces.append(trace)
@@ -44,7 +47,8 @@ def live_model(monkeypatch):
                 trace['error_type'] = type(error).__name__
                 raise
             finally:
-                save()
+                with usage_lock:
+                    save()
 
     def factory():
         gateway = BudgetedGateway(model='gpt-5.6-luna')

@@ -128,6 +128,36 @@ def _extract_docx(source: BinaryIO) -> ExtractionResult:
     return _finish("DOCX_XML", blocks)
 
 
+def _decode_hwp_paragraph(payload: bytes) -> str:
+    """HWP 5.0 §3.2.3/table 6: inline/extended controls occupy 8 WCHAR.
+
+    https://cdn.hancom.com/link/docs/한글문서파일형식_5.0_revision1.3.pdf
+    Control IDs are binary metadata, not UTF-16 text. Nested table paragraphs
+    are still read from their own PARA_TEXT records by the enclosing parser.
+    """
+    if len(payload) % 2:
+        raise ValueError('truncated HWP paragraph')
+    text = bytearray()
+    offset = 0
+    extended = set(range(1, 10)) | {11, 12} | set(range(14, 24))
+    characters = {9: '\t', 10: '\n', 13: '\n', 24: '-', 30: ' ', 31: ' '}
+    while offset < len(payload):
+        code = struct.unpack_from('<H', payload, offset)[0]
+        if code in extended:
+            if offset + 16 > len(payload) or struct.unpack_from('<H', payload, offset + 14)[0] != code:
+                raise ValueError('truncated or invalid HWP control')
+            if code == 9:
+                text.extend('\t'.encode('utf-16le'))
+            offset += 16
+        else:
+            if code >= 32:
+                text.extend(payload[offset:offset + 2])
+            elif code in characters:
+                text.extend(characters[code].encode('utf-16le'))
+            offset += 2
+    return text.decode('utf-16le')
+
+
 def _extract_hwp(source: BinaryIO) -> ExtractionResult:
     source.seek(0)
     with olefile.OleFileIO(source) as document:
@@ -176,11 +206,11 @@ def _extract_hwp(source: BinaryIO) -> ExtractionResult:
                             "section_index": section_index,
                             "paragraph_index": paragraph_index,
                             "location": f"section {section_index + 1} · paragraph {paragraph_index + 1}",
-                            "text": payload.decode("utf-16le", errors="ignore"),
+                            "text": _decode_hwp_paragraph(payload),
                         }
                     )
                     paragraph_index += 1
-    return _finish("HWP5_BODYTEXT", blocks)
+    return _finish("HWP5_BODYTEXT_V2", blocks)
 
 
 def _hwpml_character_text(element: ElementTree.Element) -> str:

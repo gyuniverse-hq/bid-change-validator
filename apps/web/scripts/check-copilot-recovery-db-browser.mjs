@@ -47,7 +47,7 @@ if (!chromium) throw Error('Playwright chromium export not found');
     await page.getByText('참가자격 검토를 완료했습니다.',{exact:false}).waitFor();
     await Promise.all(pending);
     assert.equal(responses.length,2);
-    assert(responses.every(r=>r.status===200 && r.body.rule_version==='qualification-rules-v0.3'));
+    assert(responses.every(r=>r.status===200 && r.body.rule_version==='qualification-rules-v0.4'));
     assert.equal(requests.filter(r=>r.method==='POST' && r.url.includes('/qualification-analysis')).length,0);
     await page.getByRole('button',{name:'전체 변경 요건 재검증 제안',exact:true}).click();
     await page.getByRole('button',{name:'내용 확인 후 실행',exact:true}).click();

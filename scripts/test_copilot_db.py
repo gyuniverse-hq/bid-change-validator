@@ -174,7 +174,7 @@ with (output / 'run.log').open('w', encoding='utf-8') as logfile:
         import pytest
         tests = ['test_copilot_product_tools.py', 'test_copilot_action_transactions.py',
                  'test_copilot_flow.py', 'test_mvp_golden_e2e.py', 'test_copilot_v31_db.py',
-                 'test_copilot_rule_version_db.py']
+                 'test_copilot_rule_version_db.py', 'test_source_contract_db.py', 'test_product_baseline_regression.py']
         if args.live_model:
             tests = ['test_copilot_acceptance_live_db.py' if args.acceptance else 'test_copilot_v31_live_db.py']
         if args.browser:

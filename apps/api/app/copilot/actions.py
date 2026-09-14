@@ -38,6 +38,11 @@ def propose_answer(db: Session, case_id: UUID, requirement_key: str, user_input:
         raise QualificationJudgmentError("REQUIREMENT_NOT_ASKABLE", "사용자 답변이 가능한 UNKNOWN 요건이 아닙니다.")
     if checks.provenance.rule_version != RULE_VERSION:
         raise QualificationJudgmentError("STALE_ACTION_CONTEXT", "현재 규칙으로 다시 판정해야 합니다.")
+    if question.confirmation_fields:
+        from ..qualification.rules.source_contracts import valid_contract, validate_confirmation_input
+        analysis = analysis_run_response(load_qualification_analysis_run(db, checks.provenance.analysis_run_id))
+        requirement = next(r for r in analysis.requirements if r.requirement_key == requirement_key)
+        validate_confirmation_input(valid_contract(requirement), user_input.normalized_value, user_input.satisfies_requirement)
     return AnswerProposal(expected=checks.provenance, requirement_key=requirement_key, user_input=user_input)
 
 

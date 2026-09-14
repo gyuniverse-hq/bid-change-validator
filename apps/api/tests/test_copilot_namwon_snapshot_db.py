@@ -57,6 +57,8 @@ def test_latest_namwon_snapshot_with_j13_to_j16(seed_required_master_codes):
     from apps.api.app.qualification.rules.requirement_diff import diff_requirements
     from apps.api.app.document_rag.readiness import snapshot_sources
     from apps.api.app.copilot.product_tools import get_required_checks
+    from apps.api.app.qualification.ask_back import answer_and_rejudge, list_questions
+    from apps.api.app.ask_back_schemas import QualificationAnswerCreate
     snapshot_path = Path(os.environ['COPILOT_NAMWON_SNAPSHOT'])
     data = json.loads(snapshot_path.read_text(encoding='utf-8'))
     assert data['notice_no']=='R26BK01684863'
@@ -86,19 +88,58 @@ def test_latest_namwon_snapshot_with_j13_to_j16(seed_required_master_codes):
                 db.add(case)
                 db.flush()
                 outcomes = []
+                before_answer = None
                 for analysis in (baseline,current):
                     run = run_targeted_qualification_judgment(db,case_id=case.id,analysis_run_id=analysis.id,
                         reference_date=date.fromisoformat(source['reference_date']))
+                    if analysis is baseline:
+                        from apps.api.app.qualification.revalidation import run_qualification_revalidation
+                        from apps.api.app.qualification.judgment import QualificationJudgmentError
+                        from apps.api.app.revalidation_schemas import QualificationRevalidationCreate
+                        with pytest.raises(QualificationJudgmentError) as rejected:
+                            run_qualification_revalidation(db, case_id=case.id, payload=QualificationRevalidationCreate(
+                                source_judgment_run_id=run.id, current_analysis_run_id=current.id))
+                        assert rejected.value.code == 'SOURCE_CONTRACT_REVIEW_REQUIRED'
+                    if analysis is current:
+                        assert any(d.get('code') == 'SOURCE_GROUP_RELATION_UNRESOLVED' for d in run.analysis_run.diagnostics)
+                        before_answer = next(j.status for j in run.judgments if j.requirement_key == 'REQ-004-INDUSTRY')
+                        # Explicit controlled supplements, not fields found in the
+                        # ZIP. J15 confirms legal permit AND equipment. J14 states
+                        # no legal transport permission. J16 remains unanswered.
+                        if source['case_id'] in {'J14', 'J15'}:
+                            question = next(q for q in list_questions(db, case_id=case.id, source_judgment_run_id=run.id)
+                                            if q.requirement_key == 'REQ-004-INDUSTRY')
+                            assert {f['key'] for f in question.confirmation_fields} == {'disposal_permit', 'legal_transport_permission', 'required_equipment'}
+                            positive = source['case_id'] == 'J15'
+                            result = answer_and_rejudge(db, case_id=case.id, payload=QualificationAnswerCreate(
+                                source_judgment_run_id=run.id, requirement_key=question.requirement_key,
+                                satisfies_requirement=positive, normalized_value=json.dumps({'basis': question.confirmation_basis,
+                                    'answers': {'disposal_permit': True, 'legal_transport_permission': positive, 'required_equipment': True}})))
+                            from apps.api.app.qualification.judgment import load_qualification_judgment_run
+                            run = load_qualification_judgment_run(db, result.result_judgment_run_id)
+                        assert any(j.requirement_key == 'SOURCE-VISIT' and j.status == 'UNKNOWN' for j in run.judgments)
+                        assert any(j.requirement_key == 'SOURCE-DISPOSAL' and j.status == 'SATISFIED' for j in run.judgments)
                     outcomes.append({'version':1 if analysis is baseline else 2,'overall':run.overall_status,
                         'judgments':[{'key':j.requirement_key,'status':j.status,'reason':j.reason_code} for j in run.judgments]})
                 transport = next(j for j in outcomes[-1]['judgments'] if j['key']=='REQ-004-INDUSTRY')
                 expected = next(a['expected_status'] for a in source['assertions'] if a['key']=='transport_literal')
                 rows.append({'case':source['case_id'],'scenario_facts':source['scenario_facts'],
+                    'transport_before_controlled_answer': before_answer,
+                    'controlled_supplement': 'J15 legal permit+equipment true; J14 legal permit false; not imported as company truth from ZIP',
                     'industries':[i['code'] for i in source['profile']['industries']],
                     'expected_transport':expected,'observed_transport':transport,'versions':outcomes,
                     'required_checks':get_required_checks(db,case.id).model_dump(mode='json')})
                 if transport['status']!=expected:
                     failures.append(f"{source['case_id']}: expected {expected}, observed {transport['status']}")
+            # A new revision is reused across profiles; source rows are immutable.
+            from sqlalchemy import select, func
+            from apps.api.app.analysis_models import QualificationAnalysisRun
+            assert db.scalar(select(func.count()).select_from(QualificationAnalysisRun).where(
+                QualificationAnalysisRun.notice_version_id.in_([v.id for v in versions]))) == 4
+            for original in objects['QualificationRequirementRecord']:
+                source = next(r for r in data['requirements'] if r['requirement_key'] == original.requirement_key
+                              and r['raw'] == original.raw)
+                assert original.value_json == source['value_json'] and original.scope == source['scope']
         finally:
             db.close()
             transaction.rollback()

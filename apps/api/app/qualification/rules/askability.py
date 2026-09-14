@@ -47,6 +47,10 @@ def classify_askability(requirement: QualificationRequirement) -> AskabilityDeci
     """
 
     raw = " ".join(requirement.raw.split())
+    from .source_contracts import valid_contract, confirmation_fields
+    contract = valid_contract(requirement)
+    if contract and confirmation_fields(contract):
+        return AskabilityDecision(True, 'ASKABLE_SOURCE_CONTRACT', '원문에 고정된 각 조건을 따로 확인한 구조화 답변이 필요합니다.')
     if not raw:
         return AskabilityDecision(False, "EMPTY_REQUIREMENT", "원문 조건이 비어 있습니다.")
 
@@ -98,6 +102,10 @@ def build_semantic_question(requirement: QualificationRequirement) -> str:
     """Build an ask-back question that preserves the source requirement meaning."""
 
     raw = " ".join(requirement.raw.split())
+    from .source_contracts import valid_contract, confirmation_fields
+    contract = valid_contract(requirement)
+    if contract and confirmation_fields(contract):
+        return '다음 조건을 각각 확인해 주세요. 단순 장비 보유만으로 법적 운반 자격을 인정하지 않습니다. — 원문 조건: ' + raw
     value = str(requirement.value) if requirement.value not in {None, ""} else raw
 
     prefix = {

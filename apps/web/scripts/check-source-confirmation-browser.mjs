@@ -1,0 +1,52 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const moduleRoot = process.env.PLAYWRIGHT_MODULE;
+const loaded = moduleRoot ? await import(pathToFileURL(moduleRoot.replace(/[\\/]$/, '') + '/index.js').href) : await import('playwright');
+const { chromium } = loaded.default ?? loaded;
+const browser = await chromium.launch({headless:true, channel:'chrome'});
+const page = await browser.newPage({viewport:{width:1440,height:1000}});
+const errors = [], writes = [], pending = [];
+page.setDefaultTimeout(30000);
+page.on('pageerror', e => errors.push(e.message));
+page.on('response', r => {
+  if (r.url().endsWith('/copilot/actions/confirm')) pending.push(r.json().then(body => writes.push({status:r.status(), body})));
+});
+await page.route('**/*', route => ['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
+try {
+  await page.goto('http://127.0.0.1:5179/login');
+  await page.locator('button[type="submit"]:enabled').waitFor();
+  const credentials = JSON.parse(process.env.COPILOT_BROWSER_CREDENTIALS);
+  await page.locator('#username').fill(credentials.username);
+  await page.locator('#password').fill(credentials.password);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL('**/company');
+  await page.goto('http://127.0.0.1:5179/ask-back?caseId=' + process.env.COPILOT_BROWSER_CASE);
+  await page.getByRole('heading', {name:/다음 조건을 각각 확인/}).locator('..').getByRole('button', {name:'이 요건 답변 입력 · 아직 저장 안 함'}).click();
+  const card = page.getByRole('region', {name:'공통 작업 확인'});
+  // section with an accessible label is a region; every value starts unknown.
+  const fields = ['해당 폐기물의 처분 또는 재활용업 허가를 보유함', '해당 폐기물을 직접 운반할 법적 허가 조건을 확인함', '그 허가에 필요한 운반 장비 조건을 충족함'];
+  for (const label of fields) assert.equal(await card.getByLabel(label).inputValue(), '');
+  await card.getByLabel(fields[2]).selectOption('true');
+  await card.getByLabel('증빙을 보유하고 있나요?').selectOption('false');
+  assert(await card.getByRole('button', {name:'반영 제안 받기 · 아직 저장 안 함'}).isDisabled());
+  await card.getByLabel(fields[0]).selectOption('true');
+  await card.getByLabel(fields[1]).selectOption('true');
+  await card.getByRole('button', {name:'반영 제안 받기 · 아직 저장 안 함'}).click();
+  await card.getByRole('button', {name:'내용 확인 후 실행'}).waitFor();
+  assert.equal(writes.length, 0);
+  await page.screenshot({path:path.join(process.env.COPILOT_DB_EVIDENCE,'source-confirmation-before.png'), fullPage:true});
+  const confirmed = page.waitForResponse(r => r.url().endsWith('/copilot/actions/confirm'));
+  await card.getByRole('button', {name:'내용 확인 후 실행'}).click();
+  await confirmed;
+  await Promise.all(pending);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].status, 200);
+  const j = writes[0].body.result.judgments.find(j => j.requirement_key === 'REQ-REGISTRATION');
+  assert.equal(j.status, 'SATISFIED');
+  assert.equal(j.value_source, 'askback');
+  assert.equal(errors.length, 0, errors.join('\n'));
+  assert.equal(await page.locator('[data-nextjs-dialog], vite-error-overlay').count(),0);
+  fs.writeFileSync(path.join(process.env.COPILOT_DB_EVIDENCE,'source-confirmation-browser.json'),JSON.stringify({status:'PASS',writes,errors},null,2));
+} finally { await browser.close(); }

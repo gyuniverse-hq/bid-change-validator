@@ -28,6 +28,32 @@ class Gateway:
                                                    'readable': True, 'reason': '검증'} for u in body['units']])
 
 
+def test_short_document_question_reviews_oversized_source_instead_of_dropping_deadline():
+    from apps.api.app.copilot.answer_validation import compose
+    from apps.api.app.copilot.evidence_payload import prepare_evidence
+    text = '공고의 일반 안내입니다.\n' * 250 + '입찰서 제출 마감: 2026. 8. 25. 10:00. 현장 방문 확인서 제출.'
+    evidence = bundle(text)
+    goal = '이 공고에서 제출해야 하는 서류와 마감일을 알려줘.'
+    assert prepare_evidence(evidence, goal)[1] == ['f']
+    class RecordingGateway(Gateway):
+        enabled = available = True
+        def __init__(self):
+            super().__init__()
+            self.seen = []
+        def call(self, stage, system, body, schema):
+            assert stage.startswith('document_')
+            if stage == 'document_extract':
+                self.seen.extend(u['text'] for u in body['units'])
+            return super().call(stage, system, body, schema)
+    gateway = RecordingGateway()
+    _, partial, events = compose(evidence, TaskPlan(goal=goal,
+        tasks=[Task(kind='READ_DOCUMENT', question=goal)]), None, gateway)
+    assert not partial
+    assert any('2026. 8. 25. 10:00' in text for text in gateway.seen)
+    assert events[-1]['stage'] == 'document_ledger'
+    assert not any('근거 입력 한도' in note for note in evidence.limitations)
+
+
 def test_units_cover_every_character_and_keep_citations():
     text = ('등록 조건입니다. 단, 법적 예외를 확인해야 합니다.\n' * 200)
     units = source_units(bundle(text))
@@ -80,6 +106,28 @@ def test_submission_scope_retains_required_documents_without_demanding_bid_openi
     assert contract.mode == 'SUBMISSION'
     assert any('제출기간' in item for item in contract.required)
     assert any('개찰' in item for item in contract.not_required)
+
+
+def test_documents_deadlines_scope_keeps_prerequisite_deadline_without_all_qualifications():
+    goal = '이 공고에서 제출해야 하는 서류와 마감일을 알려줘.'
+    contract = freeze_document_acceptance(TaskPlan(goal=goal, tasks=[Task(kind='READ_DOCUMENT', question=goal)]))
+    assert contract.mode == 'DOCUMENTS_AND_DEADLINES'
+    assert any('선행 기한' in item for item in contract.required)
+    assert any('참가자격 전체' in item for item in contract.not_required)
+    assert any('부분 원문' in item for item in contract.not_required)
+
+
+def test_notice_documents_deadline_plan_reads_document_even_without_search_consent():
+    from types import SimpleNamespace
+    from apps.api.app.copilot.orchestration import plan_turn
+    from apps.api.app.copilot.acceptance import notice_documents_deadlines_request
+    question = '이 공고에서 제출해야 하는 서류와 마감일을 알려줘.'
+    request = SimpleNamespace(message=question, user_input=None, target_id=None, requirement_key=None)
+    plan, fallback = plan_turn(request, SimpleNamespace(messages=[]), None)
+    assert not fallback and [t.kind for t in plan.tasks] == ['READ_DOCUMENT']
+    # Actual document access remains gated by ProductTools.allow_documents.
+    for suffix in ('우리 회사 참가 가능 여부도 알려줘', '저장해줘', '이전 공고와 비교해줘'):
+        assert not notice_documents_deadlines_request(question + suffix)
 
 
 @pytest.mark.parametrize('text', ['조건은 다음 unit(u6)에 나옵니다.', '등록 조건은 u22를 확인합니다.', '조건이 필요하며 및화', '조건을 확인합니다. (미완성'])

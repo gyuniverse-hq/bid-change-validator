@@ -135,7 +135,10 @@ class ProductTools:
         # When no model key exists, lexical current-section reads require no query embedding.
         if not embeddings.available:
             readiness.index = None
-        broad = full_source_request(question)
+        from .acceptance import notice_documents_deadlines_request
+        # A list of documents and their deadlines spans notice sections.
+        # Lexical top-k can match only generic '공고' and miss inflected words.
+        broad = full_source_request(question) or notice_documents_deadlines_request(question)
         try:
             passages, details = read_passages(readiness, question, broad=broad)
         except Exception:

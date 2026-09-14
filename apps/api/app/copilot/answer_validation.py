@@ -110,9 +110,10 @@ def verify(draft, bundle, gateway, *, stage='validate', plan=None, supported_sib
 
 
 def compose(bundle, plan, state, gateway):
-    from ..document_rag.readiness import full_source_request
-    if (full_source_request(plan.goal) and {t.kind for t in plan.tasks} == {'READ_DOCUMENT'}
-            and len(str(evidence_payload(bundle)).encode('utf-8')) > 7000
+    # A short question can still need a long document (e.g. documents and
+    # deadlines). Never discard oversized source groups based on wording.
+    _, document_omissions = prepare_evidence(bundle, plan.goal)
+    if ({t.kind for t in plan.tasks} == {'READ_DOCUMENT'} and document_omissions
             and getattr(gateway, 'enabled', False) and getattr(gateway, 'available', False)):
         from .document_ledger import compose_document_ledger
         return compose_document_ledger(bundle, plan, gateway)

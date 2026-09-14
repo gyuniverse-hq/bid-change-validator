@@ -31,6 +31,15 @@ def freeze_document_acceptance(plan):
     submission = any(word in question for word in ('입찰서작성', '입찰서제출', '작성·제출', '작성및제출', '제출방법'))
     qualification_excluded = bool(re.search(r'참가자격을[^.!?]{0,30}(?:아니|제외|빼)', question))
     broader = any(word in question for word in ('개찰', '낙찰', '예정가격', '계약체결', '정산'))
+    if ('서류' in question and any(word in question for word in ('마감', '기한'))
+            and not qualification and not broader):
+        return DocumentAcceptance(request=plan.goal, mode='DOCUMENTS_AND_DEADLINES',
+            required=('원문에 명시된 제출 서류와 각 제출 주체·단계·기한·방법·대체 및 면제 조건을 설명한다.',
+                      '입찰서 마감과 개찰을 구분한다. 현장 확인서·전자입찰서 내 보증확약·계약 시 서약서 등 제출 의무를 보존한다.',
+                      '등록 마감 등 서류 제출 전 선행 기한은 보존하되 참가자격 전체를 재설명하지 않는다.',
+                      '모든 원문 부분을 검토하되 관련 정보가 없는 부분은 제외한다. 다른 부분에 있는 정보를 누락으로 요구하지 않는다.'),
+            not_required=('업종코드·소재지 등 참가자격 전체, 예정가격 산정·제재 상세는 서류·마감일 질문의 완료 조건이 아니다.',
+                          '부분 원문에 마감일이 없다는 안내를 반복하지 않는다. 특정 서류의 별도 제출기한이 명시되지 않은 한계만 해당 서류에 붙인다.'))
     if submission and not broader and (not qualification or qualification_excluded):
         return DocumentAcceptance(request=plan.goal, mode='SUBMISSION',
             required=('입찰서 작성방식·금액·산출내역서, 제출기간·방법, 수정·취소 제한을 설명한다.',
@@ -55,6 +64,13 @@ def answerable_checks_request(question):
     return bool(re.fullmatch(
         r'(?:추가(?:로)?답변(?:이)?필요한|답변입력가능한|추가입력이필요한)'
         r'(?:확인)?질문(?:만|을|들을|목록을)?(?:알려줘|보여줘|정리해줘|알려주세요|보여주세요|정리해주세요)', compact))
+
+
+def notice_documents_deadlines_request(question):
+    """Explicit notice deliverable, excluding company/action/compound requests."""
+    compact = re.sub(r'\s+', '', question)
+    return ('공고' in compact and '서류' in compact and any(w in compact for w in ('마감', '기한'))
+            and not any(w in compact for w in ('회사', '판정', '가능', '가정', '저장', '반영', '수정', '변경', '비교', '프로필', '참가자격')))
 
 
 def profile_only_request(question):

@@ -34,6 +34,26 @@ function requirementValue(requirement: CanonicalRequirement) {
   return `${requirement.value}${unit}${period}`;
 }
 
+/*
+  판정기에 들어가는 공고 쪽 입력이 같은지 본다. 화면에 띄우는 값(값·단위·기간)만 비교하면
+  operator나 scope가 달라도 같다고 말하게 되므로, 판정에 쓰이는 필드를 전부 비교한다.
+  이게 전부 같으면 같은 회사 프로필로 다시 판정해도 공고 쪽 기준은 그대로다.
+  「판정 영향 없음」이라고는 쓰지 않는다 — 판정은 회사 프로필도 타기 때문에
+  우리가 말할 수 있는 것은 공고 쪽 기준이 같다는 데까지다.
+*/
+const JUDGING_FIELDS = ['type', 'operator', 'value', 'unit', 'period_months', 'required'] as const;
+
+/** scope는 객체라 키 순서에 흔들리지 않게 정렬해서 비교한다. */
+function scopeKey(scope: Record<string, unknown> | null | undefined) {
+  if (!scope) return '';
+  return JSON.stringify(Object.keys(scope).sort().map((key) => [key, scope[key]]));
+}
+
+function sameJudgingCriteria(before: CanonicalRequirement | null, after: CanonicalRequirement | null) {
+  if (!before || !after) return false;
+  return JUDGING_FIELDS.every((field) => before[field] === after[field]) && scopeKey(before.scope) === scopeKey(after.scope);
+}
+
 /** 재검증 결과 한 줄의 한쪽 차수. 요건이 없으면 왜 없는지를 적는다. */
 function RequirementSide({ label, requirement, missing }: { label: string; requirement: CanonicalRequirement | null; missing: string }) {
   return (
@@ -127,6 +147,15 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
   const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
+  /*
+    「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
+    표기만 바뀐 것도 섞인다. 판정기에 들어가는 값이 실제로 달라진 것이 몇 건인지 따로 센다.
+  */
+  const criteriaChangedCount = affectedChanges.filter((item) => {
+    const before = item.baseline_key ? baselineRequirements.get(item.baseline_key) ?? null : null;
+    const after = item.current_key ? currentRequirements.get(item.current_key) ?? null : null;
+    return !before || !after || !sameJudgingCriteria(before, after);
+  }).length;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -169,16 +198,22 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 판정 기준이 바뀐 것 <strong>{criteriaChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
                 const before = item.baseline_key ? baselineRequirements.get(item.baseline_key) ?? null : null;
                 const after = item.current_key ? currentRequirements.get(item.current_key) ?? null : null;
                 const typeCode = after?.type ?? before?.type ?? null;
+                // 양쪽이 다 있을 때만 기준을 견줄 수 있다. 신설·삭제는 견줄 상대가 없다.
+                const comparable = Boolean(before && after);
+                const sameCriteria = sameJudgingCriteria(before, after);
                 return (
                   <div key={item.identity} className="border-t border-[#eef0f4] px-4 py-4 first:border-t-0">
                     <div className="flex flex-wrap items-center gap-2">
                       {/* 요건 유형을 못 찾으면 내부 키라도 보여준다. 빈 칸보다는 낫고, 못 찾았다는 사실도 드러난다. */}
                       <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
                       <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
+                      {comparable && (sameCriteria
+                        ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">판정 기준 동일 · 표기만 다름</span>
+                        : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[12px] font-bold text-[#9a2b2b]">판정 기준 바뀜</span>)}
                     </div>
                     <div className="mt-3 grid gap-2 lg:grid-cols-2">
                       <RequirementSide label="기준 차수" requirement={before} missing={item.change_type === 'ADDED' ? '기준 차수에는 없던 요건입니다.' : '기준 차수 분석에서 이 요건을 찾지 못했습니다.'} />

@@ -212,6 +212,19 @@ export default function NoticesPage() {
 
   const activeNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) !== 'ineligible');
   const rejectedNotices = filteredNotices.filter((notice) => noticeStatus(notice.id) === 'ineligible');
+
+  /*
+    목록이 비었을 때 왜 비었는지는 세 가지로 갈린다. 전에는 전부 「검색어나 필터를 바꿔보세요」라고 했는데,
+    검색어도 필터도 맞았고 결과가 자격 미달이라 아래로 내려간 경우까지 사용자 잘못으로 말하고 있었다.
+    공고번호로 정확히 찾아온 사람에게 「검색어를 바꾸라」고 하는 건 틀린 안내다.
+  */
+  const emptyReason = notices.length === 0
+    ? 'no-result'
+    : rejectedNotices.length > 0
+      ? 'only-rejected'
+      : 'filtered-out';
+  // 검색으로 콕 집어 찾아왔는데 결과가 자격 미달뿐이면, 접어두지 않고 펼쳐 둔다.
+  const rejectedOpen = showRejected || (!activeNotices.length && rejectedNotices.length > 0);
   const profile = productProfileCoverage(company);
   const missingProfile = profile.missing.map((area) => area.label);
   const profileReady = Boolean(company) && missingProfile.length === 0;
@@ -418,14 +431,37 @@ export default function NoticesPage() {
                 );
               })}
             </div>
-          ) : <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center"><Search className="mx-auto size-8 text-[var(--product-faint)]" /><p className="mt-3 font-semibold">조회된 공고가 없습니다.</p><p className="mt-1 text-sm text-[var(--product-muted)]">검색어나 판정 상태 필터를 바꿔보세요.</p></div>}
+          ) : (
+            <div className="mt-7 rounded-[20px] border border-dashed border-[var(--product-line)] bg-[var(--product-tint)] px-6 py-16 text-center">
+              <Search className="mx-auto size-8 text-[var(--product-faint)]" />
+              {emptyReason === 'only-rejected' ? (
+                <>
+                  <p className="mt-3 font-semibold">검색 결과 {rejectedNotices.length}건이 모두 자격 미달입니다.</p>
+                  <p className="mt-1 text-sm text-[var(--product-muted)]">회사 프로필 기준으로 참가가 어려운 공고라 아래 「자격 미달로 접어둔 공고」에 있습니다. 숨기지 않았습니다.</p>
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => setShowRejected(true)}>아래에서 보기 ↓</Button>
+                </>
+              ) : emptyReason === 'filtered-out' ? (
+                <>
+                  <p className="mt-3 font-semibold">검색 결과 {notices.length}건이 켜둔 필터에 걸려 표시되지 않았습니다.</p>
+                  <p className="mt-1 text-sm text-[var(--product-muted)]">사업 유형 또는 검토 상태 필터를 해제하면 보입니다.</p>
+                  <Button type="button" variant="outline" size="sm" className="mt-4 rounded-full" onClick={() => { setBusinessTypeFilter('all'); setStatusFilter('all'); }}>필터 모두 해제</Button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-3 font-semibold">검색 결과가 없습니다.</p>
+                  <p className="mt-1 text-sm text-[var(--product-muted)]">공고번호나 공고명을 다시 확인해 주세요. 공고번호는 차수(-00) 없이 입력합니다.</p>
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-12 overflow-hidden rounded-[22px] border border-[var(--product-line)] bg-[var(--product-tint)]">
-          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${showRejected ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[13px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[13px] font-medium">{showRejected ? '접기' : '펼치기'}</span></button>
-          {showRejected && <div className="border-t border-[var(--product-line)] bg-white px-6">{rejectedNotices.length ? rejectedNotices.map((notice) => {
+          <button type="button" onClick={() => setShowRejected((value) => !value)} className="flex w-full items-center gap-4 px-6 py-5 text-left"><ChevronDown className={`size-5 transition-transform ${rejectedOpen ? 'rotate-180' : ''}`} /><div className="flex-1"><h3 className="text-[18px] font-bold text-[var(--product-ink)]">자격 미달로 접어둔 공고{metaLoading ? '' : ` ${rejectedNotices.length}건`}</h3><p className="mt-1 text-[13px] text-[var(--product-muted)]">숨기지 않습니다. 조건이나 회사 정보가 바뀌면 다시 검토할 수 있습니다.</p></div><span className="text-[13px] font-medium">{rejectedOpen ? '접기' : '펼치기'}</span></button>
+          {rejectedOpen && <div className="border-t border-[var(--product-line)] bg-white px-6">{rejectedNotices.length ? rejectedNotices.map((notice) => {
             const meta = caseMeta[notice.id];
-            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY.ineligible.className}`}>자격 미달</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{meta?.judgment ? `미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : notice.bid_notice_no}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[13px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
+            return <div key={notice.id} className="flex flex-col gap-3 border-b border-[var(--product-line-2)] py-5 last:border-b-0 md:flex-row md:items-center"><span className={`w-fit rounded-full border px-3 py-1 text-[12px] font-semibold ${STATUS_COPY.ineligible.className}`}>자격 미달</span><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{notice.title}</strong>{/* 공고번호로 검색해 찾아온 행에 공고번호가 없으면 같은 건인지 확인할 수 없다. 판정 요약과 같이 적는다. */}
+              <span className="mt-1 block text-[12px] text-[var(--product-muted)]">{notice.bid_notice_no}{meta?.judgment ? ` · 미달 ${meta.judgment.unsatisfied_count}건 · 확인 필요 ${meta.judgment.unknown_count}건` : ''}</span></div><button type="button" onClick={() => void startReview(notice)} className="text-left text-[13px] font-semibold text-[var(--product-accent-deep)]">근거 확인 →</button></div>;
           }) : <p className="py-8 text-center text-sm text-[var(--product-muted)]">{metaLoading ? '판정 상태를 불러오는 중입니다.' : '현재 자격 미달로 판정된 공고가 없습니다.'}</p>}</div>}
         </section>
 

@@ -19,9 +19,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
+  getNotice,
   getNoticeVersions,
   listNotices,
   listPreflightCases,
+  type BidNoticeDetail,
   type BidNoticeSummary,
   type BidNoticeVersion,
   type PreflightCase,
@@ -123,7 +125,30 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   // 기본은 접어두고 필요할 때 편다. 건수는 접혀 있어도 제목에 그대로 보인다.
   const [showAllUnjudged, setShowAllUnjudged] = useState(false);
 
+  /*
+    「검토 건 만들기」 드롭다운이 고른 공고다. 목록(상위 100건)에서 찾는다.
+    화면 위쪽 제목·공고기관과 나라장터 공고 요약은 이 값을 쓰면 안 된다 — 아래 caseNotice 참고.
+  */
   const selectedNotice = useMemo(() => notices.find((item) => item.id === noticeId) ?? null, [noticeId, notices]);
+
+  /*
+    지금 보고 있는 검토 건의 공고. id로 직접 받아온다.
+    전에는 위의 selectedNotice를 같이 썼는데, 그 값은 목록 첫 번째 공고로 초기화되는
+    드롭다운 선택값이라 이 화면이 다른 공고의 기관명·사업유형을 보여주고 있었다.
+    목록은 상위 100건뿐이라 검토 건의 공고가 거기 없으면 아예 「미상」으로 떨어지기도 했다.
+  */
+  const [caseNoticeState, setCaseNoticeState] = useState<{ noticeId: string; notice: BidNoticeDetail } | null>(null);
+  const caseNoticeId = activeCase?.notice_id;
+  useEffect(() => {
+    if (!caseNoticeId) return;
+    let alive = true;
+    void getNotice(caseNoticeId)
+      .then((notice) => { if (alive) setCaseNoticeState({ noticeId: caseNoticeId, notice }); })
+      // 받지 못하면 Case에 저장된 제목·공고번호로 그린다. 화면 전체를 실패로 만들 일은 아니다.
+      .catch(() => { if (alive) setCaseNoticeState(null); });
+    return () => { alive = false; };
+  }, [caseNoticeId]);
+  const caseNotice = caseNoticeState && caseNoticeState.noticeId === caseNoticeId ? caseNoticeState.notice : null;
   const company = useMemo(() => companies.find((item) => item.id === companyId) ?? null, [companies, companyId]);
   const currentVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.current_version_number) ?? null, [activeCase, versions]);
   const baselineVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.baseline_version_number) ?? null, [activeCase, versions]);
@@ -381,7 +406,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           <>
             {/* ── 1 공고 · 검토 건 ── */}
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p></div>
+              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? '공고기관 확인 중'}</p></div>
               <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
             </section>
 
@@ -503,7 +528,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             </section>
 
             {/* ── 9 공고 원본 정보 ── */}
-            <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} />
+            <QualificationSourceOverview caseItem={activeCase} notice={caseNotice} version={currentVersion} />
 
             <section className="mt-9 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-[18px] font-extrabold">다른 검토 건</h2><p className="mt-1 text-[12px] text-[var(--product-muted)]">선택한 공고의 Case로 정확히 이동합니다.</p></div><NativeSelect className="sm:w-[420px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div></section>
           </>

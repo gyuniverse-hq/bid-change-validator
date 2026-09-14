@@ -5,6 +5,7 @@ import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { useActions } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
+import { confirmationDisplay } from '@/lib/confirmation-display';
 
 /** One controller, two presentations. Panel summarizes; 03/06 explicitly execute. */
 export function ActionCard({ caseId, compact = false }: { caseId: string; compact?: boolean }) {
@@ -13,6 +14,7 @@ export function ActionCard({ caseId, compact = false }: { caseId: string; compac
   if (action.stage === 'IDLE' && !action.busy && !action.externalBusy && !action.message) return null;
   const locked = isLocked(action);
   const draft = action.draft;
+  const confirmedValues = action.proposal?.action_type === 'ANSWER_REQUIREMENT' ? confirmationDisplay(action.proposal.user_input.normalized_value) : null;
   const isRevalidation = action.proposal?.action_type === 'REVALIDATE' || (action.result && 'revalidated_keys' in action.result);
   const path = isRevalidation ? '/changes' : '/ask-back';
   return <section className="copilot-action-card" aria-label="공통 작업 확인">
@@ -47,7 +49,7 @@ export function ActionCard({ caseId, compact = false }: { caseId: string; compac
       <h4 className="font-semibold">{action.proposal.title}</h4><p>{action.proposal.consequences}</p>
       {action.proposal.action_type === 'REVALIDATE'
         ? <p>기준 v{action.proposal.expected.baseline.version_number} → 현재 v{action.proposal.expected.current.version_number}<br />범위: 변경된 참가자격 요건 전체. 특정 요건만 선택하거나 제외할 수 없습니다.</p>
-        : <p>공고 v{action.proposal.expected.version_number} · 대상: {draft?.label ?? action.proposal.requirement_key}<br />충족: {action.proposal.user_input.satisfies_requirement ? '예' : '아니요'} · 증빙: {action.proposal.user_input.evidence_held ? '예' : '아니요'}<br />{draft?.confirmation_fields?.length ? draft.confirmation_fields.map(f => `${f.label}: ${draft.confirmation_answers?.[f.key] ? '예' : '아니요'}`).join(' / ') : `값: ${action.proposal.user_input.normalized_value || '미입력'}`}</p>}
+        : <p>공고 v{action.proposal.expected.version_number} · 대상: {draft?.label ?? confirmedValues?.title ?? action.proposal.requirement_key}<br />충족: {action.proposal.user_input.satisfies_requirement ? '예' : '아니요'} · 증빙: {action.proposal.user_input.evidence_held ? '예' : '아니요'}<br />{confirmedValues ? confirmedValues.text : draft?.confirmation_fields?.length ? draft.confirmation_fields.map(f => `${f.label}: ${draft.confirmation_answers?.[f.key] ? '예' : '아니요'}`).join(' / ') : `값: ${action.proposal.user_input.normalized_value || '미입력'}`}</p>}
       <Button type="button" className="copilot-action-confirm" disabled={locked || action.stage !== 'PROPOSAL_READY'}
         onClick={() => void controller.confirm(caseId, true)}>내용 확인 후 실행</Button>
     </>}

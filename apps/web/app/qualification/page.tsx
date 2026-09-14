@@ -315,7 +315,20 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     } catch (cause) {
       if (request !== generation.current) return;
       setReviewStep('idle');
-      setError(cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.');
+      const failure = cause instanceof Error ? cause.message : '참가자격 검토에 실패했습니다.';
+      try {
+        const saved = await loadCaseWorkspace(activeCase.id);
+        if (request !== generation.current) return;
+        setBaselineAnalysis(saved.baselineAnalysis);
+        setCurrentAnalysis(saved.currentAnalysis);
+        setAnalysisDetail(saved.currentAnalysisDetail);
+        setSourceJudgment(saved.sourceJudgment);
+        setDisplayJudgment(saved.displayJudgment);
+        setQuestions(saved.questions);
+        setError(failure + (saved.displayJudgment ? ' 저장된 판정을 다시 표시합니다.' : ' 최신 분석에 맞는 판정이 없어 다시 판정해야 합니다.'));
+      } catch {
+        if (request === generation.current) setError(failure + ' 저장된 결과도 불러오지 못했습니다. 새로고침하여 확인해 주세요.');
+      }
     } finally {
       controller.releaseReview(activeCase.id);
       if (request === generation.current) setBusy(null);
@@ -359,7 +372,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     : reviewStep === 'judgment'
       ? '2/2 회사 프로필과 자격조건을 비교해 판정하고 있습니다.'
       : reviewStep === 'done'
-        ? '분석과 판정이 완료되었습니다.'
+        ? (currentAnalysis?.status === 'PARTIAL' ? '분석된 요건의 판정 결과입니다. 전체 조건 검토는 완료되지 않았습니다.' : '분석과 판정이 완료되었습니다.')
         : null;
 
   // P0-5 · 판정에 들어가지 못한 조건은 두 갈래로 들어온다. 성격이 달라서 한 자리에 섞어 그리면 안 된다.
@@ -407,7 +420,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           label: '현재 차수에 수집된 첨부 문서가 없습니다',
           description: '읽을 원문이 없어 판정하지 않았습니다. 취소공고처럼 원래 첨부가 없는 차수일 수도 있고, 수집이 되지 않았을 수도 있습니다. 공고 원문을 직접 확인해 주세요.',
         }
-      : ANALYSIS_STATUS_COPY[currentAnalysis.status]
+      : currentAnalysis.status === 'PARTIAL' ? { label: '전체 조건 검토가 완료되지 않았습니다', description: '자동 판정에서 제외되거나 추가 해석이 필요한 조건이 있습니다. 아래 분석 진단과 원문을 함께 확인해 주세요. 이 상태만으로 첨부 파일을 읽지 못했다고 단정할 수 없습니다.' } : ANALYSIS_STATUS_COPY[currentAnalysis.status]
     : null;
 
   // 분석이 실패했을 때 「없습니다」라고 하면 「확인했는데 없더라」로 읽힌다.
@@ -461,7 +474,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             <CaseTabs caseId={activeCase.id} active="qualification" />
 
             {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{canRejudgeSavedAnalysis && <Button variant="outline" onClick={() => void runFullReview(false)} disabled={busy !== null || actionLocked}>저장된 분석으로 다시 판정</Button>}{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{canRejudgeSavedAnalysis && <Button variant="outline" onClick={() => void runFullReview(false)} disabled={busy !== null || actionLocked}>저장된 분석으로 다시 판정</Button>}{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? (analysisDetail.status === 'PARTIAL' ? '전체 조건 검토 미완료' : analysisStatusLabel(analysisDetail.status)) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
 
             {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
@@ -608,7 +621,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 </div>
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">분석 상태</span>
-                  <strong className="mt-0.5 block text-[15px]">{analysisDetail ? analysisStatusLabel(analysisDetail.status) : '분석 전'}</strong>
+                  <strong className="mt-0.5 block text-[15px]">{analysisDetail ? (analysisDetail.status === 'PARTIAL' ? '전체 조건 검토 미완료' : analysisStatusLabel(analysisDetail.status)) : '분석 전'}</strong>
                   <p className="text-[13px] text-[var(--product-muted)]">{analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p>
                 </div>
                 <div>

@@ -25,6 +25,15 @@ def call(gateway):
     return gateway.call('generate', 'test', {}, None)
 
 
+def test_local_controller_reads_allowed_without_external_processing():
+    payload = {'intent':'QUALIFICATION_SUMMARY', 'message':'현재 판정 결과'}
+    assert evaluation.allowed_evaluation_request(payload)
+    assert not evaluation.allowed_evaluation_request(payload, 'true')
+    assert not evaluation.allowed_evaluation_request({**payload, 'allow_external_processing':True})
+    assert not evaluation.allowed_evaluation_request({**payload, 'public_document_question':'원문'})
+    assert not evaluation.allowed_evaluation_request({'message':'임의 대화'})
+
+
 def test_recreating_gateway_and_server_adapter_does_not_reset_budget(budget):
     assert call(orchestration.ModelGateway()) == 'result'
     evaluation.install_budgeted_model('synthetic-test-key')

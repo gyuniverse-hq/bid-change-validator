@@ -36,6 +36,18 @@ def save(path, value):
     tmp.replace(path)
 
 
+def allowed_evaluation_request(payload, semantic_header=None):
+    if not isinstance(payload, dict):
+        return False
+    if payload.get('response_version') == '3.1':
+        return True
+    return (payload.get('response_version', 'legacy') == 'legacy'
+            and payload.get('intent') in {'QUALIFICATION_SUMMARY', 'REQUIRED_CHECKS', 'ACTION_REQUEST'}
+            and payload.get('allow_external_processing', False) is False
+            and not payload.get('public_document_question')
+            and semantic_header in {None, '', 'false', '0'})
+
+
 def configure():
     """Verify ownership, socket, storage, binding and database identity first."""
     docker = shutil.which('docker') or 'C:/Program Files/Docker/Docker/resources/bin/docker.exe'
@@ -284,7 +296,7 @@ def serve(args, identity):
                 return JSONResponse({'error':{'code':'INVALID_JSON'}}, status_code=400)
             if not isinstance(payload, dict):
                 return JSONResponse({'error':{'code':'INVALID_JSON'}}, status_code=400)
-            if payload.get('response_version') != '3.1':
+            if not allowed_evaluation_request(payload, request.headers.get('x-copilot-semantic-processing', '').lower()):
                 return JSONResponse({'error':{'code':'LOCAL_EVALUATION_V31_ONLY'}}, status_code=400)
         response = await call_next(request)
         response.headers['X-Copilot-Evaluation'] = 'local-q009-pending'

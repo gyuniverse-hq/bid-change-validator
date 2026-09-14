@@ -116,3 +116,9 @@ for (const code of ['STALE_ACTION_CONTEXT', 'RULE_CHANGED_FULL_REJUDGMENT_REQUIR
   controller.releaseReview(id);
 }
 console.log('PASS rule-upgrade guidance, no write replay, explicit full-review recovery');
+
+const { confirmationDisplay } = load(resolve(root, 'lib/confirmation-display.ts'));
+assert.equal(confirmationDisplay(JSON.stringify({basis:'test',answers:{site_visited:true,visit_certificate:false}})).text, '현장 방문 완료: 예 / 현장 방문 확인서 제출: 아니요');
+assert.equal(confirmationDisplay(JSON.stringify({basis:'test',answers:{site_visited:'false',visit_certificate:false}})), null);
+assert.equal(confirmationDisplay('{broken'), null);
+console.log('PASS structured confirmation labels preserve false and reject malformed values');

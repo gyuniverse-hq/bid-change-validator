@@ -17,6 +17,7 @@ from .context import compact
 from .contracts import ConfirmAction
 from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
+from .narration import apply_product_narration
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
@@ -94,6 +95,18 @@ def resolve_chat_payload(
     return payload, resolved
 
 
+def _sync_visible_targets(result: CopilotChatResponse) -> CopilotChatResponse:
+    """Keep conversation ordinals aligned with requirements actually rendered."""
+    if result.reply_context is None or result.presentation is None:
+        return result
+    result.reply_context.visible_requirement_keys = list(dict.fromkeys(
+        reason.requirement_key
+        for reason in result.presentation.reasons
+        if reason.requirement_key
+    ))[:100]
+    return result
+
+
 @router.post("/chat", response_model=CopilotChatResponse)
 def copilot_chat(
     payload: CopilotChatRequest,
@@ -101,7 +114,10 @@ def copilot_chat(
     semantic_processing: bool = Header(False, alias="X-Copilot-Semantic-Processing"),
     user: AppUser | None = Depends(get_optional_current_user),
 ):
-    authorize_case_access(db, user, payload.case_id)
+    case = authorize_case_access(db, user, payload.case_id)
+    if payload.response_version == '3.1':
+        from .orchestration import chat_v31
+        return chat_v31(db, payload, user, case, semantic_processing)
     try:
         payload, _ = resolve_chat_payload(
             payload,
@@ -109,7 +125,11 @@ def copilot_chat(
         )
         if route_intent(payload) == "DOCUMENT_QA":
             return answer_grounded_document_question(db, payload)
-        return chat(db, payload)
+        result = chat(db, payload)
+        if semantic_processing:
+            result = apply_product_narration(db, payload, result)
+            result = _sync_visible_targets(result)
+        return result
     except QualificationJudgmentError as error:
         raise ApiError(error.status_code, error.code, error.message) from error
     except (ValueError, RuntimeError, OpenAIError) as error:

@@ -102,6 +102,38 @@ def test_newer_baseline_judgment_is_never_current(state):
     assert error.value.code == 'CURRENT_JUDGMENT_REQUIRED'
 
 
+def test_later_judgment_for_older_current_analysis_does_not_hide_latest_analysis_judgment(state):
+    db, case, analysis, run = state
+    older_analysis = QualificationAnalysisRun(
+        notice_version_id=case.current_version_id,
+        contract_version=analysis.contract_version,
+        analysis_kind=analysis.analysis_kind,
+        status='SUCCEEDED',
+        created_at=analysis.created_at - timedelta(days=1),
+    )
+    db.add(older_analysis)
+    db.flush()
+    later_old_judgment = QualificationJudgmentRun(
+        preflight_case_id=case.id,
+        notice_version_id=case.current_version_id,
+        analysis_run_id=older_analysis.id,
+        company_id=case.company_id,
+        overall_status='eligible',
+        rule_version=run.rule_version,
+        reference_date=run.reference_date,
+        profile_snapshot=deepcopy(run.profile_snapshot),
+        analysis_status='SUCCEEDED',
+        created_at=run.created_at + timedelta(days=1),
+    )
+    db.add(later_old_judgment)
+    db.flush()
+
+    result = tools.get_qualification_summary(db, case.id)
+    assert result.provenance.analysis_run_id == analysis.id
+    assert result.provenance.judgment_run_id == run.id
+    assert result.overall_status == run.overall_status
+
+
 def test_previous_rule_only_is_not_returned(state):
     db, case, _, run = state
     run.rule_version = 'qualification-rules-v0.2'

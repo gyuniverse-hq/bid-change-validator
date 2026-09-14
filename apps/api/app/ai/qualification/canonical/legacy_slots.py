@@ -32,6 +32,39 @@ _REGISTRATION_CONTEXT_RE = re.compile(r"등록|신고|영업|허가|면허")
 _PRODUCT_CONTEXT_RE = re.compile(r"직접\s*생산\s*확인|세부\s*품명|품명\s*번호")
 
 
+# "A(1257) 또는 B(6770) 또는 C(6786) 등록업체" — 안전 가드는 이것을 막는다. 하나로
+# 줄일 수 없는 조건을 충족/미충족으로 단정하면 안 되기 때문이다. 옳은 판단이지만,
+# **ANY_OF 가 바로 그 '또는' 의 안전한 표현**이다. 줄이지 않고 관계를 그대로 담을 수
+# 있으면 막을 이유가 없다. 그래서 이 모양 하나만 좁게 연다.
+#
+# 조건을 좁게 두는 이유는 '또는' 이 늘 대등한 선택지는 아니기 때문이다 — "A 또는
+# B 기준을 충족한 업체" 처럼 뒤쪽이 예외·완화 조항이면 ANY_OF 가 아니다. 그래서
+# 갈라진 조각이 **전부 업종명(업종코드) 하나씩** 일 때만 인정한다.
+_ALTERNATION_SPLIT_RE = re.compile(r"\s*또는\s*")
+_EXCEPTION_WORDS_RE = re.compile(
+    r"다만|단서|예외|제외|불구하고|각\s*호|아니(?:어야|하여야|한)|해당되지|경우에\s*한"
+)
+_NAMED_INDUSTRY_CODE_RE = re.compile(r"[가-힣A-Za-z·ㆍ\s]{2,}?업\s*\(\s*([0-9]{4})\s*\)")
+
+
+def industry_code_alternation(raw: str) -> list[str] | None:
+    """'또는' 으로 갈린 조각이 전부 업종명(코드) 하나씩이면 그 코드 목록. 아니면 None."""
+    if _EXCEPTION_WORDS_RE.search(raw):
+        return None
+    parts = _ALTERNATION_SPLIT_RE.split(raw)
+    if len(parts) < 2:
+        return None
+    codes: list[str] = []
+    for part in parts:
+        found = _NAMED_INDUSTRY_CODE_RE.findall(part)
+        if len(found) != 1:
+            return None
+        codes.append(found[0])
+    if len(set(codes)) != len(codes):
+        return None
+    return codes
+
+
 def salvage_closed_identifier(raw: str) -> tuple[RequirementType, str] | None:
     """분류가 '기타요건' 으로 와도 원문의 닫힌 식별자로 유형을 되살린다.
 
@@ -82,7 +115,12 @@ def adapt_legacy_slot(
     slot_type = slot.get("유형")
     raw = (slot.get("raw") or "").strip()
     unsafe_reason = unsafe_clause_reason(raw)
-    if unsafe_reason:
+    alternation = (
+        industry_code_alternation(raw)
+        if unsafe_reason == "ALTERNATIVE_OR_EXCEPTION_RULE"
+        else None
+    )
+    if unsafe_reason and alternation is None:
         return [], [{"code": "UNMAPPED_REQUIREMENT", "raw": raw, "reason": unsafe_reason}]
     diagnostics: list[dict[str, Any]] = []
     requirements: list[QualificationRequirement] = []
@@ -94,7 +132,14 @@ def adapt_legacy_slot(
         code for group in _INDUSTRY_CODE_RE.findall(raw)
         for code in re.findall(r"[0-9]{4}", group)
     }
-    if slot_type in {"업종요건", "등록요건"} and len(industry_codes) > 1:
+    if not industry_codes:
+        # "업종코드 : 1450" 뿐 아니라 "폐기물수집·운반업(1227)" 처럼 업종명 뒤 괄호에
+        # 바로 적는 공고가 많다. 업종명이 앞에 붙어 있을 때만 읽는다 — 그냥 네 자리
+        # 숫자를 코드로 보면 연도·금액을 업종으로 만든다.
+        named = set(_NAMED_INDUSTRY_CODE_RE.findall(raw))
+        if len(named) == 1:
+            industry_codes = named
+    if slot_type in {"업종요건", "등록요건"} and len(industry_codes) > 1 and alternation is None:
         return [], [{"code": "UNMAPPED_INDUSTRY", "raw": raw, "reason": "복수 업종코드의 관계를 확인해야 합니다."}]
 
     def add(
@@ -106,12 +151,13 @@ def adapt_legacy_slot(
         unit: str | None = None,
         period_months: float | None = None,
         scope: dict[str, Any] | None = None,
+        group_operator: RequirementOperator | str = "ALL_OF",
     ) -> None:
         requirements.append(
             QualificationRequirement(
                 requirement_key=f"{key_prefix}-{suffix}",
                 requirement_group_key=group_key,
-                group_operator="ALL_OF",
+                group_operator=group_operator,
                 notice_version_id=notice_version_id,
                 type=req_type,
                 operator=operator,
@@ -122,6 +168,20 @@ def adapt_legacy_slot(
                 raw=raw,
             )
         )
+
+    if alternation is not None:
+        # 관계를 줄이지 않고 그대로 담는다 — 코드 하나가 요건 하나, 묶음은 ANY_OF.
+        # 판정기는 이 묶음을 "하나라도 충족하면 충족" 으로 읽는다. 안전 가드가 막던
+        # 이유(하나로 줄일 수 없다)가 사라지므로 막을 이유도 사라진다.
+        for index, code in enumerate(alternation, start=1):
+            add(f"INDUSTRY-{index}", "INDUSTRY", operator="MATCH", value=code,
+                group_operator="ANY_OF")
+        diagnostics.append({
+            "code": "INDUSTRY_ALTERNATION",
+            "raw": raw,
+            "codes": list(alternation),
+        })
+        return requirements, diagnostics
 
     if slot_type == "실적요건":
         amount = slot.get("금액_norm") or {}

@@ -174,13 +174,18 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setNoticeId(noticeResult.items[0]?.id ?? '');
       setCompanyId(companyResult[0]?.id ?? '');
       const targetCase = requestedCaseId;
-      if (targetCase) await hydrateCase(targetCase, request);
+      if (targetCase) {
+        await hydrateCase(targetCase, request);
+      } else if (caseResult.items[0]) {
+        // 로그인한 회사에 허용된 가장 최근 Case로 바로 진입한다.
+        router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
+      }
     } catch (cause) {
       if (request === generation.current) setError(cause instanceof Error ? cause.message : '초기 데이터를 불러오지 못했습니다.');
     } finally {
       if (request === generation.current) setBusy(null);
     }
-  }, [requestedCaseId]);
+  }, [requestedCaseId, router]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void initialize(), 0);

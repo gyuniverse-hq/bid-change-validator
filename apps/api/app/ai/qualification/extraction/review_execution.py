@@ -16,7 +16,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from .review_coverage import CoverageReport, DECISION_STATUSES, audit_review_coverage
 from .review_plan import ReviewPlan, ReviewRequest, plan_review_requests
@@ -131,6 +131,24 @@ class ReviewedSlot:
     fields: tuple[GroundedField, ...]
 
 
+class CandidateDecision(Protocol):
+    """실행기는 의미 모델과 무관하게 대상·상태·개수만 사용한다."""
+    candidate_id: str
+    status: str
+    reason: str | None
+
+    @property
+    def item_count(self) -> int: ...
+
+
+@dataclass(frozen=True)
+class ReviewResponseContract:
+    version: str
+    prompt: str
+    schema_factory: Callable[[], dict[str, Any]]
+    decode: Callable[[Mapping[str, Any], str, ReviewRequest, dict[str, Any], ReviewOptions], CandidateDecision]
+
+
 @dataclass(frozen=True)
 class ReviewedDecision:
     candidate_id: str
@@ -138,24 +156,29 @@ class ReviewedDecision:
     reason: str | None
     slots: tuple[ReviewedSlot, ...]
 
+    @property
+    def item_count(self) -> int:
+        return len(self.slots)
+
 
 @dataclass(frozen=True)
 class ReviewExecution:
     plan: ReviewPlan
     coverage: CoverageReport
-    decisions: tuple[ReviewedDecision, ...]
+    decisions: tuple[CandidateDecision, ...]
     events: tuple[dict[str, Any], ...]
     calls: int
     invalid_candidate_ids: tuple[str, ...]
+    response_version: str = RESPONSE_VERSION
 
     def audit(self) -> dict[str, Any]:
         """원문/인용/모델의 reason/예외 메시지/키를 로그로 복사하지 않는다."""
-        return {"response_version": RESPONSE_VERSION, "grounding_version": GROUNDING_VERSION,
+        return {"response_version": self.response_version, "grounding_version": GROUNDING_VERSION,
                 "plan": self.plan.manifest(),
                 "coverage": self.coverage.to_dict(), "calls": self.calls,
                 "invalid_candidate_ids": list(self.invalid_candidate_ids),
                 "decision_statuses": [{"candidate_id": d.candidate_id, "status": d.status,
-                    "slot_count": len(d.slots)} for d in self.decisions],
+                    ("slot_count" if self.response_version == RESPONSE_VERSION else "condition_count"): d.item_count} for d in self.decisions],
                 "events": copy.deepcopy(list(self.events))}
 
 
@@ -240,6 +263,7 @@ def _model_metadata(extractor: StructuredExtractor) -> dict[str, Any]:
 
 def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtractor,
                         options: ReviewOptions | None = None,
+                        response_contract: ReviewResponseContract | None = None,
                         clock: Callable[[], float] = time.monotonic) -> ReviewExecution:
     """완료된 후보를 덮어쓰지 않고 실제 미응답만 재요청한다.
 
@@ -256,14 +280,20 @@ def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtra
     if rebuilt != plan:
         raise ValueError("review plan does not match its inventory or request hashes")
     by_id = {unit.candidate.candidate_id: unit for unit in plan.inventory.units}
-    accepted: dict[str, ReviewedDecision] = {}
+    accepted: dict[str, CandidateDecision] = {}
     invalid: set[str] = set()
     duplicate: set[str] = set()
     unknown: set[str] = set()
     events: list[dict[str, Any]] = []
     calls = 0
-    schema = review_response_schema()
-    schema_sha, prompt_sha = _sha(_json(schema)), _sha(REVIEW_SYSTEM_PROMPT)
+    contract = response_contract or ReviewResponseContract(
+        RESPONSE_VERSION, REVIEW_SYSTEM_PROMPT, review_response_schema, _decision)
+    if (not isinstance(contract, ReviewResponseContract) or not contract.version
+            or not contract.prompt or not callable(contract.schema_factory) or not callable(contract.decode)):
+        raise ValueError("invalid review response contract")
+    schema = contract.schema_factory()
+    system_prompt = contract.prompt
+    schema_sha, prompt_sha = _sha(_json(schema)), _sha(system_prompt)
     started = clock()
     current = plan
     for attempt in range(options.max_retries + 1):
@@ -281,7 +311,7 @@ def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtra
                 continue
             if options.token_counter is not None:
                 try:
-                    count = options.token_counter(REVIEW_SYSTEM_PROMPT, request.body, copy.deepcopy(schema))
+                    count = options.token_counter(system_prompt, request.body, copy.deepcopy(schema))
                     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
                         raise ValueError("invalid token count")
                     event.update(input_tokens=count, token_budget_checked=True)
@@ -298,7 +328,7 @@ def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtra
             calls += 1
             event["started_at"] = datetime.now(timezone.utc).isoformat()
             try:
-                response = structured_extract(REVIEW_SYSTEM_PROMPT, request.body, copy.deepcopy(schema))
+                response = structured_extract(system_prompt, request.body, copy.deepcopy(schema))
             except Exception as error:
                 event.update(outcome="CALL_FAILED", error_type=type(error).__name__)
                 continue
@@ -344,7 +374,7 @@ def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtra
                 if key in duplicates:
                     continue
                 try:
-                    decision = _decision(row, key, request, by_id, options)
+                    decision = contract.decode(row, key, request, by_id, options)
                 except InvalidReview as error:
                     invalid.add(key)
                     event["rejected"].append({"candidate_id": key, "code": str(error)})
@@ -363,4 +393,4 @@ def execute_review_plan(plan: ReviewPlan, *, structured_extract: StructuredExtra
     if invalid or unknown or duplicate:
         coverage = replace(coverage, coverage_status="INVALID", duplicate_candidate_ids=tuple(sorted(duplicate)),
                            unknown_candidate_ids=tuple(sorted(unknown)))
-    return ReviewExecution(plan, coverage, decisions, tuple(events), calls, tuple(sorted(invalid)))
+    return ReviewExecution(plan, coverage, decisions, tuple(events), calls, tuple(sorted(invalid)), contract.version)

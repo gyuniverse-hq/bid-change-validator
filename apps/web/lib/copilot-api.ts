@@ -13,6 +13,8 @@ export type QualificationRequirement = {
   notice_version_id: string; type: RequirementType; operator: '>=' | '>' | '<=' | '<' | '=' | 'MATCH' | 'RANGE' | null;
   value: number | string | null; unit: string | null; period_months: number | null;
   scope: Record<string, unknown>; required: boolean; raw: string; confidence: number | null; evidence_keys: string[];
+  /* 백엔드 contracts.py의 QualificationRequirement에 있는데 빠져 있던 필드. 판정 입력 비교에 쓴다. (#132 리뷰) */
+  requirement_role: string; condition_complexity: string;
 };
 export type Evidence = {
   evidence_key: string; source_type: 'NOTICE_DOCUMENT' | 'PROPOSAL_DOCUMENT'; document_id: string;

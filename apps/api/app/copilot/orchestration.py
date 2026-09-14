@@ -156,9 +156,17 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     if changed:
         state.targets, state.facts, state.sources, state.fingerprints = [], [], [], {}
     state.scope = tools.scope
+    from .natural_answers import visit_candidate
+    natural_answer = visit_candidate(request, state, tools)
+    if natural_answer:
+        request = request.model_copy(update={'requirement_key': natural_answer[0], 'user_input': natural_answer[1]})
     target, clarification = resolve_target(request, state)
     acknowledgement = acknowledging_proposal(request, state)
-    plan, planner_fallback = plan_turn(request, state, gateway)
+    if natural_answer:
+        plan = TaskPlan(goal=request.message, tasks=[Task(kind='PROPOSE_ACTION', question=request.message)])
+        planner_fallback = False
+    else:
+        plan, planner_fallback = plan_turn(request, state, gateway)
     # Keep the actual user's request as the completion criterion, even when the
     # planner expands the wording of its tool-specific questions.
     plan.goal = request.message
@@ -249,12 +257,24 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         proposal_request = request.model_copy(update={'response_version': 'legacy',
             'requirement_key': target.requirement_key if target else request.requirement_key})
         try:
-            legacy = chat(tools.db, proposal_request)
-            actions = legacy.actions
+            if natural_answer:
+                from .actions import propose_answer
+                actions = [propose_answer(tools.db, tools.case.id, natural_answer[0], natural_answer[1])]
+            else:
+                legacy = chat(tools.db, proposal_request)
+                actions = legacy.actions
             bundle.coverage['PROPOSE_ACTION'] = 'FOUND' if actions else 'UNAVAILABLE'
             bundle.limitations.append('변경 제안은 검토 화면의 명시적인 실행 확인 전까지 저장되지 않습니다.' if actions
                                       else '이 요청으로 실행 가능한 변경 제안은 없습니다. 가정은 저장되지 않습니다.')
             for action in actions:
+                if natural_answer:
+                    values = json.loads(action.user_input.normalized_value)['answers']
+                    procedure_fact(bundle, 'PROPOSE_ACTION',
+                        '현장 방문 ' + ('완료' if values['site_visited'] else '미완료')
+                        + ', 확인서 ' + ('제출' if values['visit_certificate'] else '미제출')
+                        + '로 답변을 제안합니다. 증빙 보유 여부는 확인되지 않았습니다. 아직 저장하지 않았습니다. '
+                        + '서버 제안 검토에서 내용을 확인한 뒤 실행할 수 있습니다. 회사 프로필은 변경하지 않습니다.')
+                    continue
                 description = action.title + ' — ' + action.consequences
                 if action.action_type == 'ANSWER_REQUIREMENT':
                     question = next((f.text for f in bundle.facts if f.origin_tool == 'READ_CHECKS'
@@ -272,11 +292,11 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
             bundle.limitations.append(f'변경 제안을 확인하지 못했습니다 ({error.code}).')
     if clarification:
         claims, fallback, events = [], True, []
-    elif acknowledgement:
-        fact = next(f for f in bundle.facts if f.origin_tool == 'ACKNOWLEDGE_ACTION')
+    elif acknowledgement or (natural_answer and actions):
+        fact = next(f for f in bundle.facts if f.origin_tool == ('PROPOSE_ACTION' if natural_answer else 'ACKNOWLEDGE_ACTION'))
         claims = [Claim(claim_id='acknowledgement', text=fact.text, fact_ids=[fact.fact_id],
                         source_ids=fact.source_ids, validation='SUPPORTED', method='rule', reason='SERVER_PROCEDURE')]
-        fallback, events = False, [{'stage': 'procedure', 'reason': 'ACKNOWLEDGEMENT_DOES_NOT_CONFIRM'}]
+        fallback, events = False, [{'stage': 'procedure', 'reason': 'PROPOSAL_NOT_EXECUTED' if natural_answer else 'ACKNOWLEDGEMENT_DOES_NOT_CONFIRM'}]
     else:
         claims, fallback, events = compose(bundle, plan, state, gateway)
     # Recheck the observed product/document basis before committing any facts or proposals.

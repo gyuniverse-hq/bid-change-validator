@@ -20,6 +20,7 @@ from typing import Any
 
 from .review_coverage import CoverageReport, DECISION_STATUSES, audit_review_coverage
 from .review_plan import ReviewPlan, ReviewRequest, plan_review_requests
+from .review_grounding import GROUNDING_VERSION, SourceQuoteError, resolve_source_quote
 
 RESPONSE_VERSION = "qualification-review-response-v1"
 SLOT_TYPES = ("실적요건", "인력요건", "인증요건", "면허요건", "등록요건", "지역요건",
@@ -120,6 +121,7 @@ class GroundedField:
     # 부모 블록의 Python 문자 위치. LLM이 반환한 숫자가 아니다.
     start_offset: int
     end_offset: int
+    match_method: str = "EXACT"
 
 
 @dataclass(frozen=True)
@@ -148,7 +150,8 @@ class ReviewExecution:
 
     def audit(self) -> dict[str, Any]:
         """원문/인용/모델의 reason/예외 메시지/키를 로그로 복사하지 않는다."""
-        return {"response_version": RESPONSE_VERSION, "plan": self.plan.manifest(),
+        return {"response_version": RESPONSE_VERSION, "grounding_version": GROUNDING_VERSION,
+                "plan": self.plan.manifest(),
                 "coverage": self.coverage.to_dict(), "calls": self.calls,
                 "invalid_candidate_ids": list(self.invalid_candidate_ids),
                 "decision_statuses": [{"candidate_id": d.candidate_id, "status": d.status,
@@ -207,16 +210,17 @@ def _decision(row: Mapping[str, Any], target: str, request: ReviewRequest,
                 raise InvalidReview("CROSS_DOCUMENT_SOURCE")
             if not isinstance(quote, str) or not quote.strip():
                 raise InvalidReview("EMPTY_SOURCE_QUOTE")
-            position = source.text.find(quote)
-            if position < 0:
-                raise InvalidReview("QUOTE_NOT_IN_SOURCE")
-            if source.text.find(quote, position + 1) >= 0:
-                raise InvalidReview("AMBIGUOUS_SOURCE_QUOTE")
-            start = source.start_offset + position
-            found[name] = GroundedField(name, sid, source.text[position:position + len(quote)], start, start + len(quote))
+            try:
+                span = resolve_source_quote(source.text, quote, base_offset=source.start_offset)
+            except SourceQuoteError as error:
+                raise InvalidReview(str(error)) from error
+            found[name] = GroundedField(name, sid, span.quote, span.start_offset,
+                                       span.end_offset, span.method)
         grounded.append(ReviewedSlot(item["type"], item["basis"], tuple(found[key] for key in sorted(found))))
     # 단순 중복도 임의 제거하지 않는다. 의미/그룹 보존은 다음 단계의 책임이다.
-    fingerprints = [_json(asdict(slot)) for slot in grounded]
+    fingerprints = [_json({"type": slot.type, "basis": slot.basis,
+        "fields": [{key: value for key, value in asdict(field).items() if key != "match_method"}
+                   for field in slot.fields]}) for slot in grounded]
     if len(fingerprints) != len(set(fingerprints)):
         raise InvalidReview("DUPLICATE_SLOT")
     return ReviewedDecision(target, status, reason, tuple(sorted(grounded, key=lambda slot: _json(asdict(slot)))))

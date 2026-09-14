@@ -38,7 +38,7 @@ socket.socket.connect = local_event_loop_only
 socket.socket.connect_ex = forbidden
 import pytest
 
-tests = ['test_hwp_control_text.py', 'test_document_extraction.py', 'test_copilot_document_ledger.py', 'test_source_condition_contracts.py', 'test_copilot_narration.py', 'test_copilot_required_checks_narration.py',
+tests = ['test_local_copilot_evaluation.py', 'test_hwp_control_text.py', 'test_document_extraction.py', 'test_copilot_document_ledger.py', 'test_source_condition_contracts.py', 'test_copilot_narration.py', 'test_copilot_required_checks_narration.py',
          'test_copilot_v31.py', 'test_copilot_acceptance.py', 'test_copilot_v31_review.py', 'test_copilot_v31_readiness.py', 'test_document_rag_store.py',
          'test_copilot_chat_contract.py', 'test_copilot_semantic_router.py',
          'test_copilot_intent_resolver.py', 'test_copilot_semantic_optin.py', 'test_copilot_v31_consent.py']

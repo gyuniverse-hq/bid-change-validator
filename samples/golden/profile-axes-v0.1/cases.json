@@ -1,0 +1,334 @@
+{
+  "format": "golden-profile-axes/v0.1",
+  "derives_from": "qualification-v0.2",
+  "review_status": "DRAFT_NOT_APPROVED",
+  "note": "고정본의 실제 요건을 재사용하고 회사 프로필만 바꾼 케이스. 승인 전에는 게이트에 넣지 않는다.",
+  "cases": [
+    {
+      "case_id": "A1",
+      "notice_no": "R26BK01686972",
+      "source_id": "01686972-001",
+      "notice_version_id": "28eee55f-4a2e-4ead-8425-8d543c4117a2",
+      "source_order": "001",
+      "title": "2026년 안동중앙문화의거리 공공디자인 환경개선 용역",
+      "focus": "프로필 축 — 비슷하지만 다른 지역",
+      "synthetic": true,
+      "profile_name": "합성회사 A1",
+      "profile": {
+        "company_id": "A1",
+        "region_code": null,
+        "region_name": "경상남도",
+        "company_size": "SMALL",
+        "industries": [],
+        "staff": {
+          "total_count": 8,
+          "verified": false,
+          "roles": []
+        },
+        "performances": [],
+        "certifications": [],
+        "extensions": {},
+        "completeness": {
+          "certifications": true,
+          "company_size": true,
+          "industries": true,
+          "performances": true,
+          "region": true,
+          "staff_roles": true,
+          "staff_total": true
+        }
+      },
+      "reference_date": "2026-08-18",
+      "analysis_status": "PARTIAL",
+      "expected_safe_overall": "ineligible",
+      "full_notice_eligibility_asserted": false,
+      "review_status": "DRAFT_NOT_APPROVED",
+      "independent_reviewed": false,
+      "derived_from": "J31",
+      "axis": "비슷하지만 다른 지역",
+      "why": "앞 두 글자가 같은 이웃 시·도. 느슨한 매칭이면 충족이라 답한다",
+      "canonical_inputs": [
+        {
+          "requirement": {
+            "requirement_key": "A1:region",
+            "requirement_group_key": null,
+            "group_operator": null,
+            "notice_version_id": "28eee55f-4a2e-4ead-8425-8d543c4117a2",
+            "type": "REGION",
+            "operator": "MATCH",
+            "value": "경상북도",
+            "unit": null,
+            "period_months": null,
+            "scope": {},
+            "requirement_role": "mandatory",
+            "condition_complexity": "simple",
+            "required": true,
+            "raw": "본점 소재지(개인사업자의 경우 사업자등록증에 기재된 사업장의 소재지)가 경상북도에 소재하고 있는 업체",
+            "confidence": null,
+            "evidence_keys": [
+              "E073"
+            ]
+          },
+          "mapping": "DIRECT",
+          "semantic_expected": "UNSATISFIED",
+          "assertion_key": "region",
+          "notes": [
+            "프로필 축 비슷하지만 다른 지역. 앞 두 글자가 같은 이웃 시·도. 느슨한 매칭이면 충족이라 답한다"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "A2",
+      "notice_no": "R26BK01684863",
+      "source_id": "01684863-001",
+      "notice_version_id": "fbc095ba-5d92-4461-a4cc-d436f5532c3b",
+      "source_order": "001",
+      "title": "전북대학교 남원글로컬캠퍼스 본관동 생활폐기물 처리 용역",
+      "focus": "프로필 축 — 더 좁게 적힌 지역",
+      "synthetic": true,
+      "profile_name": "합성회사 A2",
+      "profile": {
+        "company_id": "A2",
+        "region_code": null,
+        "region_name": "전북특별자치도 전주시",
+        "company_size": "SMALL",
+        "industries": [],
+        "staff": {
+          "total_count": 8,
+          "verified": false,
+          "roles": []
+        },
+        "performances": [],
+        "certifications": [],
+        "extensions": {},
+        "completeness": {
+          "certifications": true,
+          "company_size": true,
+          "industries": true,
+          "performances": true,
+          "region": true,
+          "staff_roles": true,
+          "staff_total": true
+        }
+      },
+      "reference_date": "2026-08-18",
+      "analysis_status": "PARTIAL",
+      "expected_safe_overall": "insufficient_data",
+      "full_notice_eligibility_asserted": false,
+      "review_status": "DRAFT_NOT_APPROVED",
+      "independent_reviewed": false,
+      "derived_from": "J13",
+      "axis": "더 좁게 적힌 지역",
+      "why": "회사가 요건보다 좁게 적힌 경우. 완전 일치만 보면 미달이라 답한다",
+      "canonical_inputs": [
+        {
+          "requirement": {
+            "requirement_key": "A2:region",
+            "requirement_group_key": null,
+            "group_operator": null,
+            "notice_version_id": "fbc095ba-5d92-4461-a4cc-d436f5532c3b",
+            "type": "REGION",
+            "operator": "MATCH",
+            "value": "전북특별자치도",
+            "unit": null,
+            "period_months": null,
+            "scope": {},
+            "requirement_role": "mandatory",
+            "condition_complexity": "simple",
+            "required": true,
+            "raw": "주된 영업소의 소재지가 전북특별자치도에 있는 업체만 참가할 수 있다.",
+            "confidence": null,
+            "evidence_keys": [
+              "E015"
+            ]
+          },
+          "mapping": "DIRECT",
+          "semantic_expected": "SATISFIED",
+          "assertion_key": "region",
+          "notes": [
+            "프로필 축 더 좁게 적힌 지역. 회사가 요건보다 좁게 적힌 경우. 완전 일치만 보면 미달이라 답한다"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "A3",
+      "notice_no": "R26BK01699574",
+      "source_id": "01699574-000",
+      "notice_version_id": "e36f0630-8212-4c72-b525-401d2b160113",
+      "source_order": "000",
+      "title": "노후 PC 교체 (재공고)",
+      "focus": "프로필 축 — 다른 인증을 보유",
+      "synthetic": true,
+      "profile_name": "합성회사 A3",
+      "profile": {
+        "company_id": "A3",
+        "region_code": null,
+        "region_name": null,
+        "company_size": "SMALL",
+        "industries": [],
+        "staff": {
+          "total_count": 8,
+          "verified": false,
+          "roles": []
+        },
+        "performances": [],
+        "certifications": [
+          {
+            "ref": "A3-C1",
+            "name": "직접생산확인증명서(노트북컴퓨터-4321150702)",
+            "certification_code": "4321150702",
+            "issuer_name": null,
+            "issued_at": null,
+            "expires_at": null,
+            "verified": false
+          }
+        ],
+        "extensions": {},
+        "completeness": {
+          "certifications": true,
+          "company_size": true,
+          "industries": true,
+          "performances": true,
+          "region": true,
+          "staff_roles": true,
+          "staff_total": true
+        }
+      },
+      "reference_date": "2026-09-08",
+      "analysis_status": "PARTIAL",
+      "expected_safe_overall": "ineligible",
+      "full_notice_eligibility_asserted": false,
+      "review_status": "DRAFT_NOT_APPROVED",
+      "independent_reviewed": false,
+      "derived_from": "J30",
+      "axis": "다른 인증을 보유",
+      "why": "품목이 다른 직접생산확인증명서 보유. 인증 대조가 없으면 충족이라 답한다",
+      "canonical_inputs": [
+        {
+          "requirement": {
+            "requirement_key": "A3:direct_production",
+            "requirement_group_key": null,
+            "group_operator": null,
+            "notice_version_id": "e36f0630-8212-4c72-b525-401d2b160113",
+            "type": "REGISTRATION_CERTIFICATION",
+            "operator": "MATCH",
+            "value": "4321150701",
+            "unit": null,
+            "period_months": null,
+            "scope": {},
+            "requirement_role": "mandatory",
+            "condition_complexity": "simple",
+            "required": true,
+            "raw": "직접생산확인증명서(데스크톱컴퓨터-4321150701)를 소지한 업체",
+            "confidence": null,
+            "evidence_keys": [
+              "E071"
+            ]
+          },
+          "mapping": "DIRECT",
+          "semantic_expected": "UNSATISFIED",
+          "assertion_key": "direct_production",
+          "notes": [
+            "프로필 축 다른 인증을 보유. 품목이 다른 직접생산확인증명서 보유. 인증 대조가 없으면 충족이라 답한다"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "A4",
+      "notice_no": "R26BK01684825",
+      "source_id": "01684825-000",
+      "notice_version_id": "1bec1ad5-e9e2-4fe9-a9d8-1ae5ef96a387",
+      "source_order": "000",
+      "title": "2026 화성 루나빛축제 대행 용역 입찰 공고[긴급]",
+      "focus": "프로필 축 — 기간 밖 실적만 보유",
+      "synthetic": true,
+      "profile_name": "합성회사 A4",
+      "profile": {
+        "company_id": "A4",
+        "region_code": null,
+        "region_name": null,
+        "company_size": "SMALL",
+        "industries": [],
+        "staff": {
+          "total_count": 8,
+          "verified": false,
+          "roles": []
+        },
+        "performances": [
+          {
+            "ref": "A4-F1",
+            "name": "문화예술행사 기획·운영",
+            "client_name": "공공기관",
+            "client_institution_code": null,
+            "amount": 300000000,
+            "started_at": null,
+            "completed_at": "2015-03-01",
+            "completed_year": null,
+            "fields": [
+              "문화예술행사"
+            ],
+            "verified": false
+          }
+        ],
+        "certifications": [],
+        "extensions": {},
+        "completeness": {
+          "certifications": true,
+          "company_size": true,
+          "industries": true,
+          "performances": true,
+          "region": true,
+          "staff_roles": true,
+          "staff_total": true
+        }
+      },
+      "reference_date": "2026-08-18",
+      "analysis_status": "PARTIAL",
+      "expected_safe_overall": "ineligible",
+      "full_notice_eligibility_asserted": false,
+      "review_status": "DRAFT_NOT_APPROVED",
+      "independent_reviewed": false,
+      "derived_from": "J20",
+      "axis": "기간 밖 실적만 보유",
+      "why": "금액은 요건을 넘지만 11년 전 실적. 기간 조건이 없으면 충족이라 답한다",
+      "canonical_inputs": [
+        {
+          "requirement": {
+            "requirement_key": "A4:single_amount",
+            "requirement_group_key": null,
+            "group_operator": null,
+            "notice_version_id": "1bec1ad5-e9e2-4fe9-a9d8-1ae5ef96a387",
+            "type": "PERFORMANCE_AMOUNT",
+            "operator": ">=",
+            "value": 200000000,
+            "unit": "KRW",
+            "period_months": 120,
+            "scope": {
+              "experience_field": "문화예술행사",
+              "aggregation": "MAX"
+            },
+            "requirement_role": "mandatory",
+            "condition_complexity": "simple",
+            "required": true,
+            "raw": "입찰공고일 기준 최근 10년간 정부(국가 및 지방자치단체, 산하기관, 정부투자기관 등) 및 산하 공기업, 민자 단일 건으로 2억원(부가세 포함) 이상인 문화예술행사 대행(축제, 문화행사, 박람회) 단일 실적이 있는 업체 문화예술행사 대행(축제, 문화행사, 박람회)",
+            "confidence": null,
+            "evidence_keys": [
+              "E089",
+              "E034",
+              "E035"
+            ]
+          },
+          "mapping": "DIRECT",
+          "semantic_expected": "UNSATISFIED",
+          "assertion_key": "single_amount",
+          "notes": [
+            "프로필 축 기간 밖 실적만 보유. 금액은 요건을 넘지만 11년 전 실적. 기간 조건이 없으면 충족이라 답한다"
+          ]
+        }
+      ]
+    }
+  ]
+}

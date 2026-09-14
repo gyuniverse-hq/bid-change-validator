@@ -43,6 +43,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_DIR = REPO_ROOT / "samples" / "golden" / "qualification-v0.2"
+PROFILE_AXES_DIR = REPO_ROOT / "samples" / "golden" / "profile-axes-v0.1"
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
 
@@ -82,6 +83,62 @@ def verify_checksums(golden_dir: Path) -> None:
             f"  summary {str(summary_fixture_sha)[:16]}… / 실제 {actual_fixture_sha[:16]}…\n"
             "fixture 를 바꿨다면 checksums.sha256 과 summary.json 을 함께 갱신하세요."
         )
+
+
+def score_profile_axes(axes_dir: Path) -> dict | None:
+    """프로필 축 세트를 그림자로 채점한다 — 숫자는 찍되 게이트는 움직이지 않는다.
+
+    v0.2 는 회사 프로필이 거의 한 종류라, 비교 코드를 비교할 거리가 없는 입력으로
+    테스트한다. 이 세트는 같은 요건에 다른 회사를 댄다. 다만 기대값이 아직 승인 전이라
+    집계 숫자로 PR 을 막지 않는다. 실제 문턱은 apps/api/tests/test_profile_axes.py 가
+    케이스마다 거는 것이고, 여기서는 한눈에 보이라고 숫자만 낸다.
+    """
+    cases_path = axes_dir / "cases.json"
+    if not cases_path.is_file():
+        return None
+
+    checksums = axes_dir / "checksums.sha256"
+    if checksums.is_file():
+        for line in checksums.read_text(encoding="utf-8").splitlines():
+            parts = line.split(maxsplit=1)
+            if len(parts) != 2:
+                continue
+            digest, name = parts[0].strip(), parts[1].lstrip("*").strip()
+            actual = sha256_of(axes_dir / name)
+            if actual != digest:
+                raise SystemExit(
+                    f"프로필 축 파일이 checksums.sha256 과 다릅니다: {name}\n"
+                    f"  기록 {digest[:16]}… / 실제 {actual[:16]}…"
+                )
+
+    from app.ai import contracts
+    from app.qualification.rules import judgment as rules
+
+    payload = json.loads(cases_path.read_text(encoding="utf-8"))
+    rows = []
+    for case in payload["cases"]:
+        item = case["canonical_inputs"][0]
+        judgment = rules.judge_requirement(
+            contracts.QualificationRequirement.model_validate(item["requirement"]),
+            rules.CompanyProfileSnapshot.model_validate(case["profile"]),
+            preflight_case_id=case["case_id"],
+            reference_date=date.fromisoformat(case["reference_date"]),
+        )
+        rows.append({
+            "case_id": case["case_id"],
+            "axis": case["axis"],
+            "derived_from": case["derived_from"],
+            "type": item["requirement"]["type"],
+            "expected": item["semantic_expected"],
+            "actual": judgment.status,
+            "match": judgment.status == item["semantic_expected"],
+        })
+    return {
+        "review_status": payload.get("review_status"),
+        "case_count": len(rows),
+        "match": sum(1 for row in rows if row["match"]),
+        "rows": rows,
+    }
 
 
 def main() -> int:
@@ -165,12 +222,25 @@ def main() -> int:
         "rows": rows,
         "overall": overall,
     }
+    axes = score_profile_axes(PROFILE_AXES_DIR)
+    if axes is not None:
+        report["profile_axes_shadow"] = axes
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(json.dumps({k: v for k, v in report.items() if k not in ("rows", "overall")},
-                     ensure_ascii=False, indent=2))
+    print(json.dumps(
+        {k: v for k, v in report.items() if k not in ("rows", "overall", "profile_axes_shadow")},
+        ensure_ascii=False, indent=2))
+
+    if axes is not None:
+        print(f"\n[프로필 축 · 그림자] {axes['match']}/{axes['case_count']} 일치 "
+              f"({axes['review_status']} — 게이트에 넣지 않는다)")
+        for row in axes["rows"]:
+            mark = "o" if row["match"] else "X"
+            print(f"  {mark} {row['case_id']} {row['axis']:<16} "
+                  f"{row['derived_from']} {row['type']:<26} "
+                  f"기대 {row['expected']:<12} 실제 {row['actual']}")
 
     if args.no_gate or gate is None:
         return 1 if fatal else 0

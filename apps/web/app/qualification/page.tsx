@@ -409,12 +409,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
-        {(error || message) && <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[13px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}<span>{error || message}</span></div>}
+        {(error || message) && <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[15px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}<span>{error || message}</span></div>}
 
         {!activeCase ? (
           <section className="rounded-[22px] border border-[var(--product-line)] bg-white p-7 shadow-sm">
-            <h2 className="text-[24px] font-extrabold tracking-[-0.03em]">새 참가자격 검토</h2>
-            <p className="mt-2 text-[14px] text-[var(--product-muted)]">회사 프로필과 공고를 연결해 검토 건을 만듭니다.</p>
+            <h2 className="text-[28px] font-extrabold tracking-[-0.03em]">새 참가자격 검토</h2>
+            <p className="mt-2 text-[15px] text-[var(--product-muted)]">회사 프로필과 공고를 연결해 검토 건을 만듭니다.</p>
             <div className="mt-6 grid gap-4 md:grid-cols-2"><NativeSelect value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{companies.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.name}</NativeSelectOption>)}</NativeSelect><NativeSelect value={noticeId} onChange={(event) => setNoticeId(event.target.value)}>{notices.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect></div>
             <Button className="mt-4" onClick={() => void createCase()} disabled={!companyId || !noticeId || busy !== null}>검토 건 만들기</Button>
           </section>
@@ -422,7 +422,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           <>
             {/* ── 1 공고 · 검토 건 ── */}
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
+              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
               {/* 검토 건 이동은 화면 맨 아래 카드에 있어서 아무도 못 찾았다. 제목 옆으로 올린다. */}
               <div className="flex flex-wrap items-center gap-2">
                 <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
@@ -440,26 +440,26 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
             {analysisNotice && (
               <section className="mt-6 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
-                <strong className="text-[14px] text-[var(--product-warn)]">{analysisNotice.label}</strong>
-                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{analysisNotice.description}</p>
+                <strong className="text-[15px] text-[var(--product-warn)]">{analysisNotice.label}</strong>
+                <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">{analysisNotice.description}</p>
               </section>
             )}
 
-            {reviewProgress && <section className="mt-6 rounded-[18px] border border-[#d9def7] bg-[#f5f6ff] px-5 py-4"><div className="flex items-center gap-3">{busy === 'review' ? <LoaderCircle className="size-5 animate-spin text-[var(--product-accent)]" /> : <CheckCircle2 className="size-5 text-emerald-600" />}<div><strong className="text-[14px]">{reviewProgress}</strong>{busy === 'review' && <p className="mt-1 text-[12px] text-[var(--product-muted)]">완료되면 새로고침 없이 이 화면에 즉시 결과가 반영됩니다.</p>}</div></div></section>}
+            {reviewProgress && <section className="mt-6 rounded-[18px] border border-[#d9def7] bg-[#f5f6ff] px-5 py-4"><div className="flex items-center gap-3">{busy === 'review' ? <LoaderCircle className="size-5 animate-spin text-[var(--product-accent)]" /> : <CheckCircle2 className="size-5 text-emerald-600" />}<div><strong className="text-[15px]">{reviewProgress}</strong>{busy === 'review' && <p className="mt-1 text-[13px] text-[var(--product-muted)]">완료되면 새로고침 없이 이 화면에 즉시 결과가 반영됩니다.</p>}</div></div></section>}
 
             {/* ── 4 물어보기 ── */}
             <ActionCard caseId={activeCase.id} />
 
             {/* ── 5 왜 그 결론인지 — 요건별 판정과 근거 ── */}
-            <section className="mt-9">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[25px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
+            <section className="mt-10">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.</p></div><span className="text-[15px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
-                <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[12px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
+                <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[13px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
                 {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
                   return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
-                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[14px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
+                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
             {/*
@@ -469,12 +469,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
               전에는 「판정에 들어가지 않은 조건」 뒤 2단 그리드 한 칸에 있어서,
               결론을 본 사람이 화면을 한참 내려야 닿았다.
             */}
-            <section className="mt-7 rounded-[20px] border border-[var(--product-line)] bg-white p-6">
+            <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-white p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-[20px] font-extrabold">변경공고 영향 재검증</h2>
-                  <p className="mt-2 text-[13px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 자격요건만 다시 판정합니다.</p>
-                  {revalidation && <p className="mt-3 text-[13px]">다시 판정한 자격요건 <strong>{revalidation.revalidated_keys.length}건</strong></p>}
+                  <h2 className="text-[21px] font-extrabold">변경공고 영향 재검증</h2>
+                  <p className="mt-2 text-[15px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 자격요건만 다시 판정합니다.</p>
+                  {revalidation && <p className="mt-3 text-[15px]">다시 판정한 자격요건 <strong>{revalidation.revalidated_keys.length}건</strong></p>}
                 </div>
                 <Button variant="outline" className="shrink-0" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>
               </div>
@@ -482,7 +482,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             {/* ── 7 판정 밖 조건 — 위 표에 없는 것 ── */}
             {/* P0-5 · 위 표에 없는 조건을 말한다. 이걸 안 그리면 사용자는 빠진 조건이 있는 줄 모른 채 판정을 믿는다 (NFR-1). */}
-            <section id="analysis-scope" className={`mt-7 rounded-[20px] border px-6 py-5 ${unjudgedCount > 0 ? 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)]' : 'border-[var(--product-line)] bg-white'}`}>
+            <section id="analysis-scope" className={`mt-8 rounded-[20px] border px-6 py-5 ${unjudgedCount > 0 ? 'border-[var(--product-warn-line)] bg-[var(--product-warn-soft)]' : 'border-[var(--product-line)] bg-white'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-[18px] font-extrabold text-[var(--product-ink)]">판정에 들어가지 않은 조건{unjudgedCount > 0 ? ` ${unjudgedCount}건` : ''}</h2>
                   {unjudgedCount > 0 && (
@@ -492,10 +492,10 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   )}
                 </div>
                 {unjudgedCount > 0 && !unjudgedOpen && (
-                  <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">제출 전에 공고 원문에서 직접 확인해야 하는 항목입니다.</p>
+                  <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">제출 전에 공고 원문에서 직접 확인해야 하는 항목입니다.</p>
                 )}
                 {(unjudgedCount === 0 || unjudgedOpen) && <>
-                <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{unjudgedState === 'NOT_RUN'
+                <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">{unjudgedState === 'NOT_RUN'
                   ? '아직 자격검토를 실행하지 않았습니다. 검토를 실행하면 판정에서 빠진 조건을 여기에 표시합니다.'
                   : unjudgedState === 'FAILED'
                     ? unjudgedCount
@@ -508,8 +508,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
                 {previewNoticeFacts.length > 0 && (
                   <div className="mt-4">
-                    <strong className="text-[13px] text-[var(--product-warn)]">판정 대상이 아닌 확인사항 {noticeFacts.length}건</strong>
-                    {sharedNoticeFactMessage && <p className="mt-1 text-[13px] leading-6 text-[var(--product-body)]">{sharedNoticeFactMessage}</p>}
+                    <strong className="text-[15px] text-[var(--product-warn)]">판정 대상이 아닌 확인사항 {noticeFacts.length}건</strong>
+                    {sharedNoticeFactMessage && <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">{sharedNoticeFactMessage}</p>}
                     <ul className="mt-2 space-y-2">
                       {/* 무엇이 걸렸는지는 근거 원문으로만 구분된다. 공통 문구는 위에서 한 번 말했다. */}
                       {previewNoticeFacts.map((item, index) => {
@@ -518,9 +518,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                         const locationText = evidence ? evidenceLocationText(evidence.location) : null;
                         return (
                           <li key={`${item.code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
-                            {evidence && <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
-                            {!sharedNoticeFactMessage && <p className={evidence ? 'mt-1 text-[13px] leading-6 text-[var(--product-body)]' : 'text-[13px] leading-6 text-[var(--product-body)]'}>{item.message}</p>}
-                            {locationText && <p className="mt-1 text-[12px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
+                            {evidence && <p className="text-[15px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
+                            {!sharedNoticeFactMessage && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{item.message}</p>}
+                            {locationText && <p className="mt-1 text-[13px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
                             {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
                           </li>
@@ -532,7 +532,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
                 {previewDropped.length > 0 && (
                   <div className="mt-4">
-                    <strong className="text-[13px] text-[var(--product-warn)]">구조화에서 제외된 요건 {droppedRequirements.length}건</strong>
+                    <strong className="text-[15px] text-[var(--product-warn)]">구조화에서 제외된 요건 {droppedRequirements.length}건</strong>
                     <ul className="mt-2 space-y-2">
                       {/* MISSING_RAW는 raw가 비어 있을 수 있다. 빈 따옴표만 남기지 않고 확보하지 못했다고 말한다. */}
                       {previewDropped.map((item, index) => {
@@ -540,9 +540,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                         return (
                           <li key={`${item.reason_code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
                             {raw
-                              ? <p className="text-[13.5px] leading-6 text-[var(--product-ink)]">「{raw}」</p>
-                              : <p className="text-[13.5px] leading-6 text-[var(--product-faint)]">원문 문구를 확보하지 못했습니다.</p>}
-                            <p className="mt-1 text-[12.5px] text-[var(--product-muted)]">{labelOf(DROPPED_REASON_LABEL, item.reason_code)}</p>
+                              ? <p className="text-[15px] leading-6 text-[var(--product-ink)]">「{raw}」</p>
+                              : <p className="text-[15px] leading-6 text-[var(--product-faint)]">원문 문구를 확보하지 못했습니다.</p>}
+                            <p className="mt-1 text-[13px] text-[var(--product-muted)]">{labelOf(DROPPED_REASON_LABEL, item.reason_code)}</p>
                           </li>
                         );
                       })}
@@ -563,39 +563,39 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 </>}
             </section>
 
-            {selectedEvidence && <section className="mt-7"><h2 className="mb-3 text-[20px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
+            {selectedEvidence && <section className="mt-8"><h2 className="mb-3 text-[21px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
             {/*
               ── 8 이 판정에 쓴 것 ──
               전에는 「분석 완전성」 한 칸과 3칸 카드가 따로 있었는데, 둘 다 「무엇을 근거로 이 판정이 나왔나」를
               말하는 값이라 한 덩어리로 합친다. 카드 여섯 칸이 세로로 쌓이던 것이 한 줄이 된다.
             */}
-            <section className="mt-9 rounded-[20px] border border-[var(--product-line)] p-6">
+            <section className="mt-10 rounded-[20px] border border-[var(--product-line)] p-6">
               <h2 className="text-[18px] font-extrabold">이 판정에 쓴 것</h2>
-              <p className="mt-1 text-[13px] leading-6 text-[var(--product-muted)]">분석이 어디까지 돌았는지와 대조에 쓴 회사 정보입니다. 판정 결과와는 분리해서 봅니다.</p>
+              <p className="mt-1 text-[15px] leading-6 text-[var(--product-muted)]">분석이 어디까지 돌았는지와 대조에 쓴 회사 정보입니다. 판정 결과와는 분리해서 봅니다.</p>
               <div className="mt-4 flex flex-wrap gap-x-8 gap-y-4">
                 <div>
-                  <span className="text-[12px] text-[var(--product-muted)]">회사 프로필</span>
+                  <span className="text-[13px] text-[var(--product-muted)]">회사 프로필</span>
                   <strong className="mt-0.5 block text-[15px]">{company?.name ?? '미연결'}</strong>
-                  <p className="text-[12px] text-[var(--product-muted)]">{company?.region_name ?? '-'} · {labelOf(COMPANY_SIZE_LABEL, company?.company_size)}</p>
+                  <p className="text-[13px] text-[var(--product-muted)]">{company?.region_name ?? '-'} · {labelOf(COMPANY_SIZE_LABEL, company?.company_size)}</p>
                 </div>
                 <div>
-                  <span className="text-[12px] text-[var(--product-muted)]">분석 상태</span>
+                  <span className="text-[13px] text-[var(--product-muted)]">분석 상태</span>
                   <strong className="mt-0.5 block text-[15px]">{analysisDetail ? analysisStatusLabel(analysisDetail.status) : '분석 전'}</strong>
-                  <p className="text-[12px] text-[var(--product-muted)]">{analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p>
+                  <p className="text-[13px] text-[var(--product-muted)]">{analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p>
                 </div>
                 <div>
-                  <span className="text-[12px] text-[var(--product-muted)]">자격요건 · 근거</span>
+                  <span className="text-[13px] text-[var(--product-muted)]">자격요건 · 근거</span>
                   <strong className="mt-0.5 block text-[15px]">{countedAnalysis ? `${countedAnalysis.requirements.length}건` : '-'} · 근거 {countedAnalysis ? `${countedAnalysis.evidence.length}건` : '-'}</strong>
-                  <p className="text-[12px] text-[var(--product-muted)]">공고 원문에서 구조화한 수</p>
+                  <p className="text-[13px] text-[var(--product-muted)]">공고 원문에서 구조화한 수</p>
                 </div>
                 <div>
-                  <span className="text-[12px] text-[var(--product-muted)]">확인 필요</span>
+                  <span className="text-[13px] text-[var(--product-muted)]">확인 필요</span>
                   <strong className="mt-0.5 block text-[15px]">{unknown}건</strong>
-                  <p className="text-[12px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p>
+                  <p className="text-[13px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p>
                 </div>
               </div>
-              {pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}
+              {pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{item.code} · {item.message}</p>)}</div> : null}
             </section>
 
             {/* ── 9 공고 원본 정보 ── */}

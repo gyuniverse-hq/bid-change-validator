@@ -11,7 +11,7 @@ const PRIMARY_NAV = [
   { label: '내 입찰 건', href: '/qualification', disabled: false },
   { label: '회사 프로필', href: '/company', disabled: false },
   { label: '서류함', href: '/documents', disabled: true },
-  { label: '이용안내', href: '/guide', disabled: true },
+  { label: '이용안내', href: '/guide', disabled: false },
 ] as const;
 
 function isActive(pathname: string, href: string) {
@@ -62,7 +62,16 @@ export function AppHeader({
       <div className="app-gnb">
         <PageContainer className="flex h-full items-center gap-5">
           <Link href="/notices" className="app-brand" aria-label="비드체크 공고 찾기">
-            <span className="app-brand-mark" aria-hidden="true">B</span>
+            {/*
+              마크. 이름의 「체크」를 그대로 그린다.
+              30px 안에서는 요소 하나가 가장 잘 읽힌다 — 줄·문서를 같이 넣으면 뭉개진다.
+            */}
+            <span className="app-brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="30" height="30" focusable="false">
+                <rect width="32" height="32" rx="10" fill="currentColor" />
+                <path d="M9.5 16.8l4.4 4.4L22.5 12" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </span>
             <span className="app-brand-copy">
               <strong className="app-brand-name">비드체크</strong>
               <span className="app-brand-subtitle">입찰 참가자격 확인</span>

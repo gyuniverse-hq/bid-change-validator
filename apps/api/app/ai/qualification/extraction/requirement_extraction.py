@@ -319,8 +319,49 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
     return None
 
 
-def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) -> tuple[bool, str, dict[str, Any] | None]:
-    """Reject unsupported source text; clear unverified document locations."""
+# 한 필드에 조건이 둘 이상이면 모델은 세미콜론으로 잇는다. 실측(2026-09-14)에서 본 값 —
+#
+#   기간_raw     "입찰 공고일 기준 2년 내에; 1년 이상"
+#   등록인증_raw "단체급식업 등록업체; 식품위생법에 따른 인·허가; 영업신고(업종코드:1450)"
+#
+# 조각은 전부 원문에 있는데 **이어붙인 문자열**이 원문에 없다. 그것을 통째로 찾다가
+# DETAIL_NOT_FOUND_IN_SOURCE 로 버렸다 — 지어낸 값이 아니라 우리 대조가 못 따라간 것이다.
+# 조각마다 따로 확인한다. 조각 하나라도 근거가 없으면 그대로 버린다.
+_DETAIL_PART_SPLIT_RE = re.compile(r"[;；]")
+
+
+def _detail_parts(detail: str) -> list[str]:
+    parts = [part.strip() for part in _DETAIL_PART_SPLIT_RE.split(detail)]
+    return [part for part in parts if part] or [detail]
+
+
+def _notice_haystack(chunks: list[dict[str, Any]]) -> str:
+    """선별된 청크 전체를 이어붙인 비교용 본문.
+
+    청크 경계는 우리가 자른 것이지 공고가 나눈 것이 아니다. 세부 조건이 옆 청크에 있다고
+    해서 그 공고에 없는 말이 되지는 않는다.
+    """
+    return "".join(_squash(chunk.get("text") or "") for chunk in chunks)
+
+
+def validate_extracted_slot(
+    slot: dict[str, Any],
+    chunks: list[dict[str, Any]],
+    *,
+    notice_text: str | None = None,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Reject unsupported source text; clear unverified document locations.
+
+    [재현 2026-09-14] 세부 조건을 **raw 가 들어 있던 청크 하나에서만** 찾고 있었다.
+    같은 공고를 세 번 돌린 실측에서 「다. 입찰 공고일 기준 2년 내에 2개 이상 각
+    단체급식소…」 조항이 한 번은 요건으로 올라가고 두 번은 DETAIL_NOT_FOUND_IN_SOURCE 로
+    버려졌다. 모델이 세부 조건을 어디까지 끊어 적느냐에 따라 그 문자열이 옆 청크로
+    넘어가기 때문이다. 청크 경계는 우리가 자른 것이고, 공고가 나눈 것이 아니다.
+
+    그래서 **공고 전체**에서 찾는다. 공고 어디에도 없는 세부 조건은 여전히 버린다 —
+    지어낸 값을 판정에 넣지 않는다는 원칙은 그대로다. 넓어진 것은 "어디서 찾는가" 이지
+    "무엇을 받아주는가" 가 아니다.
+    """
     raw = (slot.get("raw") or "").strip()
     if not raw:
         return False, "raw 비어 있음", None
@@ -330,9 +371,22 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
         return False, "raw가 본문에 존재하지 않음(과잉 추출 의심)", None
 
     source_text = _squash(source_chunk.get("text") or "")
+    haystack = _notice_haystack(chunks) if notice_text is None else notice_text
     for field_name in _DETAIL_RAW_FIELDS:
         detail = (slot.get(field_name) or "").strip()
-        if detail and _squash(detail) not in source_text:
+        if not detail:
+            continue
+        for part in _detail_parts(detail):
+            squashed = _squash(part)
+            if not squashed or squashed in source_text:
+                continue
+            if squashed in haystack:
+                # 같은 공고 안의 다른 청크에 있다. 어디서 확인했는지는 남긴다.
+                slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
+                continue
+            # 무엇이 걸렸는지 남긴다. "세부 조건을 못 찾았다" 만으로는 모델이 지어낸 것인지
+            # 우리 대조가 못 따라간 것인지 가릴 수 없고, 둘은 고칠 자리가 다르다.
+            slot["_rejected_detail"] = {"field": field_name, "value": detail, "part": part}
             return False, f"{field_name}가 본문에 존재하지 않음(과잉 추출 의심)", source_chunk
 
     reference = slot.get("근거조항")
@@ -384,17 +438,23 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, str]] = []
         requirements = result.get("requirements", []) if isinstance(result, dict) else []
+        notice_text = _notice_haystack(target)  # 슬롯마다 다시 만들지 않는다
 
         for extracted in requirements:
             slot = dict(extracted)
-            valid, reason, source_chunk = validate_extracted_slot(slot, target)
+            valid, reason, source_chunk = validate_extracted_slot(
+                slot, target, notice_text=notice_text
+            )
             if not valid:
-                rejected.append(
-                    {
-                        "raw": str(slot.get("raw") or ""),
-                        "reason_code": _rejection_reason_code(reason),
-                    }
-                )
+                record = {
+                    "raw": str(slot.get("raw") or ""),
+                    "reason_code": _rejection_reason_code(reason),
+                }
+                detail = slot.get("_rejected_detail")
+                if detail:
+                    record["detail_field"] = str(detail.get("field") or "")
+                    record["detail_value"] = str(detail.get("value") or "")
+                rejected.append(record)
                 continue
             if source_chunk is not None:
                 slot["_source_chunk_id"] = source_chunk.get("chunk_id")

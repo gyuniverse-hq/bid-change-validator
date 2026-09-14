@@ -72,7 +72,9 @@ def layers(result) -> dict[str, list[str]]:
             for item in result.requirements
         ],
         "버림": [
-            f"{getattr(item, 'reason_code', '')}|{normalize(getattr(item, 'raw', ''))}"
+            f"{getattr(item, 'reason_code', '')}|{getattr(item, 'detail_field', '') or ''}"
+            f"|{normalize(getattr(item, 'detail_value', '') or '')}"
+            f"|{normalize(getattr(item, 'raw', ''))}"
             for item in result.dropped_requirements
         ],
         "미분류": [

@@ -37,10 +37,17 @@ class AnalysisDiagnostic(BaseModel):
 
 
 class DroppedRequirement(BaseModel):
-    """An extracted candidate rejected by deterministic source validation."""
+    """An extracted candidate rejected by deterministic source validation.
+
+    `detail_field`·`detail_value` 는 DETAIL_NOT_FOUND_IN_SOURCE 일 때만 채워진다.
+    "세부 조건을 못 찾았다" 만으로는 모델이 지어낸 것인지 우리 대조가 못 따라간 것인지
+    가릴 수 없고, 둘은 고칠 자리가 다르다 — 앞엣것은 프롬프트, 뒤엣것은 대조 규칙이다.
+    """
 
     raw: str
     reason_code: DroppedReasonCode
+    detail_field: str | None = None
+    detail_value: str | None = None
 
 
 class RequirementAnalysisResult(BaseModel):

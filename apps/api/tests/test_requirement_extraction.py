@@ -370,3 +370,69 @@ def test_grounding_normalizes_compatibility_dots_without_changing_raw() -> None:
     assert reason == ""
     assert source_chunk is not None
     assert slot["raw"] == raw
+
+
+def test_a_detail_in_a_neighbouring_chunk_is_still_grounded():
+    """청크 경계는 우리가 자른 것이지 공고가 나눈 것이 아니다.
+
+    실측(2026-09-14)에서 같은 조항이 한 실행에서는 요건으로 올라가고 다른 실행에서는
+    DETAIL_NOT_FOUND_IN_SOURCE 로 버려졌다. 모델이 세부 조건을 어디까지 끊어 적느냐에
+    따라 그 문자열이 옆 청크로 넘어가기 때문이다.
+    """
+    chunks = [
+        {"text": "다. 입찰 공고일 기준 2년 내에 2개 이상 각 단체급식소를 운영한 실적이 있는 업체"},
+        {"text": "※ 1일 평균 800식 이상, 1년 이상 운영한 실적에 한함"},
+    ]
+    slot = {
+        "raw": "다. 입찰 공고일 기준 2년 내에 2개 이상 각 단체급식소를 운영한 실적이 있는 업체",
+        "경험분야_raw": "1일 평균 800식 이상",
+    }
+
+    ok, reason, source_chunk = validate_extracted_slot(slot, chunks)
+
+    assert ok, reason
+    assert source_chunk is chunks[0]
+    # 어디서 확인했는지는 남긴다 — 같은 청크가 아니었다는 사실 자체가 신호다.
+    assert slot["_details_found_outside_source_chunk"] == ["경험분야_raw"]
+
+
+def test_a_detail_found_nowhere_in_the_notice_is_still_rejected():
+    """넓어진 것은 '어디서 찾는가' 이지 '무엇을 받아주는가' 가 아니다."""
+    chunks = [
+        {"text": "다. 최근 2년 내 단체급식소를 운영한 실적이 있는 업체"},
+        {"text": "※ 관공서와 기업체에 한함"},
+    ]
+    slot = {
+        "raw": "다. 최근 2년 내 단체급식소를 운영한 실적이 있는 업체",
+        "금액_raw": "5억원 이상",  # 공고 어디에도 없다
+    }
+
+    ok, reason, _ = validate_extracted_slot(slot, chunks)
+
+    assert not ok
+    assert "금액_raw" in reason
+
+
+def test_semicolon_joined_details_are_checked_part_by_part():
+    """실측(2026-09-14)에서 나온 실제 값. 조각은 전부 원문에 있는데 이어붙인 문자열은 없다."""
+    source = (
+        "다. 입찰 공고일 기준 2년 내에 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 "
+        "1년 이상 운영한 실적이 있는 업체(실적증명)"
+    )
+    slot = {"raw": source, "기간_raw": "입찰 공고일 기준 2년 내에; 1년 이상"}
+
+    ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert ok, reason
+
+
+def test_one_ungrounded_part_still_rejects_the_slot():
+    """조각으로 나눈 것이 느슨해진다는 뜻은 아니다. 하나라도 근거가 없으면 버린다."""
+    source = "다. 입찰 공고일 기준 2년 내에 운영한 실적이 있는 업체"
+    slot = {"raw": source, "기간_raw": "입찰 공고일 기준 2년 내에; 5년 이상"}
+
+    ok, reason, _ = validate_extracted_slot(slot, [{"text": source}])
+
+    assert not ok
+    assert "기간_raw" in reason
+    assert slot["_rejected_detail"]["part"] == "5년 이상"

@@ -78,7 +78,7 @@ function PanelHeader({ caseId, close }: { caseId: string; close: () => void }) {
 function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof typeof pages] }) {
   const { store, state } = useCopilot(caseId);
   const [question, setQuestion] = useState('');
-  const [semanticProcessing, setSemanticProcessing] = useState(true);
+  const [semanticProcessing, setSemanticProcessing] = useState(false);
   const [documentProcessing, setDocumentProcessing] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [state.turns, state.busy]);

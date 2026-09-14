@@ -22,7 +22,7 @@ async function sendConversationMessage(request: ConversationRequest): Promise<Co
       'Content-Type': 'application/json',
       ...(semantic_processing ? { 'X-Copilot-Semantic-Processing': 'true' } : {}),
     },
-    body: JSON.stringify({ ...body, response_version: semantic_processing ? '3.1' : 'legacy' }),
+    body: JSON.stringify({ ...body, response_version: '3.1' }),
   });
   if (!response.ok) {
     const responseBody = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;

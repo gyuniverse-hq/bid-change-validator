@@ -1,8 +1,18 @@
 /* Actual React panel, mocked product API; no DB or live model traffic. */
-const fs = require('node:fs');
-const path = require('node:path');
-const assert = require('node:assert/strict');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+async function loadPlaywright() {
+  const moduleRoot = process.env.PLAYWRIGHT_MODULE;
+  if (!moduleRoot) return import('playwright');
+  const entry = moduleRoot.endsWith('/index.js') || moduleRoot.endsWith('\\index.js')
+    ? moduleRoot
+    : `${moduleRoot.replace(/[\\/]$/, '')}/index.js`;
+  return import(pathToFileURL(entry).href);
+}
+
+const { chromium } = await loadPlaywright();
 
 (async () => {
   const origin = process.env.COPILOT_UI_URL;
@@ -14,7 +24,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   const item = { id: s.case_id, company_id: s.company_id, notice_id: s.notice_id, bid_notice_no: 'V31-FIXTURE',
     notice_title: 'v3.1 합성 검토 공고', title: 'v3.1 합성 검토 공고', status: 'DRAFT', baseline_version_number: 1, current_version_number: 1, documents: [] };
   const version = { id: s.notice_version_id, version_number: 1, documents: [], is_current: true };
-  const requests = [], errors = [], outbound = [];
+  const requests = [], semanticHeaders = [], errors = [], outbound = [];
   const browser = await chromium.launch({ headless: true, channel: process.env.COPILOT_BROWSER_CHANNEL || 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on('pageerror', error => errors.push(error.message));
@@ -28,6 +38,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
       if (p.endsWith('/copilot/chat')) {
         requests.push(request.postDataJSON());
+        semanticHeaders.push(request.headers()['x-copilot-semantic-processing']);
         const response = structuredClone(envelope);
         response.context_revision = requests.length;
         return reply({ answer: response.claims.map(c => c.text).join('\n'), intent: 'UNKNOWN', envelope: response,
@@ -51,15 +62,19 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.getByRole('heading', { name: item.notice_title, exact: true }).waitFor();
     await page.getByRole('button', { name: 'AI Copilot', exact: true }).click();
     await page.locator('#copilot-panel[open]').waitFor();
+    assert.equal(await page.locator('#copilot-semantic-processing').isChecked(), false, 'AI detail processing must be opt-in');
     await page.getByRole('button', { name: '우리 회사, 참여 가능해?', exact: true }).click();
     await page.locator('[data-copilot-version="3.1"]').waitFor();
     assert.equal(requests[0].response_version, '3.1');
+    assert.equal(semanticHeaders[0], undefined, 'v3.1 must not imply semantic/model processing consent');
     assert(await page.getByText('공고일 기준 2년 내 2개 이상', { exact: false }).first().isVisible());
     await page.locator('[data-copilot-version="3.1"] details summary').first().click();
     assert(await page.locator('[data-copilot-version="3.1"] blockquote').first().isVisible());
     const target = envelope.follow_up_targets.find(t => t.kind === 'MANUAL');
     await page.getByRole('button', { name: '직접 확인할 공고 항목 1 · 이 항목 근거 보기', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('[data-copilot-version="3.1"]').length === 2);
+    assert.equal(requests[1].response_version, '3.1');
+    assert.equal(semanticHeaders[1], undefined, 'Target follow-up must preserve semantic opt-out');
     assert.equal(requests[1].target_id, target.target_id);
     assert.equal(requests[1].conversation_id, envelope.conversation_id);
     assert.equal(requests[1].context_revision, 1);
@@ -69,7 +84,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await page.locator('[data-copilot-version="3.1"]').count(), 0);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ status: 'PASS', chat_requests: requests.length, case_id: s.case_id,
-      page_errors: errors, blocked_external_requests: outbound.length, scope: 'actual panel with mock API; no live DB/model' }));
+      semantic_opt_in: false, page_errors: errors, blocked_external_requests: outbound.length,
+      scope: 'actual panel with mock API; no live DB/model' }));
   } catch (error) {
     await page.screenshot({ path: process.env.COPILOT_SCREENSHOT_FILE });
     console.error(JSON.stringify({ errors, text: (await page.locator('body').innerText()).slice(-3000) }));

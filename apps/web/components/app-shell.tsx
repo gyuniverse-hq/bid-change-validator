@@ -124,6 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       .catch((cause) => {
         if (!active) return;
         if (cause instanceof ApiError && cause.status === 401) {
+          window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
           setUser(null);
           router.replace('/login');
           return;

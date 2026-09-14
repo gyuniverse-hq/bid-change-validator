@@ -1,8 +1,4 @@
-"""분리 로더가 아니라 실제 앱 조립·ORM 등록을 검증하는 회귀 테스트.
-
-GET 문서 스키마와 mapper 구성만 확인한다. 실제 공고 추출/원격 서비스 검증은 아니다.
-"""
-from fastapi.routing import APIRoute
+"""실제 앱 조립·ORM 등록 검증. 라우팅 내부 구현 대신 HTTP 계약을 확인한다."""
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import configure_mappers
 
@@ -10,15 +6,15 @@ from apps.api.app.main import app
 from apps.api.app.qualification.routers import catalog, state
 
 
-def test_state_and_catalog_registered_once_in_real_app():
-    routes = [route for route in app.routes if isinstance(route, APIRoute)]
-    for path in ("/api/v1/preflight-cases/{case_id}/qualification-state",
-                 "/api/v1/qualification-notice-catalog"):
-        found = [route for route in routes if route.path == path and "GET" in route.methods]
-        assert len(found) == 1
-    # 독립 state 모듈이 catalog를 암묵적으로 포함하지 않아야 한다.
-    assert not any(route.path == "/qualification-notice-catalog" for route in state.router.routes)
-    assert any(route.path == "/qualification-notice-catalog" for route in catalog.router.routes)
+def test_state_and_catalog_registered_in_real_app():
+    # include_router의 내부 자료형 대신 실제 HTTP 매칭/검증 결과를 검사한다.
+    with TestClient(app) as client:
+        state_response = client.get("/api/v1/preflight-cases/not-a-uuid/qualification-state")
+        catalog_response = client.get("/api/v1/qualification-notice-catalog?limit=101")
+    assert state_response.status_code == 422, state_response.text
+    assert catalog_response.status_code == 422, catalog_response.text
+    assert not any(getattr(route, "path", None) == "/qualification-notice-catalog" for route in state.router.routes)
+    assert any(getattr(route, "path", None) == "/qualification-notice-catalog" for route in catalog.router.routes)
 
 
 def test_real_openapi_and_mappers_include_new_read_paths():
@@ -30,3 +26,6 @@ def test_real_openapi_and_mappers_include_new_read_paths():
     assert "get" in paths["/api/v1/preflight-cases/{case_id}/qualification-state"]
     assert "get" in paths["/api/v1/qualification-notice-catalog"]
     assert not any("/api/v1/api/v1/" in path for path in paths)
+    operation_ids = [value["operationId"] for methods in paths.values() for value in methods.values()
+                     if isinstance(value, dict) and "operationId" in value]
+    assert len(operation_ids) == len(set(operation_ids))

@@ -373,7 +373,7 @@ def test_analysis_changed_mid_read(db,monkeypatch):
 
 
 def client(db):
-    app=FastAPI();app.include_router(state_router_module.router,prefix='/api/v1')
+    app=FastAPI();app.include_router(router_module.router,prefix='/api/v1')
     app.dependency_overrides[get_db]=lambda: db
     @app.exception_handler(ApiError)
     async def error_handler(request,error):

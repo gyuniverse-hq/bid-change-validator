@@ -9,8 +9,16 @@ import {
 
 async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await apiFetch(path, { signal, cache: 'no-store' });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(data?.error?.message ?? '검토 정보를 불러오지 못했습니다.', response.status, data?.error?.code ?? 'HTTP_ERROR');
+  // DOM/Workers의 Response.json 반환 타입이 달라도 수신값은 unknown에서 검사한다.
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const candidate = data && typeof data === 'object' && 'error' in data ? data.error : null;
+    const error = candidate && typeof candidate === 'object' ? candidate : null;
+    const message = error && 'message' in error && typeof error.message === 'string'
+      ? error.message : '검토 정보를 불러오지 못했습니다.';
+    const code = error && 'code' in error && typeof error.code === 'string' ? error.code : 'HTTP_ERROR';
+    throw new ApiError(message, response.status, code);
+  }
   if (data === null) throw new ApiError('검토 정보 응답 형식이 올바르지 않습니다.', response.status, 'INVALID_RESPONSE');
   return data as T;
 }

@@ -13,6 +13,7 @@ from ...judgment_schemas import QualificationJudgmentRunRead, QualificationJudgm
 from ..judgment import QualificationJudgmentError, get_profile_completeness, judgment_run_response, list_qualification_judgment_runs, load_qualification_judgment_run, update_profile_completeness
 from ..judgment_target import run_targeted_qualification_judgment
 from .state import router as state_router
+from .catalog import router as catalog_router
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification judgment"])
@@ -79,5 +80,6 @@ def read_qualification_judgment_run(
         raise _as_api_error(error) from error
 
 
-# 기존 판정 응답은 유지하고 별도의 읽기 전용 상태 경로를 추가한다.
+# 독립 읽기 모듈은 서로 import하지 않고 상위 조립 지점에서 등록한다.
 router.include_router(state_router)
+router.include_router(catalog_router)

@@ -266,12 +266,26 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setQuestions([]);
     setReviewStep('analysis');
     try {
-      const [baseline, current] = await Promise.all([
-        activeCase.baseline_version_number
-          ? getOrRunAnalysis(activeCase.baseline_version_number, baselineAnalysis, force)
-          : Promise.resolve(null),
-        getOrRunAnalysis(activeCase.current_version_number, currentAnalysis, force),
-      ]);
+      const sameVersion = activeCase.baseline_version_number === activeCase.current_version_number;
+      let baseline: QualificationAnalysisSummary | QualificationAnalysisRun | null;
+      let current: QualificationAnalysisSummary | QualificationAnalysisRun;
+      if (sameVersion) {
+        // 기존 데이터에 기준/현재 차수가 같은 Case가 남아 있어도 동일 LLM 분석을 두 번 실행하거나
+        // 같은 버전끼리 변경 재검증하지 않는다. 이 경우 기준 버전이 없는 Case처럼 취급한다.
+        current = await getOrRunAnalysis(
+          activeCase.current_version_number,
+          currentAnalysis ?? baselineAnalysis,
+          force,
+        );
+        baseline = null;
+      } else {
+        [baseline, current] = await Promise.all([
+          activeCase.baseline_version_number
+            ? getOrRunAnalysis(activeCase.baseline_version_number, baselineAnalysis, force)
+            : Promise.resolve(null),
+          getOrRunAnalysis(activeCase.current_version_number, currentAnalysis, force),
+        ]);
+      }
       if (request !== generation.current) return;
       setBaselineAnalysis(baseline);
       setCurrentAnalysis(current);
@@ -280,7 +294,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
       setReviewStep('judgment');
       let baselineJudgment: QualificationJudgmentRun | null = null;
-      if (baseline) baselineJudgment = await runQualificationJudgment(activeCase.id, baseline.id);
+      if (baseline && !sameVersion) baselineJudgment = await runQualificationJudgment(activeCase.id, baseline.id);
       if (request !== generation.current) return;
       const currentJudgment = await runQualificationJudgment(activeCase.id, current.id);
 
@@ -317,7 +331,15 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const unknown = displayJudgment?.judgments.filter((item) => item.status === 'UNKNOWN').length ?? 0;
   const unsatisfied = displayJudgment?.judgments.filter((item) => item.status === 'UNSATISFIED').length ?? 0;
   const [conclusionTitle, conclusionDescription] = overallCopy(displayJudgment?.overall_status);
-  const canRevalidate = Boolean(activeCase?.baseline_version_number && baselineAnalysis && currentAnalysis && sourceJudgment && baselineVersion && sourceJudgment.notice_version_id === baselineVersion.id);
+  const canRevalidate = Boolean(
+    activeCase?.baseline_version_number
+      && activeCase.baseline_version_number !== activeCase.current_version_number
+      && baselineAnalysis
+      && currentAnalysis
+      && sourceJudgment
+      && baselineVersion
+      && sourceJudgment.notice_version_id === baselineVersion.id,
+  );
   const askableQuestionKeys = new Set(questions.filter((item) => item.askable).map((item) => item.requirement_key));
   const analysisNeedsRetry = Boolean(analysisDetail && (analysisDetail.status !== 'SUCCEEDED' || analysisDetail.requirements.length === 0));
 

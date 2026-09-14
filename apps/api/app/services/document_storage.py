@@ -21,6 +21,20 @@ class DocumentStorage(Protocol):
     def put(self, storage_key: str, source: BinaryIO, content_type: str | None) -> str: ...
 
 
+def build_s3_client(*, region: str | None, endpoint_url: str | None = None):
+    """Build the S3 client used by both storage and signed-download paths.
+
+    ``endpoint_url`` keeps the storage implementation compatible with OCI's
+    S3 Compatibility API while remaining optional for AWS S3.
+    """
+    import boto3
+
+    kwargs: dict[str, object] = {"region_name": region}
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url.rstrip("/")
+    return boto3.client("s3", **kwargs)
+
+
 class LocalDocumentStorage:
     def __init__(self, root: str) -> None:
         self.root = Path(root).resolve()
@@ -39,11 +53,9 @@ class LocalDocumentStorage:
 
 
 class S3DocumentStorage:
-    def __init__(self, bucket: str, region: str | None) -> None:
-        import boto3
-
+    def __init__(self, bucket: str, region: str | None, endpoint_url: str | None = None) -> None:
         self.bucket = bucket
-        self.client = boto3.client("s3", region_name=region)
+        self.client = build_s3_client(region=region, endpoint_url=endpoint_url)
 
     def put(self, storage_key: str, source: BinaryIO, content_type: str | None) -> str:
         source.seek(0)
@@ -84,6 +96,7 @@ class NoticeDocumentDownloader:
         notice_no: str,
         version_number: int,
         known_storage_by_hash: dict[str, str] | None = None,
+        extract_document: bool = True,
     ) -> None:
         try:
             with self.session.get(
@@ -138,7 +151,8 @@ class NoticeDocumentDownloader:
                     document.downloaded_at = datetime.now(KST)
                     document.download_status = "DOWNLOADED"
                     document.download_error = None
-                    extract_into_document(document, temp)
+                    if extract_document:
+                        extract_into_document(document, temp)
         except (requests.RequestException, OSError, ValueError) as error:
             document.download_status = "FAILED"
             document.download_error = (
@@ -164,7 +178,11 @@ def build_document_storage(settings: Settings) -> tuple[DocumentStorage, str]:
     elif backend == "S3":
         if not settings.document_s3_bucket:
             raise ValueError("DOCUMENT_S3_BUCKET is required when backend is S3")
-        storage = S3DocumentStorage(settings.document_s3_bucket, settings.aws_region)
+        storage = S3DocumentStorage(
+            settings.document_s3_bucket,
+            settings.aws_region,
+            settings.document_s3_endpoint_url,
+        )
         prefix = settings.document_s3_prefix
     else:
         raise ValueError("DOCUMENT_STORAGE_BACKEND must be LOCAL or S3")

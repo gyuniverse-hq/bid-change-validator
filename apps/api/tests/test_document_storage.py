@@ -18,6 +18,8 @@ def test_s3_client_uses_compatible_endpoint() -> None:
     assert kwargs["config"].signature_version == "s3v4"
     assert kwargs["config"].s3["addressing_style"] == "path"
     assert kwargs["config"].s3["payload_signing_enabled"] is False
+    assert kwargs["config"].request_checksum_calculation == "when_required"
+    assert kwargs["config"].response_checksum_validation == "when_required"
 
 
 def test_s3_storage_passes_endpoint_to_client() -> None:

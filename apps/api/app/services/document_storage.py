@@ -39,6 +39,8 @@ def build_s3_client(*, region: str | None, endpoint_url: str | None = None):
     kwargs["config"] = Config(
         signature_version="s3v4",
         s3={"addressing_style": "path", "payload_signing_enabled": False},
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
     )
     return boto3.client("s3", **kwargs)
 

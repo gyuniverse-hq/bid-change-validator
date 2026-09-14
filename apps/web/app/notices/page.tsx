@@ -223,8 +223,12 @@ export default function NoticesPage() {
     : rejectedNotices.length > 0
       ? 'only-rejected'
       : 'filtered-out';
-  // 검색으로 콕 집어 찾아왔는데 결과가 자격 미달뿐이면, 접어두지 않고 펼쳐 둔다.
-  const rejectedOpen = showRejected || (!activeNotices.length && rejectedNotices.length > 0);
+  /*
+    펼침 여부는 showRejected 하나로만 정한다. 전에는 「결과가 자격 미달뿐이면 펼친다」를
+    OR로 덧붙였는데, 그 조건이 참인 동안에는 「접기」를 눌러도 다시 펼쳐졌다. (#132 리뷰)
+    기본값이 이미 펼침이라 그 조건은 없어도 처음 화면은 같고, 접기는 이제 접힌 채로 남는다.
+  */
+  const rejectedOpen = showRejected;
   const profile = productProfileCoverage(company);
   const missingProfile = profile.missing.map((area) => area.label);
   const profileReady = Boolean(company) && missingProfile.length === 0;

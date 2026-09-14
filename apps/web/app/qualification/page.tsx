@@ -137,18 +137,23 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     드롭다운 선택값이라 이 화면이 다른 공고의 기관명·사업유형을 보여주고 있었다.
     목록은 상위 100건뿐이라 검토 건의 공고가 거기 없으면 아예 「미상」으로 떨어지기도 했다.
   */
-  const [caseNoticeState, setCaseNoticeState] = useState<{ noticeId: string; notice: BidNoticeDetail } | null>(null);
+  const [caseNoticeState, setCaseNoticeState] = useState<{ noticeId: string; notice: BidNoticeDetail | null } | null>(null);
   const caseNoticeId = activeCase?.notice_id;
   useEffect(() => {
     if (!caseNoticeId) return;
     let alive = true;
     void getNotice(caseNoticeId)
       .then((notice) => { if (alive) setCaseNoticeState({ noticeId: caseNoticeId, notice }); })
-      // 받지 못하면 Case에 저장된 제목·공고번호로 그린다. 화면 전체를 실패로 만들 일은 아니다.
-      .catch(() => { if (alive) setCaseNoticeState(null); });
+      /*
+        받지 못했다는 것도 결과로 남긴다. null로 비워두면 「아직 못 받았다」와 구분이 안 돼서
+        화면이 「공고기관 확인 중」에 영원히 머문다. (#132 리뷰)
+        화면 전체를 실패로 만들지는 않는다 — Case에 저장된 제목·공고번호로 계속 그린다.
+      */
+      .catch(() => { if (alive) setCaseNoticeState({ noticeId: caseNoticeId, notice: null }); });
     return () => { alive = false; };
   }, [caseNoticeId]);
-  const caseNotice = caseNoticeState && caseNoticeState.noticeId === caseNoticeId ? caseNoticeState.notice : null;
+  const caseNoticeSettled = caseNoticeState?.noticeId === caseNoticeId;
+  const caseNotice = caseNoticeSettled ? caseNoticeState?.notice ?? null : null;
   const company = useMemo(() => companies.find((item) => item.id === companyId) ?? null, [companies, companyId]);
   const currentVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.current_version_number) ?? null, [activeCase, versions]);
   const baselineVersion = useMemo(() => versions.find((item) => item.version_number === activeCase?.baseline_version_number) ?? null, [activeCase, versions]);
@@ -406,7 +411,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           <>
             {/* ── 1 공고 · 검토 건 ── */}
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? '공고기관 확인 중'}</p></div>
+              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
               <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
             </section>
 

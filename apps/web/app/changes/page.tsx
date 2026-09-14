@@ -10,7 +10,12 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
-import { getQualificationAnalysis, type CanonicalRequirement, type QualificationAnalysisRun } from '@/lib/qualification-api';
+/*
+  재검증 결과의 요건은 코파일럿 응답(RevalidationResult)으로 들어온다.
+  분석 조회(qualification-api)의 CanonicalRequirement와 모양은 같지만 다른 타입이라,
+  이 화면은 실제로 받는 쪽인 copilot-api의 것을 쓴다. (#132 리뷰)
+*/
+import type { QualificationRequirement } from '@/lib/copilot-api';
 import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
@@ -27,7 +32,7 @@ function money(value: number | null | undefined) {
   연산자(이상·포함 등)에 대응하는 한글 표가 아직 없으므로 값과 단위·기간만 적는다.
   「전라북도 이상」처럼 뜻을 지어내는 것보다 값만 보여주고 원문을 같이 두는 편이 정확하다.
 */
-function requirementValue(requirement: CanonicalRequirement) {
+function requirementValue(requirement: QualificationRequirement) {
   if (requirement.value == null) return '값 없음';
   const unit = requirement.unit ? ` ${requirement.unit}` : '';
   const period = requirement.period_months ? ` · 최근 ${requirement.period_months}개월` : '';
@@ -35,13 +40,16 @@ function requirementValue(requirement: CanonicalRequirement) {
 }
 
 /*
-  판정기에 들어가는 공고 쪽 입력이 같은지 본다. 화면에 띄우는 값(값·단위·기간)만 비교하면
-  operator나 scope가 달라도 같다고 말하게 되므로, 판정에 쓰이는 필드를 전부 비교한다.
-  이게 전부 같으면 같은 회사 프로필로 다시 판정해도 공고 쪽 기준은 그대로다.
-  「판정 영향 없음」이라고는 쓰지 않는다 — 판정은 회사 프로필도 타기 때문에
-  우리가 말할 수 있는 것은 공고 쪽 기준이 같다는 데까지다.
+  구조화된 값이 같은지 본다. 비교할 필드를 우리가 고르지 않고 백엔드
+  requirement_diff.py의 decision_payload()를 그대로 따른다 — 백엔드가 MODIFIED/UNCHANGED를
+  가르는 기준이 그 목록이라, 우리가 따로 정하면 두 기준이 조용히 어긋난다. (#132 리뷰)
+  거기서 raw(원문)만 뺀다. 여기서 말하려는 것이 「구조화 값은 같고 원문 표기만 다르다」이기 때문이다.
+  raw는 판정 전 조항 안전성 검사에도 쓰이므로 「판정 영향 없음」이라고는 쓰지 않는다.
 */
-const JUDGING_FIELDS = ['type', 'operator', 'value', 'unit', 'period_months', 'required'] as const;
+const STRUCTURED_FIELDS = [
+  'type', 'operator', 'value', 'unit', 'period_months',
+  'required', 'requirement_role', 'condition_complexity', 'group_operator',
+] as const;
 
 /** scope는 객체라 키 순서에 흔들리지 않게 정렬해서 비교한다. */
 function scopeKey(scope: Record<string, unknown> | null | undefined) {
@@ -49,13 +57,13 @@ function scopeKey(scope: Record<string, unknown> | null | undefined) {
   return JSON.stringify(Object.keys(scope).sort().map((key) => [key, scope[key]]));
 }
 
-function sameJudgingCriteria(before: CanonicalRequirement | null, after: CanonicalRequirement | null) {
+function sameStructuredValue(before: QualificationRequirement | null, after: QualificationRequirement | null) {
   if (!before || !after) return false;
-  return JUDGING_FIELDS.every((field) => before[field] === after[field]) && scopeKey(before.scope) === scopeKey(after.scope);
+  return STRUCTURED_FIELDS.every((field) => before[field] === after[field]) && scopeKey(before.scope) === scopeKey(after.scope);
 }
 
 /** 재검증 결과 한 줄의 한쪽 차수. 요건이 없으면 왜 없는지를 적는다. */
-function RequirementSide({ label, requirement, missing }: { label: string; requirement: CanonicalRequirement | null; missing: string }) {
+function RequirementSide({ label, requirement, missing }: { label: string; requirement: QualificationRequirement | null; missing: string }) {
   return (
     <div className="rounded-[14px] border border-[#eef0f4] bg-[#fafbfc] px-4 py-3">
       <span className="text-[12px] font-semibold text-[var(--product-muted)]">{label}</span>
@@ -104,38 +112,11 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   }, [workspace]);
 
   /*
-    재검증 결과는 요건 키(REQ-006-REGION)만 준다. 그 키가 무엇을 뜻하는지는 분석 상세에 있다.
-    현재 차수 상세는 workspace가 이미 들고 있지만 기준 차수는 요약만 있어서 여기서 한 번 더 받는다.
-    이게 없으면 화면이 내부 코드만 늘어놓게 되고, 무엇이 어떻게 바뀌었는지 읽을 수 없다.
+    요건 행의 펼침 상태. 기본값은 행마다 다르다(구조화 값이 바뀐 것만 펼쳐 둔다).
+    그래서 상태에는 「사용자가 직접 뒤집은 행」만 담고, 나머지는 렌더할 때 기본값을 쓴다.
+    전부 state로 들고 있으면 결과가 새로 오는 순간 기본값을 다시 계산해 넣어야 한다.
   */
-  const [baselineDetail, setBaselineDetail] = useState<{ analysisId: string; run: QualificationAnalysisRun } | null>(null);
-  const baselineAnalysisId = workspace?.baselineAnalysis?.id;
-  useEffect(() => {
-    if (!baselineAnalysisId) return;
-    let alive = true;
-    void getQualificationAnalysis(baselineAnalysisId)
-      .then((run) => { if (alive) setBaselineDetail({ analysisId: baselineAnalysisId, run }); })
-      // 받지 못하면 원문 없이 키만 보여준다. 화면 전체를 실패로 만들 일은 아니다.
-      .catch(() => { if (alive) setBaselineDetail(null); });
-    return () => { alive = false; };
-  }, [baselineAnalysisId]);
-
-  /*
-    어느 분석의 것인지 함께 담아둔다. effect 본문에서 동기적으로 비우면 렌더가 한 번 더 돌기 때문에
-    (react-compiler EffectSetState) 지우는 대신, 지금 보고 있는 분석과 id가 맞을 때만 쓴다.
-    검토 건을 옮겨 다닐 때 앞 건의 기준 차수 원문이 남아 보이는 것도 이걸로 막힌다.
-  */
-  const baselineRequirements = useMemo(
-    () => new Map(
-      (baselineDetail && baselineDetail.analysisId === baselineAnalysisId ? baselineDetail.run.requirements : [])
-        .map((item) => [item.requirement_key, item]),
-    ),
-    [baselineDetail, baselineAnalysisId],
-  );
-  const currentRequirements = useMemo(
-    () => new Map((workspace?.currentAnalysisDetail?.requirements ?? []).map((item) => [item.requirement_key, item])),
-    [workspace?.currentAnalysisDetail],
-  );
+  const [toggledRows, setToggledRows] = useState<Record<string, boolean>>({});
 
   if (!caseId) return <main className="app-shell-container py-12">caseId가 필요합니다.</main>;
   if (!workspace) return <main className="app-shell-container py-12">
@@ -149,13 +130,11 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
   /*
     「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
-    표기만 바뀐 것도 섞인다. 판정기에 들어가는 값이 실제로 달라진 것이 몇 건인지 따로 센다.
+    원문 표기만 바뀐 것도 섞인다. 구조화된 값이 실제로 달라진 것이 몇 건인지 따로 센다.
   */
-  const criteriaChangedCount = affectedChanges.filter((item) => {
-    const before = item.baseline_key ? baselineRequirements.get(item.baseline_key) ?? null : null;
-    const after = item.current_key ? currentRequirements.get(item.current_key) ?? null : null;
-    return !before || !after || !sameJudgingCriteria(before, after);
-  }).length;
+  const structuredChangedCount = affectedChanges.filter(
+    (item) => !item.baseline || !item.current || !sameStructuredValue(item.baseline, item.current),
+  ).length;
 
   return (
     <main className="bg-white text-[var(--product-body)]">
@@ -198,27 +177,55 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 판정 기준이 바뀐 것 <strong>{criteriaChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
-                const before = item.baseline_key ? baselineRequirements.get(item.baseline_key) ?? null : null;
-                const after = item.current_key ? currentRequirements.get(item.current_key) ?? null : null;
+              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+                // 재검증 결과가 양쪽 차수의 요건을 그대로 담아 온다. 따로 조회해 이어붙이지 않는다.
+                const before = item.baseline;
+                const after = item.current;
                 const typeCode = after?.type ?? before?.type ?? null;
-                // 양쪽이 다 있을 때만 기준을 견줄 수 있다. 신설·삭제는 견줄 상대가 없다.
+                // 양쪽이 다 있을 때만 견줄 수 있다. 신설·삭제는 견줄 상대가 없다.
                 const comparable = Boolean(before && after);
-                const sameCriteria = sameJudgingCriteria(before, after);
+                const sameStructured = sameStructuredValue(before, after);
+                /*
+                  기본은 접어 둔다. 다만 구조화 값이 바뀐 행은 펼쳐 둔다 —
+                  이 화면에서 사람이 실제로 읽어야 하는 것이 그 행이기 때문이다.
+                  신설·삭제(견줄 상대가 없는 행)도 마찬가지로 펼친다.
+                */
+                const openByDefault = !comparable || !sameStructured;
+                const open = toggledRows[item.identity] ?? openByDefault;
+                // 접힌 상태에서도 무엇이 어떻게 바뀌었는지는 한 줄로 읽히게 한다.
+                const beforeValue = before ? requirementValue(before) : null;
+                const afterValue = after ? requirementValue(after) : null;
+                const summary = beforeValue && afterValue
+                  ? (beforeValue === afterValue ? beforeValue : `${beforeValue} → ${afterValue}`)
+                  : (afterValue ?? beforeValue ?? '구조화 값을 찾지 못했습니다');
                 return (
-                  <div key={item.identity} className="border-t border-[#eef0f4] px-4 py-4 first:border-t-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* 요건 유형을 못 찾으면 내부 키라도 보여준다. 빈 칸보다는 낫고, 못 찾았다는 사실도 드러난다. */}
-                      <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
-                      <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
-                      {comparable && (sameCriteria
-                        ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">판정 기준 동일 · 표기만 다름</span>
-                        : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[12px] font-bold text-[#9a2b2b]">판정 기준 바뀜</span>)}
-                    </div>
-                    <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                      <RequirementSide label="기준 차수" requirement={before} missing={item.change_type === 'ADDED' ? '기준 차수에는 없던 요건입니다.' : '기준 차수 분석에서 이 요건을 찾지 못했습니다.'} />
-                      <RequirementSide label="현재 차수" requirement={after} missing={item.change_type === 'REMOVED' ? '현재 차수에서 빠졌습니다.' : '현재 차수 분석에서 이 요건을 찾지 못했습니다.'} />
-                    </div>
+                  <div key={item.identity} className="border-t border-[#eef0f4] first:border-t-0">
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setToggledRows((previous) => ({ ...previous, [item.identity]: !open }))}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-[#fafbfc]"
+                    >
+                      <span aria-hidden className={`mt-0.5 text-[12px] text-[var(--product-muted)] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          {/* 요건 유형을 못 찾으면 내부 키라도 보여준다. 빈 칸보다는 낫고, 못 찾았다는 사실도 드러난다. */}
+                          <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
+                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
+                          {comparable && (sameStructured
+                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 표기 차이</span>
+                            : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[12px] font-bold text-[#9a2b2b]">구조화 값 변경</span>)}
+                        </span>
+                        <span className="mt-1 block truncate text-[12.5px] text-[var(--product-muted)]">{summary}</span>
+                      </span>
+                      <span className="mt-0.5 shrink-0 text-[12px] text-[var(--product-muted)]">{open ? '접기' : '원문 보기'}</span>
+                    </button>
+                    {open && (
+                      <div className="grid gap-2 px-4 pb-4 lg:grid-cols-2">
+                        <RequirementSide label="기준 차수" requirement={before} missing="기준 차수에는 없던 요건입니다." />
+                        <RequirementSide label="현재 차수" requirement={after} missing="현재 차수에서 빠졌습니다." />
+                      </div>
+                    )}
                   </div>
                 );
               })}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>

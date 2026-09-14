@@ -28,10 +28,18 @@ def build_s3_client(*, region: str | None, endpoint_url: str | None = None):
     S3 Compatibility API while remaining optional for AWS S3.
     """
     import boto3
+    from botocore.config import Config
 
     kwargs: dict[str, object] = {"region_name": region}
     if endpoint_url:
         kwargs["endpoint_url"] = endpoint_url.rstrip("/")
+    # OCI's S3 Compatibility API does not accept AWS chunked payload
+    # signatures. Disable payload signing and use path-style addressing; both
+    # settings are also valid for AWS S3 and keep the client deterministic.
+    kwargs["config"] = Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path", "payload_signing_enabled": False},
+    )
     return boto3.client("s3", **kwargs)
 
 

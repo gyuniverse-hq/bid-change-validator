@@ -11,11 +11,13 @@ def test_s3_client_uses_compatible_endpoint() -> None:
             endpoint_url="https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com/",
         )
 
-    client.assert_called_once_with(
-        "s3",
-        region_name="ap-osaka-1",
-        endpoint_url="https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com",
-    )
+    args, kwargs = client.call_args
+    assert args == ("s3",)
+    assert kwargs["region_name"] == "ap-osaka-1"
+    assert kwargs["endpoint_url"] == "https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com"
+    assert kwargs["config"].signature_version == "s3v4"
+    assert kwargs["config"].s3["addressing_style"] == "path"
+    assert kwargs["config"].s3["payload_signing_enabled"] is False
 
 
 def test_s3_storage_passes_endpoint_to_client() -> None:
@@ -26,11 +28,10 @@ def test_s3_storage_passes_endpoint_to_client() -> None:
             "https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com",
         )
 
-    client.assert_called_once_with(
-        "s3",
-        region_name="ap-osaka-1",
-        endpoint_url="https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com",
-    )
+    args, kwargs = client.call_args
+    assert args == ("s3",)
+    assert kwargs["region_name"] == "ap-osaka-1"
+    assert kwargs["endpoint_url"] == "https://namespace.compat.objectstorage.ap-osaka-1.oraclecloud.com"
 
 
 def test_s3_storage_uses_put_object_with_known_length_body() -> None:

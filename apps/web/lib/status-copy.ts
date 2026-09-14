@@ -206,6 +206,15 @@ export function analysisBadgeLabel(status: string): string {
   return copy?.badge ?? status;
 }
 
+/**
+ * 분석 상태 코드를 문장 안에서 쓸 문구로 바꾼다.
+ * 배지용 짧은 문구(「첨부 전체 읽음」)는 analysisBadgeLabel, 이쪽은 상태 자체(「분석 완료」)다.
+ */
+export function analysisStatusLabel(status: string): string {
+  const copy = (ANALYSIS_STATUS_COPY as Record<string, { label: string }>)[status];
+  return copy?.label ?? status;
+}
+
 /** 판정 배지에 쓸 문구. 답변 기준 판정은 근거를 라벨에 붙인다 (NFR-5). */
 export function judgmentBadgeLabel(
   status: JudgmentStatus | 'UNJUDGED',

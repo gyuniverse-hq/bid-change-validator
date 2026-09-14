@@ -174,8 +174,25 @@ export function getNoticeVersions(noticeId: string) {
   return apiRequest<BidNoticeVersion[]>(`/api/v1/notices/${noticeId}/versions`);
 }
 
-export function listPreflightCases() {
-  return apiRequest<ListResponse<PreflightCase>>('/api/v1/preflight-cases?limit=100');
+export function listPreflightCases(companyId?: string) {
+  /*
+    company_id를 같이 보낸다. 백엔드는 로그인 사용자가 있을 때만 회사로 거르는데,
+    auth_required=false로 띄우면 회사 구분 없이 최근 100건이 잘려서 온다.
+    그러면 100칸을 다른 회사 Case가 채워, 우리 회사 기존 검토 건이 목록 밖으로 밀린다.
+  */
+  const search = new URLSearchParams({ limit: '100' });
+  if (companyId) search.set('company_id', companyId);
+  return apiRequest<ListResponse<PreflightCase>>(`/api/v1/preflight-cases?${search}`);
+}
+
+/**
+ * 공고 한 건의 기존 검토 건만 조회한다.
+ * 목록 조회는 상위 100건까지라 그 밖에 있는 기존 건을 못 본다.
+ * Case를 새로 만들기 직전에 이 공고만 콕 집어 확인하는 용도다. (#131 리뷰)
+ */
+export function findPreflightCasesByNotice(noticeId: string, companyId: string) {
+  const search = new URLSearchParams({ notice_id: noticeId, company_id: companyId, limit: '100' });
+  return apiRequest<ListResponse<PreflightCase>>(`/api/v1/preflight-cases?${search}`);
 }
 
 export function getPreflightCase(caseId: string) {

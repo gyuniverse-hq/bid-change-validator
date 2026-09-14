@@ -17,7 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { COMPANY_SIZE_LABEL } from '@/lib/status-copy';
+import { COMPANY_SIZE_LABEL, REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import {
   createCompany,
   listCompanies,
@@ -35,6 +35,7 @@ function companyRows(company: CompanyProfile) {
   return [
     {
       label: '업종 코드',
+      form: null as string | null,
       value: company.industries.length
         ? company.industries.map((item) => `${item.code} · ${item.name}`).join(', ')
         : '비어 있음 · 판정하지 않습니다',
@@ -44,6 +45,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '소재지',
+      form: null as string | null,
       value: company.region_name || company.region_code || '비어 있음 · 판정하지 않습니다',
       source: company.region_name || company.region_code ? '회사 입력' : '없음',
       updated: company.updated_at,
@@ -51,6 +53,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '기업 구분',
+      form: null as string | null,
       value: COMPANY_SIZE_LABEL[company.company_size],
       source: '회사 입력',
       updated: company.updated_at,
@@ -58,6 +61,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '상시 근로자 수',
+      form: null as string | null,
       value: company.staff ? `${company.staff.total_count.toLocaleString()}명` : '비어 있음 · 판정하지 않습니다',
       source: company.staff ? '회사 입력' : '없음',
       updated: company.updated_at,
@@ -65,13 +69,16 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '최근 수행 실적 건수',
-      value: `${company.performances.length}건`,
+      form: '#profile-performance',
+      // 「0건」은 회사가 신고한 사실이 아니라 우리가 아직 받지 못했다는 뜻이다.
+      value: company.performances.length ? `${company.performances.length}건` : '비어 있음 · 판정하지 않습니다',
       source: company.performances.length ? '회사 입력' : '없음',
       updated: company.performances[0]?.updated_at ?? company.updated_at,
       use: 'PERFORMANCE_COUNT',
     },
     {
       label: '최근 수행 실적 금액',
+      form: '#profile-performance',
       value: company.performances.length ? `합계 ${performanceTotal.toLocaleString()}원` : '비어 있음 · 판정하지 않습니다',
       source: company.performances.length ? '회사 입력' : '없음',
       updated: company.performances[0]?.updated_at ?? company.updated_at,
@@ -79,6 +86,7 @@ function companyRows(company: CompanyProfile) {
     },
     {
       label: '인증 · 등록',
+      form: '#profile-certification',
       value: company.certifications.length
         ? company.certifications.map((item) => item.name).join(', ')
         : '비어 있음 · 판정하지 않습니다',
@@ -208,12 +216,12 @@ export default function CompanyPage() {
               </p>
 
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
-                <label className="text-sm font-medium">회사명<Input className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
-                <label className="text-sm font-medium">사업자등록번호<Input className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
-                <label className="text-sm font-medium">지역 코드<Input className="mt-2" value={form.region_code} onChange={(event) => setForm({ ...form, region_code: event.target.value })} /></label>
-                <label className="text-sm font-medium">소재지<Input className="mt-2" value={form.region_name} onChange={(event) => setForm({ ...form, region_name: event.target.value })} /></label>
-                <label className="text-sm font-medium">전체 인원<Input className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
-                <label className="text-sm font-medium">개발자 인원<Input className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-name">회사명<Input id="company-name" className="mt-2" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="예: 그린브릿지 글로벌 주식회사" /></label>
+                <label className="text-sm font-medium" htmlFor="company-brn">사업자등록번호<Input id="company-brn" className="mt-2" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} placeholder="10자리 숫자" /></label>
+                <label className="text-sm font-medium" htmlFor="company-region-code">지역 코드<Input id="company-region-code" className="mt-2" value={form.region_code} onChange={(event) => setForm({ ...form, region_code: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-region-name">소재지<Input id="company-region-name" className="mt-2" value={form.region_name} onChange={(event) => setForm({ ...form, region_name: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-staff-total">전체 인원<Input id="company-staff-total" className="mt-2" type="number" min="0" value={form.staff_total} onChange={(event) => setForm({ ...form, staff_total: event.target.value })} /></label>
+                <label className="text-sm font-medium" htmlFor="company-developer-count">개발자 인원<Input id="company-developer-count" className="mt-2" type="number" min="0" value={form.developer_count} onChange={(event) => setForm({ ...form, developer_count: event.target.value })} /></label>
               </div>
 
               <div className="mt-6">
@@ -241,12 +249,12 @@ export default function CompanyPage() {
               <Building2 className="size-9 text-white/80" />
               <h2 className="mt-6 text-[28px] font-extrabold">프로필 값이 판정 근거가 됩니다</h2>
               <div className="mt-7 space-y-4 text-sm text-white/78">
-                <p>업종 → INDUSTRY</p>
-                <p>지역 → REGION</p>
-                <p>기업 규모 → COMPANY_SIZE</p>
-                <p>인력 → STAFF</p>
-                <p>수행 실적 → PERFORMANCE</p>
-                <p>인증·등록 → REGISTRATION</p>
+                <p>업종 → 공고의 업종 제한과 대조합니다</p>
+                <p>지역 → 참가 가능 지역과 대조합니다</p>
+                <p>기업 규모 → 기업 구분 제한과 대조합니다</p>
+                <p>인력 → 상시 인력·전담 인력 요건과 대조합니다</p>
+                <p>수행 실적 → 실적 건수·금액 요건과 대조합니다</p>
+                <p>인증·등록 → 요구하는 면허·인증 보유 여부와 대조합니다</p>
               </div>
             </aside>
           </section>
@@ -269,7 +277,8 @@ export default function CompanyPage() {
               <section className="mt-5 rounded-[22px] border border-[#e2d9a9] bg-[#fffaf0] p-6">
                 <div className="flex items-center gap-2"><FileBadge2 className="size-5 text-amber-700" /><h2 className="text-[20px] font-bold">비어 있는 항목 {missingRows.length}건</h2></div>
                 <div className="mt-4 divide-y divide-[#eee3bd]">
-                  {missingRows.map((row) => <div key={row.label} className="flex items-center justify-between gap-4 py-4"><div><strong>{row.label}</strong><p className="mt-1 text-sm text-[var(--product-muted)]">이 값을 요구하는 공고는 확인 필요로 남습니다.</p></div><Badge className="bg-amber-100 text-amber-800">확인 필요</Badge></div>)}
+                  {missingRows.map((row) => <div key={row.label} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><strong>{row.label}</strong><p className="mt-1 text-sm text-[var(--product-muted)]">이 값을 요구하는 공고는 확인 필요로 남습니다.</p></div><div className="flex shrink-0 items-center gap-2"><Badge className="bg-amber-100 text-amber-800">확인 필요</Badge>{/* 경고만 하고 끝내지 않는다. 이 화면 안에 입력 폼이 있는 항목은 거기로 바로 보낸다. */}
+                    {row.form && <a href={row.form} className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-[13px] font-semibold text-amber-800 hover:bg-amber-50">입력하러 가기 →</a>}</div></div>)}
                 </div>
               </section>
             )}
@@ -284,7 +293,7 @@ export default function CompanyPage() {
                     <span className={row.value.startsWith('비어 있음') ? 'text-amber-700' : ''}>{row.value}</span>
                     <span><Badge variant="outline">{row.source}</Badge></span>
                     <span>{new Date(row.updated).toLocaleDateString('ko-KR')}</span>
-                    <span className="text-[12px] font-semibold text-[var(--product-accent-deep)]">{row.use}</span>
+                    <span className="text-[12px] font-semibold text-[var(--product-accent-deep)]">{labelOf(REQUIREMENT_TYPE_LABEL, row.use)}</span>
                   </div>
                 ))}
               </div>
@@ -292,8 +301,8 @@ export default function CompanyPage() {
 
             <section className="mt-7 grid gap-5 md:grid-cols-3">
               <div className="rounded-[20px] border border-[var(--product-line)] p-6"><Users className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인력</h3><p className="mt-2 text-sm text-[var(--product-muted)]">총 {company.staff?.total_count ?? 0}명 · {company.staff?.roles.map((role) => `${role.role_name} ${role.headcount}명`).join(', ') || '역할 정보 없음'}</p></div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><CheckCircle2 className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">수행 실적</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.performances.length}건 저장됨</p></div>
-              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><BadgeCheck className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인증 · 등록</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.certifications.length}건 저장됨</p></div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><CheckCircle2 className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">수행 실적</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.performances.length ? `${company.performances.length}건 저장됨` : '아직 입력하지 않았습니다'}</p></div>
+              <div className="rounded-[20px] border border-[var(--product-line)] p-6"><BadgeCheck className="size-6 text-[var(--product-accent)]" /><h3 className="mt-3 font-bold">인증 · 등록</h3><p className="mt-2 text-sm text-[var(--product-muted)]">{company.certifications.length ? `${company.certifications.length}건 저장됨` : '아직 입력하지 않았습니다'}</p></div>
             </section>
           </>
         )}

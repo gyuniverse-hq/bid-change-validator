@@ -1,0 +1,24 @@
+{
+  "fixture": "fixture_bundle.json",
+  "fixture_sha256": "ae6ce8cd89c415fef9902e5a8bc983b4d322beca3ff6a724203edf9c63c76e7f",
+  "review_status": "DRAFT_NOT_APPROVED",
+  "note": "기대값은 독립 검토자 승인 전 초안. 이 파일의 숫자는 '팀 표준 판정값'이 아니라 회귀 기준선이다.",
+  "baseline": {
+    "code_reference": "31ec928",
+    "measured_on": "2026-09-13",
+    "case_count": 40,
+    "row_count": 138,
+    "match": 110,
+    "safe_abstention": 28,
+    "wrong_determinate": 0,
+    "overall_match": 37
+  },
+  "history": [
+    {"code_reference": "993e5cf", "date": "2026-09-12", "match": 104, "safe_abstention": 34, "wrong_determinate": 0, "overall_match": 36, "note": "골든셋 v0.2 최초 실행"},
+    {"code_reference": "31ec928", "date": "2026-09-13", "match": 110, "safe_abstention": 28, "wrong_determinate": 0, "overall_match": 37, "note": "#128 안전 가드 장식 벗기기 후"}
+  ],
+  "gate": {
+    "wrong_determinate_must_be": 0,
+    "match_must_be_at_least": 110
+  }
+}

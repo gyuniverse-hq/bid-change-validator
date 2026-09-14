@@ -23,6 +23,7 @@ from ..qualification.judgment import (
     list_qualification_judgment_runs,
     load_qualification_judgment_run,
 )
+from ..qualification.rules.judgment import RULE_VERSION
 from .contracts import (
     AnalysisScope, AnalysisNoticeFact,
     JudgmentProfileResult,
@@ -61,9 +62,15 @@ def _load_context(
         raise QualificationJudgmentError("QUALIFICATION_ANALYSIS_FAILED", "실패한 분석의 판정은 반환할 수 없습니다.")
 
     runs = list_qualification_judgment_runs(db, case_id=case_id)
-    current_candidates = [item for item in runs if item.notice_version_id == case.current_version_id]
+    current_candidates = [
+        item for item in runs
+        if item.notice_version_id == case.current_version_id and item.rule_version == RULE_VERSION
+    ]
     if not current_candidates:
-        raise QualificationJudgmentError("CURRENT_JUDGMENT_REQUIRED", "현재 공고 버전의 판정이 필요합니다.")
+        raise QualificationJudgmentError(
+            "CURRENT_JUDGMENT_REQUIRED",
+            "현재 공고 버전과 판정 규칙으로 생성된 판정이 필요합니다.",
+        )
 
     analysis_candidates = [item for item in current_candidates if item.analysis_run_id == latest_id]
     if not analysis_candidates:
@@ -77,6 +84,8 @@ def _load_context(
     run = load_qualification_judgment_run(db, selected.id)
     if run.notice_version_id != case.current_version_id:
         raise QualificationJudgmentError("JUDGMENT_VERSION_MISMATCH", "현재 버전과 판정 버전이 다릅니다.")
+    if run.rule_version != RULE_VERSION:
+        raise QualificationJudgmentError("CURRENT_JUDGMENT_REQUIRED", "현재 판정 규칙으로 생성된 판정이 필요합니다.")
     if run.preflight_case_id != case.id or run.company_id != case.company_id:
         raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정의 검토 건 또는 회사가 다릅니다.")
     if run.analysis_run_id != latest_id:

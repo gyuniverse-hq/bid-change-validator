@@ -22,6 +22,8 @@ import {
   type QualificationQuestion,
 } from '@/lib/qualification-api';
 
+const CURRENT_QUALIFICATION_RULE_VERSION = 'qualification-rules-v0.3';
+
 export type CaseWorkspace = {
   caseItem: PreflightCase;
   notice: BidNoticeDetail;
@@ -75,8 +77,8 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     sourceSummary && sourceSummary.id !== displaySummary?.id ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
     displaySummary ? getQualificationJudgment(displaySummary.id) : Promise.resolve(null),
   ]);
-  const displayJudgment = display?.rule_version === 'qualification-rules-v0.2' ? display : null;
-  const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === 'qualification-rules-v0.2' ? source : null;
+  const displayJudgment = display?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? display : null;
+  const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? source : null;
 
   const questions = displayJudgment
     ? await listQualificationQuestions(caseItem.id, displayJudgment.id)
@@ -105,7 +107,14 @@ export function currentVersion(workspace: CaseWorkspace) {
 }
 
 export function judgmentMatchesAnalysis(judgment: QualificationJudgmentSummary, analysis: QualificationAnalysisSummary | null, companyId: string | null) {
-  return Boolean(analysis && analysis.status !== 'FAILED' && judgment.analysis_run_id === analysis.id && judgment.notice_version_id === analysis.notice_version_id && judgment.company_id === companyId);
+  return Boolean(
+    analysis
+    && analysis.status !== 'FAILED'
+    && judgment.analysis_run_id === analysis.id
+    && judgment.notice_version_id === analysis.notice_version_id
+    && judgment.company_id === companyId
+    && judgment.rule_version === CURRENT_QUALIFICATION_RULE_VERSION
+  );
 }
 
 export async function loadCurrentJudgment(caseItem: PreflightCase) {
@@ -116,7 +125,7 @@ export async function loadCurrentJudgment(caseItem: PreflightCase) {
   const summary = judgments.find((item) => judgmentMatchesAnalysis(item, analyses[0] ?? null, caseItem.company_id));
   if (!summary) return null;
   const run = await getQualificationJudgment(summary.id);
-  return run.rule_version === 'qualification-rules-v0.2' ? run : null;
+  return run.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? run : null;
 }
 
 export function useCaseWorkspace(caseId: string | null) {

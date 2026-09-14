@@ -12,6 +12,7 @@ const requirement = {
   requirement_key: 'REQ-REGISTRATION', requirement_group_key: null, group_operator: null,
   notice_version_id: provenance.notice_version_id, type: 'REGISTRATION_CERTIFICATION', operator: 'MATCH',
   value: '정보통신공사업', unit: null, period_months: null, scope: {}, required: true,
+  requirement_role: 'mandatory', condition_complexity: 'simple',
   raw: '정보통신공사업 등록업체이어야 한다.', confidence: 1, evidence_keys: ['E1'],
 } satisfies QualificationRequirement;
 const summary = {

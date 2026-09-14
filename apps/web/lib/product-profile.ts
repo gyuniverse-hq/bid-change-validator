@@ -25,9 +25,10 @@ export function productProfileAreas(company: CompanyProfile | null): ProductProf
     { key: 'REGION', label: '소재지', filled: Boolean(company.region_name || company.region_code) },
     { key: 'COMPANY_SIZE', label: '기업 구분', filled: company.company_size !== 'NONE' },
     { key: 'STAFF', label: '상시 근로자 수', filled: Boolean(company.staff) },
-    // An existing company has a known record count, including zero.  Amount and
-    // experience detail remain incomplete until at least one performance exists.
-    { key: 'PERFORMANCE_COUNT', label: '최근 수행 실적 건수', filled: true },
+    // 실적이 한 건도 없으면 건수도 금액도 「받은 적이 없다」는 뜻이지 「0건임을 확인했다」가 아니다.
+    // 전에는 건수만 항상 채워진 것으로 셌는데, 그러면 같은 performances 배열이
+    // 건수는 「0건」, 금액은 「비어 있음」으로 갈려 읽힌다.
+    { key: 'PERFORMANCE_COUNT', label: '최근 수행 실적 건수', filled: hasPerformance },
     { key: 'PERFORMANCE_AMOUNT', label: '최근 수행 실적 금액', filled: hasPerformance },
     { key: 'REGISTRATION_CERTIFICATION', label: '인증 · 등록', filled: company.certifications.length > 0 },
   ];

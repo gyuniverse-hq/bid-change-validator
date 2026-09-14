@@ -422,18 +422,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
           <>
             {/* ── 1 공고 · 검토 건 ── */}
             <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
-<<<<<<< HEAD
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{selectedNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {selectedNotice?.announcing_institution_name ?? '공고기관 미상'}</p></div>
+              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
               {/* 검토 건 이동은 화면 맨 아래 카드에 있어서 아무도 못 찾았다. 제목 옆으로 올린다. */}
               <div className="flex flex-wrap items-center gap-2">
                 <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
                 <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
                 <Link href="/notices"><Button variant="outline">공고 목록</Button></Link>
               </div>
-=======
-              <div className="min-w-0"><div className="flex flex-wrap gap-2"><Badge variant="outline">현재 v{activeCase.current_version_number}</Badge>{activeCase.baseline_version_number && <Badge variant="secondary">기준 v{activeCase.baseline_version_number}</Badge>}{analysisDetail?.status && <Badge variant="outline">{analysisBadgeLabel(analysisDetail.status)}</Badge>}</div><h2 className="mt-4 text-[28px] font-extrabold leading-10 tracking-[-0.035em] text-[var(--product-ink)]">{caseNotice?.title ?? activeCase.notice_title}</h2><p className="mt-2 text-[13px] text-[var(--product-muted)]">공고번호 {activeCase.bid_notice_no} · {caseNotice?.announcing_institution_name ?? caseNotice?.demanding_institution_name ?? (caseNoticeSettled ? '공고기관 정보를 불러오지 못했습니다' : '공고기관 확인 중')}</p></div>
-              <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button><Link href="/notices"><Button variant="outline">공고 목록</Button></Link></div>
->>>>>>> origin/develop
             </section>
 
             <CaseTabs caseId={activeCase.id} active="qualification" />
@@ -604,12 +599,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             </section>
 
             {/* ── 9 공고 원본 정보 ── */}
-<<<<<<< HEAD
-            {/* notice는 #132에서 caseNotice(검토 건의 공고를 id로 직접 조회)로 바뀐다. 그 PR 머지 후 맞춘다. */}
-            <QualificationSourceOverview caseItem={activeCase} notice={selectedNotice} version={currentVersion} />
-=======
             <QualificationSourceOverview caseItem={activeCase} notice={caseNotice} version={currentVersion} />
->>>>>>> origin/develop
 
           </>
         )}

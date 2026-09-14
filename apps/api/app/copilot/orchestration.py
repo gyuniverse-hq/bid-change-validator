@@ -156,13 +156,19 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     if changed:
         state.targets, state.facts, state.sources, state.fingerprints = [], [], [], {}
     state.scope = tools.scope
+    from .saved_answer_followup import followup_kind, read_followup
+    saved_followup = followup_kind(request.message) if request.user_input is None and not request.target_id and not request.requirement_key else None
     from .natural_answers import visit_candidate
     natural_answer = visit_candidate(request, state, tools)
     if natural_answer:
         request = request.model_copy(update={'requirement_key': natural_answer[0], 'user_input': natural_answer[1]})
     target, clarification = resolve_target(request, state)
     acknowledgement = acknowledging_proposal(request, state)
-    if natural_answer:
+    if saved_followup:
+        plan = TaskPlan(goal=request.message, tasks=[Task(kind='READ_JUDGMENT', question=request.message)])
+        planner_fallback = False
+        target, clarification = None, None
+    elif natural_answer:
         plan = TaskPlan(goal=request.message, tasks=[Task(kind='PROPOSE_ACTION', question=request.message)])
         planner_fallback = False
     else:
@@ -201,7 +207,12 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         started = monotonic()
         checkpoint = tools.bundle.model_copy(deep=True)
         try:
-            if task.kind == 'ACKNOWLEDGE_ACTION':
+            if saved_followup:
+                explanation, proof = read_followup(saved_followup, tools)
+                sid = tools._source('PRODUCT', proof)
+                tools._fact('SERVER_RESULT', explanation, [sid], origin='READ_JUDGMENT', entity='saved_answer_followup')
+                tools.bundle.coverage[task.kind] = 'FOUND'
+            elif task.kind == 'ACKNOWLEDGE_ACTION':
                 procedure_fact(tools.bundle, task.kind,
                     '이 답변에서는 앞서 제안한 변경을 실행하지 않았습니다. 적용하려면 앞선 제안 카드에서 '
                     '대상과 입력값을 검토한 뒤 명시적으로 실행을 확인해 주세요. 짧은 동의만으로는 저장되지 않습니다.')
@@ -290,8 +301,15 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         except QualificationJudgmentError as error:
             bundle.coverage['PROPOSE_ACTION'] = 'UNAVAILABLE'
             bundle.limitations.append(f'변경 제안을 확인하지 못했습니다 ({error.code}).')
+    if saved_followup and not any(f.entity_ref == 'saved_answer_followup' for f in bundle.facts):
+        clarification = '현재 판정에 연결된 답변 근거를 검증하지 못했습니다. 저장 내용을 변경하지 않았습니다. 현재 판정과 답변 대상을 다시 확인해 주세요.'
     if clarification:
         claims, fallback, events = [], True, []
+    elif saved_followup and any(f.entity_ref == 'saved_answer_followup' for f in bundle.facts):
+        fact = next(f for f in bundle.facts if f.entity_ref == 'saved_answer_followup')
+        claims = [Claim(claim_id='saved-answer', text=fact.text, fact_ids=[fact.fact_id], source_ids=fact.source_ids,
+                        validation='SUPPORTED', method='rule', reason='PERSISTED_ANSWER_AND_CURRENT_JUDGMENT')]
+        fallback, events = False, [{'stage':'procedure', 'reason':'SAVED_ANSWER_READ_ONLY'}]
     elif acknowledgement or (natural_answer and actions):
         fact = next(f for f in bundle.facts if f.origin_tool == ('PROPOSE_ACTION' if natural_answer else 'ACKNOWLEDGE_ACTION'))
         claims = [Claim(claim_id='acknowledgement', text=fact.text, fact_ids=[fact.fact_id],
@@ -313,7 +331,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
             if fid in seen: continue
             seen.add(fid)
             fact = facts[fid]
-            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'} or fact.entity_ref == 'checks_empty':
+            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'} or fact.entity_ref in {'checks_empty', 'saved_answer_followup'}:
                 continue
             counters[fact.target_kind] = counters.get(fact.target_kind, 0) + 1
             targets.append(Target(target_id=str(uuid4()), kind=fact.target_kind, label=claim.text[:200],

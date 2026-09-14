@@ -31,6 +31,7 @@ parser.add_argument('--max-usd', type=float, default=0.25)
 parser.add_argument('--acceptance', action='store_true', help='Repeated completion-rubric evaluation; requires --live-model')
 parser.add_argument('--dialogue', action='store_true', help='Natural reference chain and complete source scope; requires --live-model')
 parser.add_argument('--snapshot', type=Path, help='Approved local Namwon snapshot; use --namwon-bundle for profile replay or --live-model for full-source explanation')
+parser.add_argument('--snapshot-topic', choices=['qualification', 'submission'], default='qualification', help='Long-document live evaluation topic; one question per budgeted run')
 parser.add_argument('--workflow', action='store_true', help='Change/assumption/proposal/explicit-confirmation flow; requires --live-model')
 parser.add_argument('--namwon-bundle', type=Path, help='Read J13-J16 from a Golden ZIP and verify product judgment in a rolled-back local DB transaction')
 args = parser.parse_args()
@@ -42,6 +43,9 @@ if args.snapshot and (args.browser or args.dialogue or args.workflow or args.acc
     parser.error('--snapshot selects its own evaluation suite')
 if args.snapshot:
     os.environ['COPILOT_NAMWON_SNAPSHOT'] = str(args.snapshot.resolve(strict=True))
+if args.snapshot_topic != 'qualification' and not (args.snapshot and args.live_model):
+    parser.error('--snapshot-topic submission requires --snapshot and --live-model')
+os.environ['COPILOT_SNAPSHOT_TOPIC'] = args.snapshot_topic
 if args.acceptance and not args.live_model:
     parser.error('--acceptance requires explicit --live-model')
 if args.browser and args.acceptance:

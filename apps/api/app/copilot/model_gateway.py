@@ -3,6 +3,10 @@ import json
 import os
 from time import monotonic
 
+DOCUMENT_BATCHES = 12
+DOCUMENT_REPAIR_BATCHES = 3
+DOCUMENT_CALLS = 2 * (DOCUMENT_BATCHES + DOCUMENT_REPAIR_BATCHES)
+
 
 class BudgetExceeded(RuntimeError):
     pass
@@ -28,7 +32,7 @@ class ModelGateway:
         if not self.enabled:
             raise RuntimeError('MODEL_PROCESSING_DISABLED')
         if stage in {'document_extract', 'document_verify', 'document_repair', 'document_revalidate'}:
-            if not getattr(self, 'document_review', False) or sum(c['stage'].startswith('document_') for c in self.calls) >= 26:
+            if not getattr(self, 'document_review', False) or sum(c['stage'].startswith('document_') for c in self.calls) >= DOCUMENT_CALLS:
                 raise BudgetExceeded('DOCUMENT_REVIEW_BUDGET')
         quality = [c for c in self.calls if c['stage'] in {'generate', 'validate', 'repair', 'revalidate'}]
         if (stage in {'generate', 'validate', 'repair', 'revalidate'} and len(quality) >= 4) or self.remaining() < 1:

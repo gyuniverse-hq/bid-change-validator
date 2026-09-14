@@ -1,6 +1,52 @@
 """Server-owned completion rubric, frozen before generation; never authored by the verifier."""
 from .v31_contracts import AcceptanceCriterion
 import re
+import hashlib
+import json
+from dataclasses import asdict, dataclass
+
+
+@dataclass(frozen=True)
+class DocumentAcceptance:
+    """One request-level rubric shared by every long-read stage and source span."""
+    request: str
+    mode: str
+    required: tuple[str, ...]
+    not_required: tuple[str, ...]
+    version: str = 'document-acceptance-v1'
+
+    def payload(self):
+        value = asdict(self)
+        value['acceptance_id'] = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        return value
+
+
+def freeze_document_acceptance(plan):
+    # Narrow only an explicit qualification deliverable. Broader/compound goals
+    # retain their original request; a procedure request must never be dropped.
+    question = re.sub(r'\s+', '', plan.goal)
+    qualification = bool(re.search(r'참가(?:자격|요건)|참여자격', question))
+    procedures = any(word in question for word in ('절차', '제출방법', '작성방법', '입찰방법', '산출내역', '취소', '개찰', '예정가격',
+                                                    '제출서류', '제출기한', '입찰보증', '청렴', '서약', '계약조건', '정산'))
+    submission = any(word in question for word in ('입찰서작성', '입찰서제출', '작성·제출', '작성및제출', '제출방법'))
+    qualification_excluded = bool(re.search(r'참가자격을[^.!?]{0,30}(?:아니|제외|빼)', question))
+    broader = any(word in question for word in ('개찰', '낙찰', '예정가격', '계약체결', '정산'))
+    if submission and not broader and (not qualification or qualification_excluded):
+        return DocumentAcceptance(request=plan.goal, mode='SUBMISSION',
+            required=('입찰서 작성방식·금액·산출내역서, 제출기간·방법, 수정·취소 제한을 설명한다.',
+                      '제출 시 필요한 서류·보증확약·서약 동의 등 원문에 명시된 제출 의무와 그 주체·기한·예외를 보존한다.',
+                      '모든 원문 부분의 관련 여부를 검토한다. 해당 부분에 없는 내용을 그 부분의 누락으로 요구하지 않는다.'),
+            not_required=('개찰 일시·전산장애에 따른 개찰 지연, 예정가격 산정·낙찰자 선정·계약 이행은 작성·제출 요청의 완료 조건이 아니다.',
+                          '참가자격 자체의 업종·소재지·현장방문 조건은 별도 요청하지 않은 한 완료 조건이 아니다. 단, 명시된 필수 제출서류는 포함한다.'))
+    narrow = qualification and not procedures and not submission
+    return DocumentAcceptance(request=plan.goal, mode='QUALIFICATIONS' if narrow else 'REQUEST_SCOPE',
+        required=(('참가자의 자격·업종·등록·허가·소재지 및 참가 인정에 직접 결부된 현장 방문·확인서 조건을 설명한다.',
+                   '위 조건에 붙은 의무 주체·등록기한·적용기간·수치·부정·대안·예외를 보존한다. 등록정보 일치 등 자격의 유효성 조건도 포함한다.') if narrow
+                  else ('원래 request에서 요청한 모든 주제·조건·절차를 설명한다. 참가자격으로 범위를 축소하지 않는다.',))
+                  + ('번호가 다른 업종군의 AND/OR가 원문에서 명확하지 않으면 관계를 단정하지 않고 검수 필요를 설명한다.',
+                     '모든 원문 부분의 관련 여부를 검토한다. 부분에 없는 정보나 다른 부분의 내용을 그 부분의 누락으로 요구하지 않는다.'),
+        not_required=(('전자입찰의 제출 방법, 총액·산출내역서 작성, 제출 취소·수정, 개찰·예정가격 산정 등 절차 자체는 이 참가자격 요청의 완료 조건이 아니다.',
+                       '일반 청렴·안전 서약의 제재 상세, 계약 후 수행·정산, 빈 서식 항목의 열거는 이 참가자격 요청의 완료 조건이 아니다.') if narrow else ()))
 
 
 def profile_only_request(question):

@@ -67,3 +67,29 @@ def test_exact_and_unrelated_regions_behave_as_before() -> None:
 def test_the_other_former_region_is_not_confused_with_the_required_one() -> None:
     """옛 전남에 있는 회사는 '종전 광주광역시' 요건에 미달이다 — 위계는 형제 사이를 잇지 않는다."""
     assert _judge("종전 전라남도", "종전 광주광역시") == "UNSATISFIED"
+
+
+def test_decorated_wording_does_not_lose_the_hierarchy() -> None:
+    """지역 값은 모델이 쓴 문구 그대로 들어온다 — 꾸밈말이 붙어도 위계는 그대로여야 한다.
+
+    표를 정확히 일치로만 찾던 때는 이 셋이 전부 '미달' 이었다. 고친 실패가 표기 하나로
+    되살아나는 자리다.
+    """
+    for required in ("종전 광주광역시 관내", "광주광역시(종전)", "옛 광주광역시", "구 광주광역시"):
+        assert _judge("전남광주통합특별시", required) == "UNKNOWN", required
+    # 반대 방향도 같다.
+    assert _judge("종전 광주광역시 일원", "전남광주통합특별시") == "SATISFIED"
+
+
+def test_wording_only_differences_are_the_same_region() -> None:
+    assert _judge("종전 광주광역시", "광주광역시(종전)") == "SATISFIED"
+    assert _judge("광주광역시 관내", "옛 광주광역시") == "SATISFIED"
+
+
+def test_decoration_stripping_does_not_merge_different_regions() -> None:
+    """꾸밈말을 떼는 것이 다른 지역을 같은 곳으로 만들지 않는다."""
+    assert _judge("종전 전라남도", "종전 광주광역시 관내") == "UNSATISFIED"
+    assert _judge("서울특별시", "옛 광주광역시") == "UNSATISFIED"
+    # 표에 없는 지역은 떼어내도 표에 없다 — 예전과 같은 결과.
+    assert _judge("구미시", "종전 광주광역시") == "UNSATISFIED"
+    assert _judge("전북특별자치도", "충청북도") == "UNSATISFIED"

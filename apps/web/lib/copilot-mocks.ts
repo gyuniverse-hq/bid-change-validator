@@ -6,7 +6,7 @@ const provenance = {
   case_id: '00000000-0000-4000-8000-000000000001', notice_id: '00000000-0000-4000-8000-000000000002',
   notice_version_id: '00000000-0000-4000-8000-000000000003', version_number: 2,
   company_id: '00000000-0000-4000-8000-000000000004', analysis_run_id: '00000000-0000-4000-8000-000000000005',
-  judgment_run_id: '00000000-0000-4000-8000-000000000006', analysis_status: 'SUCCEEDED', rule_version: 'qualification-rules-v0.2',
+  judgment_run_id: '00000000-0000-4000-8000-000000000006', analysis_status: 'SUCCEEDED', rule_version: 'qualification-rules-v0.3',
 } satisfies ProductProvenance;
 const requirement = {
   requirement_key: 'REQ-REGISTRATION', requirement_group_key: null, group_operator: null,
@@ -78,15 +78,7 @@ export const copilotMocks = {
     user_input: { satisfies_requirement: true, normalized_value: '정보통신공사업', evidence_held: true, apply_to_profile: false },
     title: '요건 답변 적용', consequences: '선택한 요건의 사용자 답변으로 새 판정을 저장합니다. 회사 프로필은 변경하지 않습니다.',
   }] },
-  revalidationProposal: { ...empty, intent: 'CHANGED_NOTICE', answer: '변경 내역입니다. 재검증은 별도 확인 후 실행됩니다.',
-    product_state: { provenance: lineage, changes: [] }, actions: [{ action_type: 'REVALIDATE', expected: lineage,
-      title: '변경공고 재검증', consequences: '기준 판정에서 변경된 요건을 재검증하여 현재 버전의 새 판정을 저장합니다.' }] },
-  consentRequired: { ...empty, intent: 'DOCUMENT_QA', answer: '공개 공고문 질문을 별도로 입력하고 외부 처리에 명시적으로 동의해 주세요.' },
-  noEvidence: { ...empty, intent: 'DOCUMENT_QA', answer: '검색된 공고문 근거가 없습니다.',
-    external_processing_used: true, external_processing_scope: 'PUBLIC_NOTICE_DOCUMENT' },
-} satisfies Record<string, CopilotChatResponse>;
-
-/** HTTP 409 error payload, deliberately separate from a successful chat response. */
-export const staleActionErrorMock = {
-  error: { code: 'STALE_ACTION_CONTEXT', message: '제안 이후 판정 문맥이 변경되었습니다.', details: null },
-} satisfies { error: { code: string; message: string; details: unknown } };
+  revalidation: { ...empty, intent: 'REVALIDATION_SUMMARY', answer: '기준 차수에서 현재 차수까지 변경 요건 1건을 재검증했습니다.',
+    product_state: { provenance: lineage, changes: [{ baseline_key: 'REQ-REGISTRATION', current_key: 'REQ-REGISTRATION', change_type: 'MODIFIED', changed_fields: ['value'], baseline_raw: requirement.raw, current_raw: '정보통신공사업 또는 전기공사업 등록업체이어야 한다.' }],
+      revalidated_keys: ['REQ-REGISTRATION'] } },
+};

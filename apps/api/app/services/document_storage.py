@@ -59,11 +59,18 @@ class S3DocumentStorage:
 
     def put(self, storage_key: str, source: BinaryIO, content_type: str | None) -> str:
         source.seek(0)
-        extra_args = {"ContentType": content_type} if content_type else None
-        if extra_args:
-            self.client.upload_fileobj(source, self.bucket, storage_key, ExtraArgs=extra_args)
-        else:
-            self.client.upload_fileobj(source, self.bucket, storage_key)
+        # ``upload_fileobj`` may use AWS chunked encoding when the stream length
+        # is unknown. OCI's S3 Compatibility API rejects that transfer mode, so
+        # send a bytes body with a known length instead. The downloader already
+        # bounds each document size, and this keeps AWS S3 behavior unchanged.
+        params: dict[str, object] = {
+            "Bucket": self.bucket,
+            "Key": storage_key,
+            "Body": source.read(),
+        }
+        if content_type:
+            params["ContentType"] = content_type
+        self.client.put_object(**params)
         return storage_key
 
 

@@ -8,3 +8,4 @@ samples/golden/** -text
 # 예규 원문과 파생 인덱스도 바이트가 바뀌면 안 된다.
 data/standards/** -text
 apps/api/app/ai/clause_review/standards/data/*.json -text
+samples/golden/qualification-v0.2/** -text

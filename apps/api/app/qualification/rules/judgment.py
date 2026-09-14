@@ -315,6 +315,74 @@ def _performance_candidates(
     return candidates, has_ambiguous_date
 
 
+# [재현 2026-09-13] 2026-07-01 광주·전남 행정통합으로 지역 이름에 위계가 생겼다.
+# 전남광주통합특별시 안에 "종전 광주광역시" 와 "종전 전라남도" 가 있고, 통합 전 이름
+# "광주광역시" · "전라남도" 도 같은 하위 지역을 가리킨다. 부분문자열 비교는 이 관계를
+# 모른다 — R26BK01634263 004차수가 소재지를 "전남광주통합특별시" 에서 "종전 광주광역시" 로
+# 좁혔을 때, 통합시 단위로 등록된 회사 셋에 전부 '미달' 을 확정했다. 그 회사가 옛 광주
+# 안에 있을 수도 있어서 프로필로는 답할 수 없는데 답한 것이다 — 잘못된 확정 미달.
+#
+# 하위 -> 상위. 키는 _norm 을 거친 형태(공백 없음).
+_REGION_PARENT: dict[str, str] = {
+    "종전광주광역시": "전남광주통합특별시",
+    "종전전라남도": "전남광주통합특별시",
+    "광주광역시": "전남광주통합특별시",
+    "전라남도": "전남광주통합특별시",
+}
+
+
+# 지역 값은 모델이 쓴 문구가 그대로 들어온다(canonical/legacy_slots.py 의 지역_raw).
+# 같은 곳을 "종전 광주광역시", "종전 광주광역시 관내", "광주광역시(종전)" 로 제각기 적는데,
+# 표를 정확히 일치로만 찾으면 표기 하나에 위계가 사라지고 다시 미달을 확정한다.
+# 통합 전후를 가리키는 꾸밈말만 떼어내고 표를 찾는다. 떼어낸 열쇠는 표 조회에만 쓰고,
+# 두 문구가 같은 곳인지 보는 비교(_string_match)는 원래 값으로 한다.
+_REGION_PREFIXES = ("종전의", "종전", "옛")
+# 괄호는 _norm 이 지우므로 "광주광역시(종전)" 은 "광주광역시종전" 으로 들어온다.
+_REGION_SUFFIXES = ("소재지", "소재", "관내", "일원", "전역", "지역", "종전의", "종전", "옛")
+# "구"를 범용 prefix로 떼면 구미시·구리시·구례군 같은 실제 지명이 훼손된다.
+# 확인된 과거 명칭 표현만 명시적으로 alias 처리한다.
+_REGION_ALIASES = {
+    "구광주광역시": "광주광역시",
+}
+
+
+def _region_key(value: object) -> str:
+    """표를 찾기 위한 열쇠. 꾸밈말을 다 뗄 때까지 반복한다("종전 광주광역시 일원")."""
+    key = _norm(value)
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _REGION_PREFIXES:
+            if key.startswith(prefix) and len(key) > len(prefix):
+                key, changed = key[len(prefix):], True
+        for suffix in _REGION_SUFFIXES:
+            if key.endswith(suffix) and len(key) > len(suffix):
+                key, changed = key[: -len(suffix)], True
+    return _REGION_ALIASES.get(key, key)
+
+
+def _region_relation(observed: str, required: object) -> str:
+    """'match' | 'contained' | 'too_coarse' | 'none'.
+
+    contained  프로필이 하위 지역이고 요건이 그 상위 — 포함되므로 충족.
+    too_coarse 요건이 하위 지역인데 프로필은 상위 단위 — 프로필로는 가를 수 없다.
+    """
+    obs, req = _norm(observed), _norm(required)
+    if not obs or not req:
+        return "none"
+    if _string_match(observed, required):
+        return "match"
+    obs_key, req_key = _region_key(observed), _region_key(required)
+    if obs_key and obs_key == req_key:
+        # 꾸밈말만 다른 같은 지역. "종전 광주광역시" 와 "광주광역시(종전)".
+        return "match"
+    if _REGION_PARENT.get(obs_key) == req_key:
+        return "contained"
+    if _REGION_PARENT.get(req_key) == obs_key:
+        return "too_coarse"
+    return "none"
+
+
 def _judge_region(
     requirement: QualificationRequirement,
     profile: CompanyProfileSnapshot,
@@ -325,7 +393,12 @@ def _judge_region(
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
-    matched = _string_match(observed, requirement.value)
+    relation = _region_relation(observed, requirement.value)
+    if relation == "too_coarse":
+        # 통합시 단위 프로필로는 종전 시·도 안인지 알 수 없다. 미달로 확정하면 옛 광주
+        # 안에 있는 회사를 떨어뜨린다. 상세 주소를 물어야 하므로 확인 필요로 넘긴다.
+        return _unknown(requirement, preflight_case_id)
+    matched = relation in {"match", "contained"}
     if not matched and not profile.completeness.region:
         return _unknown(requirement, preflight_case_id)
     return _judgment(

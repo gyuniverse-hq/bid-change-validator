@@ -228,3 +228,17 @@
   사례를 낮은 확신도의 잠재 오탐으로 표시했다.
 - 모든 항목은 `DRAFT`, `evaluation_eligible=false`, `review_decision=PENDING`으로 두어
   사람 승인 전에는 평가 정답으로 사용할 수 없게 했다.
+## 2026-09-14 — PR #133 리뷰 반영
+
+- 지역 꾸밈말에서 범용 `구` prefix 제거를 중단하고, 확인된 `구 광주광역시`만 명시적
+  alias로 처리했다. `구미시`, `구리시`, `구례군` 원형 보존 테스트를 추가했다.
+- frozen fixture 검증에 `summary.json.fixture_sha256`과 실제
+  `fixture_bundle.json` SHA-256 교차검증을 추가하고 stale summary 회귀 테스트를
+  추가했다.
+- `golden-regression` workflow의 paths 필터를 제거해 `develop`·`main` 대상 모든
+  PR에서 실행되게 했다. required status check 지정은 GitHub ruleset 관리 항목임을
+  README에 명시했다.
+- 게이트 설명과 출력의 `정답 일치`를 `초안 기대값 일치`로 정정하고, 보류 자체에는
+  상한이 없지만 기준 일치 하락은 차단한다는 실제 정책을 문서화했다.
+- 관련 테스트 `70 passed`; frozen 골든 회귀는 `초안 기대값 일치 110 / 보류 28 /
+  잘못된 확정 0`으로 통과했다.

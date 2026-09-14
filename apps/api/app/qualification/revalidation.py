@@ -78,7 +78,7 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
     if payload.reference_date is not None and payload.reference_date != source.reference_date:
         raise QualificationJudgmentError("REFERENCE_DATE_CHANGED_FULL_REJUDGMENT_REQUIRED", "판정 기준일이 달라 전체 재판정이 필요합니다.", status_code=409)
     if source.rule_version != RULE_VERSION:
-        raise QualificationJudgmentError("RULE_CHANGED_FULL_REJUDGMENT_REQUIRED", "판정 규칙이 바뀌어 기준 차수부터 다시 판정해야 합니다.", status_code=409)
+        raise QualificationJudgmentError("RULE_CHANGED_FULL_REJUDGMENT_REQUIRED", "판정 규칙이 바뀌었습니다. 참가자격 화면에서 기준·현재 차수를 다시 판정한 뒤 재검증해 주세요.", status_code=409)
     latest_source = db.scalar(select(QualificationJudgmentRun.id).where(QualificationJudgmentRun.preflight_case_id == case_id, QualificationJudgmentRun.notice_version_id == case.baseline_version_id).order_by(QualificationJudgmentRun.created_at.desc()).limit(1))
     if latest_source != source.id:
         raise QualificationJudgmentError("STALE_JUDGMENT", "최신 기준 판정으로 재검증해 주세요.", status_code=409)

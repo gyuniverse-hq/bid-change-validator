@@ -2,7 +2,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .contracts import ActionProposal, ProductProvenance
 
@@ -27,12 +27,14 @@ class Fact(Contract):
     source_ids: list[str] = Field(default_factory=list)
     requirement_key: str | None = None
     target_kind: Literal['REQUIREMENT', 'MANUAL', 'DOCUMENT', 'CHANGE', 'ASSUMPTION'] = 'DOCUMENT'
+    origin_tool: Literal['READ_JUDGMENT', 'READ_PROFILE', 'READ_CHECKS', 'READ_DOCUMENT', 'READ_CHANGES', 'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'] | None = None
+    entity_ref: str | None = None
     scope: Scope
 
 
 class Source(Contract):
     source_id: str
-    kind: Literal['DOCUMENT', 'PRODUCT', 'TURN']
+    kind: Literal['DOCUMENT', 'PRODUCT', 'TURN', 'PROCEDURE']
     quote: str
     scope: Scope
     document_id: str | None = None
@@ -42,7 +44,7 @@ class Source(Contract):
 
 
 class Task(Contract):
-    kind: Literal['READ_JUDGMENT', 'READ_PROFILE', 'READ_CHECKS', 'READ_DOCUMENT', 'READ_CHANGES', 'REVIEW_ASSUMPTION', 'PROPOSE_ACTION']
+    kind: Literal['READ_JUDGMENT', 'READ_PROFILE', 'READ_CHECKS', 'READ_DOCUMENT', 'READ_CHANGES', 'REVIEW_ASSUMPTION', 'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION']
     question: str = Field(max_length=4000)
     scope_ref: Literal['current_case'] = 'current_case'
 
@@ -73,6 +75,7 @@ class Claim(Contract):
     validation: Literal['SUPPORTED', 'CONTRADICTED', 'INSUFFICIENT', 'UNCHECKED'] = 'UNCHECKED'
     method: Literal['rule', 'extractive', 'semantic'] = 'semantic'
     reason: str = ''
+    speech_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
 
 
 class DraftClaim(Contract):
@@ -80,6 +83,7 @@ class DraftClaim(Contract):
     text: str = Field(min_length=1, max_length=3000)
     fact_ids: list[str]
     source_ids: list[str]
+    speech_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
 
 
 class Draft(Contract):
@@ -97,12 +101,30 @@ class ClaimVerdict(Contract):
     claim_id: str
     status: Literal['SUPPORTED', 'CONTRADICTED', 'INSUFFICIENT']
     reason: str
+    observed_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
+
+
+class AcceptanceCriterion(Contract):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+    criterion_id: str
+    task_kind: str
+    mode: Literal['CHECKLIST', 'PROFILE_SUMMARY', 'EXPLANATION']
+    requirement: str
+    fact_ids: tuple[str, ...]
+
+
+class CriterionVerdict(Contract):
+    criterion_id: str
+    status: Literal['MET', 'MISSING', 'UNAVAILABLE']
+    claim_ids: list[str]
+    reason: str
 
 
 class Verdicts(Contract):
     verdicts: list[ClaimVerdict]
     task_coverage: Literal['COMPLETE', 'PARTIAL', 'UNKNOWN'] = 'UNKNOWN'
     missing_topics: list[str] = Field(default_factory=list, max_length=20)
+    criteria: list[CriterionVerdict] = Field(default_factory=list)
 
 
 class Target(Contract):
@@ -114,6 +136,8 @@ class Target(Contract):
     fact_ids: list[str]
     source_ids: list[str]
     requirement_key: str | None = None
+    origin_tool: Literal['READ_JUDGMENT', 'READ_PROFILE', 'READ_CHECKS', 'READ_DOCUMENT', 'READ_CHANGES'] | None = None
+    entity_ref: str | None = None
 
 
 class StatusCard(Contract):
@@ -151,12 +175,20 @@ class AnswerEnvelope(Contract):
     clarification: str | None = None
     processing: Processing = Field(default_factory=Processing)
 
+    @field_validator('claims')
+    @classmethod
+    def unique_claim_ids(cls, claims):
+        if len({c.claim_id for c in claims}) != len(claims):
+            raise ValueError('DUPLICATE_CLAIM')
+        return claims
+
 
 class Message(Contract):
     turn_id: str
     question: str
     answer: str
     scope: Scope
+    action_proposed: bool = False
 
 
 class ConversationState(Contract):

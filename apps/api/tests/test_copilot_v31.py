@@ -52,6 +52,19 @@ class FakeGateway:
         if callable(response): response = response(body)
         if schema is Verdicts and isinstance(response, dict):
             response = {'task_coverage': 'COMPLETE', **response}
+            # Existing scripted tests model a verifier that honors the new server
+            # rubric. Adversarial rubric responses are supplied explicitly in the
+            # acceptance tests; this does not model real semantic correctness.
+            if 'criteria' not in response and 'acceptance' in body:
+                available = [*body['claims'], *body.get('supported_siblings', [])]
+                rejected = {v['claim_id'] for v in response['verdicts'] if v['status'] != 'SUPPORTED'}
+                response['criteria'] = []
+                for criterion in body['acceptance']:
+                    ids = [c['claim_id'] for c in available if c['claim_id'] not in rejected
+                           and set(c['fact_ids']) & set(criterion['fact_ids'])]
+                    response['criteria'].append({'criterion_id': criterion['criterion_id'],
+                        'status': 'MET' if ids and response['task_coverage'] == 'COMPLETE' else 'MISSING',
+                        'claim_ids': ids, 'reason': 'scripted criterion coverage'})
         return schema.model_validate(response)
 
 
@@ -170,9 +183,9 @@ class ReplayTools:
         for fid in mapping[task.kind]:
             if fid in {f.fact_id for f in self.bundle.facts}:
                 continue
-            self.bundle.facts.append(next(f for f in data.facts if f.fact_id == fid))
+            self.bundle.facts.append(next(f for f in data.facts if f.fact_id == fid).model_copy(update={'origin_tool': task.kind}))
             self.bundle.sources.append(next(s for s in data.sources if s.source_id == 's-' + fid))
-        self.bundle.coverage[task.kind] = 'FOUND'
+        self.bundle.coverage[task.kind] = 'FOUND' if mapping[task.kind] else 'UNAVAILABLE'
 
 
 def replay():
@@ -188,7 +201,9 @@ def replay():
         gateway = FakeGateway({'plan': TaskPlan(goal=turn['question'], tasks=[Task(kind=k, question=turn['question']) for k in turn['tasks']]),
                                'generate': generated, 'validate': {'verdicts': [{'claim_id': fid, 'status': 'SUPPORTED', 'reason': 'frozen exact source'} for fid in turn['facts']]}})
         result, _ = coordinate(request, 'fixture-user', ReplayTools(), repository=repository, gateway=gateway)
-        assert result.processing.task_status == 'PASS'
+        # This historical synthetic fixture has no profile. Requesting a profile
+        # must now remain PARTIAL rather than calling an empty fake read complete.
+        assert result.processing.task_status == ('PARTIAL' if 'READ_PROFILE' in turn['tasks'] else 'PASS')
         assert {fid for c in result.claims for fid in c.fact_ids} == set(turn['facts'])
         assert all(c.source_ids for c in result.claims)
         outputs.append(result.model_dump(mode='json'))
@@ -314,16 +329,20 @@ def test_missing_required_fact_is_partial_even_if_other_claim_passes():
     result, _ = coordinate(CopilotChatRequest(case_id=scope().case_id, message=question), 'u', ReplayTools(),
                            repository=ConversationRepository(), gateway=gateway)
     assert result.processing.task_status == 'PARTIAL'
-    assert any(e.get('uncovered_fact_ids') == ['judgment'] for e in result.processing.validation_events)
+    assert any('READ_JUDGMENT:request' in e.get('missing_criterion_ids', []) for e in result.processing.validation_events)
 
 
-def test_long_extractive_source_is_preserved_without_schema_crash():
+def test_long_extractive_source_is_reported_omitted_without_schema_crash():
     b = bundle()
     b.sources[1].quote = '원문 조건과 예외. ' * 500
     state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
-    claims, partial, _ = compose(b, TaskPlan(goal='원문', tasks=[Task(kind='READ_DOCUMENT', question='원문')]), state, FakeGateway())
+    claims, partial, events = compose(b, TaskPlan(goal='원문', tasks=[Task(kind='READ_DOCUMENT', question='원문')]), state, FakeGateway())
     assert partial
-    assert ''.join(c.text for c in claims if c.fact_ids == ['exception']) == b.sources[1].quote
+    # R-02 replaces unbounded full-source dumping with explicit omission. The
+    # complete source remains available, and cannot be represented as full coverage.
+    assert not [c for c in claims if c.fact_ids == ['exception']]
+    assert any(e.get('reason') == 'FALLBACK_BUDGET' for e in events)
+    assert b.limitations and b.sources[1].quote == '원문 조건과 예외. ' * 500
 
 
 def test_actual_asgi_v31_four_turn_route_and_serialization(monkeypatch):
@@ -356,7 +375,7 @@ def test_actual_asgi_v31_four_turn_route_and_serialization(monkeypatch):
                 'context_revision': envelope['context_revision'] if envelope else None})
             assert response.status_code == 200, response.text
             envelope = response.json()['envelope']
-            assert envelope['processing']['task_status'] == 'PASS'
+            assert envelope['processing']['task_status'] == ('PARTIAL' if 'READ_PROFILE' in turn['tasks'] else 'PASS')
         assert envelope['context_revision'] == 4
 
 

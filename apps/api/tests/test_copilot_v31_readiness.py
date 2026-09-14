@@ -24,6 +24,13 @@ def version():
             extracted_blocks=[{'text': '참가자격: 2년 내 2곳, 평균 800식, 1년 운영. 병원은 제외.', 'block_index': 0, 'section_index': 1, 'location': 'section 1'}])])
 
 
+def test_leaked_hwp_controls_are_rejected_but_ordinary_hanja_is_not():
+    from apps.api.app.document_rag.readiness import corrupted_extraction
+    assert corrupted_extraction([{'text':'捤獥汤捯湰灧湰灧桤灧湯湷氠瑢'}])
+    assert corrupted_extraction([{'text':'氠瑢'}, {'text':'본문'}, {'text':'氠瑢'}])
+    assert not corrupted_extraction([{'text':'수수(授受)하지 않습니다. 中國, 大韓民國. 제25조 ① 등록.'}])
+
+
 def test_missing_legacy_and_current_direct_read_never_build(tmp_path):
     v = version()
     s = snapshot_sources(v, dimensions=2)
@@ -76,6 +83,20 @@ def test_missing_hash_never_counts_as_verified_source(tmp_path):
     v = version(); v.documents[0].file_sha256 = None
     source = snapshot_sources(v, dimensions=2)
     assert source.source_status == 'UNVERIFIED' and not source.records
+
+
+@pytest.mark.parametrize('text', ['소재지 \ufffd 전북', '면허\x00보유', '\ue001\ue002\ue003\ue004'])
+def test_damaged_extracted_text_is_not_valid_evidence_even_with_hashes(text):
+    v = version()
+    v.documents[0].extracted_blocks[0]['text'] = text
+    source = snapshot_sources(v, dimensions=2)
+    assert source.source_status == 'UNVERIFIED' and not source.records
+    assert any('깨져' in message for message in source.limitations)
+
+
+def test_korean_numbers_and_legal_symbols_are_not_decoding_damage():
+    from apps.api.app.document_rag.readiness import corrupted_extraction
+    assert not corrupted_extraction([{'text': '① 제3조 ⑴ 전북특별자치도 · 1227 / 800식 이상. ※ 예외는 별도 확인'}])
 
 
 def test_build_failure_lock_dedup_and_atomic_generation(tmp_path):

@@ -337,6 +337,11 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const unknown = displayJudgment?.judgments.filter((item) => item.status === 'UNKNOWN').length ?? 0;
   const unsatisfied = displayJudgment?.judgments.filter((item) => item.status === 'UNSATISFIED').length ?? 0;
   const [conclusionTitle, conclusionDescription] = overallCopy(displayJudgment?.overall_status);
+  const canRejudgeSavedAnalysis = canReuseAnalysis(currentAnalysis) && (
+    !activeCase?.baseline_version_number
+    || activeCase.baseline_version_number === activeCase.current_version_number
+    || canReuseAnalysis(baselineAnalysis)
+  );
   const canRevalidate = Boolean(
     activeCase?.baseline_version_number
       && activeCase.baseline_version_number !== activeCase.current_version_number
@@ -456,7 +461,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             <CaseTabs caseId={activeCase.id} active="qualification" />
 
             {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{canRejudgeSavedAnalysis && <Button variant="outline" onClick={() => void runFullReview(false)} disabled={busy !== null || actionLocked}>저장된 분석으로 다시 판정</Button>}{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
 
             {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}

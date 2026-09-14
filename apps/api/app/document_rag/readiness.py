@@ -20,6 +20,27 @@ def file_digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def corrupted_extraction(blocks):
+    """Reject explicit decoding damage, not unusual Korean/legal vocabulary."""
+    leaked_controls = 0
+    for block in blocks:
+        text = str(block.get('text', '')) if isinstance(block, dict) else ''
+        if '\ufffd' in text or '\x00' in text:
+            return True
+        visible = [c for c in text if not c.isspace()]
+        private = sum('\ue000' <= c <= '\uf8ff' for c in visible)
+        if private >= 3 and private / max(1, len(visible)) > .05:
+            return True
+        # In the imported HWP snapshot, binary control IDs leaked as CJK text
+        # (for example, a standalone '氠瑢' encodes the reversed 'tbl ' ID).
+        # Match complete control-only blocks, never general Hanja vocabulary.
+        raw = text.strip().encode('utf-16le')
+        controls = {b'secd', b'cold', b'pgnp', b'pghd', b'nwno', b'tbl ', b'gso ', b'foot', b'atno'}
+        if raw and len(raw) % 4 == 0 and all(raw[i:i+4][::-1] in controls for i in range(0, len(raw), 4)):
+            leaked_controls += len(raw) // 4
+    return leaked_controls >= 2
+
+
 @dataclass
 class SourceSnapshot:
     version_id: str
@@ -40,14 +61,18 @@ def snapshot_sources(version, *, model=DEFAULT_EMBEDDING_MODEL, dimensions=1536)
         correct_version = str(getattr(doc, 'notice_version_id', version.id)) == str(version.id)
         valid = correct_version and getattr(doc, 'extraction_status', None) == 'EXTRACTED' and bool(blocks)
         verified = valid and all(isinstance(h, str) and re.fullmatch(r'[a-fA-F0-9]{64}', h) for h in (source_hash, extracted_hash))
+        corrupted = corrupted_extraction(blocks)
+        verified = verified and not corrupted
         documents.append({'id': str(doc.id), 'version': str(getattr(doc, 'notice_version_id', version.id)),
                           'status': getattr(doc, 'extraction_status', None), 'source_sha256': source_hash,
                           'extracted_sha256': extracted_hash, 'blocks_sha256': digest(blocks),
-                          'extractor': getattr(doc, 'text_extractor', None)})
+                          'extractor': getattr(doc, 'text_extractor', None),
+                          'text_quality': 'CORRUPT' if corrupted else 'NO_EXPLICIT_DAMAGE'})
         if verified:
             accepted.append(doc)
         else:
-            limitations.append(f'문서 {doc.name}: 현재 추출 출처 또는 hash를 확인하지 못했습니다.')
+            limitations.append(f'문서 {doc.name}: 추출 텍스트가 깨져 근거로 사용하지 않았습니다. 원문 확인 또는 재추출이 필요합니다.' if corrupted
+                               else f'문서 {doc.name}: 현재 추출 출처 또는 hash를 확인하지 못했습니다.')
     from types import SimpleNamespace
     filtered = SimpleNamespace(id=version.id, notice_id=version.notice_id, version_number=version.version_number, documents=accepted)
     records = build_notice_version_records(filtered)
@@ -136,34 +161,50 @@ def publish_index(snapshot, root, embeddings, *, expected_fingerprint, max_embed
         lock.unlink()
 
 
+def full_source_request(question):
+    return any(word in question for word in ('전체', '참가자격', '준비', '확인할', '모든', '모두', '전부', '빠짐없이'))
+
+
 def read_passages(readiness, question, *, broad=False, query_limit=2):
     """Current verified source records only; never builds or embeds documents."""
     records = readiness.source.records
+    if broad:
+        # Search scope, per-call model budget and display budget are different.
+        # A full-scope request must not lose requirements before generation.
+        # compose() separately records omissions and returns PARTIAL if its
+        # evidence budget cannot cover the verified source set.
+        return records, {'strategy': 'all_verified_current_sections', 'supplements': 0,
+                         'returned_chunks': len(records), 'source_chunks': len(records)}
     if readiness.index is not None and not broad:
         from .retrieval import retrieve
         hits = retrieve(readiness.index, question, method='hybrid', k=4, fetch_k=12)
         hit_ids = {h.metadata.chunk_id for h in hits}
         positive = [i for i, r in enumerate(records) if r.metadata.chunk_id in hit_ids]
         strategy = 'hybrid_with_current_sections'
-    elif broad:
-        # Read all verified current sections. Input budget handling occurs before model generation;
-        # no three-point truncation or false assertion of complete source coverage.
-        return records, {'strategy': 'current_sections', 'supplements': 0}
     else:
-        tokens = set(re.findall(r'[가-힣A-Za-z0-9]{2,}', question))
+        tokens = set(re.findall(r'[가-힣A-Za-z0-9]{2,}', question)) - {'전체', '모든', '요약', '알려줘', '설명해줘'}
         ranked = sorted(enumerate(records), key=lambda pair: sum(t in pair[1].text for t in tokens), reverse=True)
-        positive = [i for i, r in ranked if any(t in r.text for t in tokens)][:4]
+        positive = [i for i, r in ranked if any(t in r.text for t in tokens)]
+        positive = positive[:4]
         strategy = 'current_sections_lexical'
     # Parent sections are drawn from the pinned current source snapshot, including
     # chunks beyond top-k. Adjacent passages cover formats lacking section metadata.
     selected = set(positive)
+    heading = re.compile(r'^\s*(?:제\s*\d+\s*조|\d+[.)]\s|[가-힣A-Za-z ]{2,20}[:：])')
+    groups, group = [], -1
+    previous = None
+    for record in records:
+        parent = (record.metadata.document_id, record.metadata.section_index)
+        if parent != previous or heading.match(record.text):
+            group += 1
+        groups.append(group)
+        previous = parent
     for i in positive:
-        section = records[i].metadata.section_index
-        if section is not None:
-            selected.update(j for j, r in enumerate(records)
-                            if r.metadata.document_id == records[i].metadata.document_id and r.metadata.section_index == section)
+        if records[i].metadata.section_index is not None:
+            selected.update(j for j in range(len(records)) if groups[j] == groups[i])
         for j in (i - 1, i + 1):
-            if 0 <= j < len(records) and records[j].metadata.document_id == records[i].metadata.document_id:
+            if (0 <= j < len(records) and records[j].metadata.document_id == records[i].metadata.document_id
+                    and (groups[j] == groups[i] or re.match(r'^\s*(?:※|주\s*\d|단[,，]|다만)', records[j].text))):
                 selected.add(j)
     # At most two local supplemental scans for topical restrictions/footnotes.
     # These are retrieval aids, not proof of semantic coverage or extra model calls.

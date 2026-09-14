@@ -86,7 +86,7 @@ def get_changed_notice(db: Session, case_id: UUID) -> ChangedNoticeResult:
                 or source.profile_snapshot.get("company_id") != str(case.company_id)):
             raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "기준 판정의 문맥이 다릅니다.")
         if source.analysis_run_id != baseline.analysis_run_id or source.rule_version != RULE_VERSION:
-            raise QualificationJudgmentError("STALE_ACTION_CONTEXT", "최신 분석·규칙으로 기준 판정이 필요합니다.")
+            raise QualificationJudgmentError("STALE_ACTION_CONTEXT", "최신 분석·규칙으로 기준 판정이 필요합니다. 참가자격 화면에서 기준·현재 차수를 다시 판정한 뒤 재검증해 주세요.")
         if source.analysis_status != baseline.analysis_status:
             raise QualificationJudgmentError("ANALYSIS_STATUS_MISMATCH", "기준 분석 상태가 다릅니다.")
         if {r.requirement_key for r in source.judgments} != {r.requirement_key for r in analyses[0].requirements}:

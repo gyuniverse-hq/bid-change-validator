@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 os.environ.update(DATABASE_URL='postgresql://audit:audit@127.0.0.1:1/copilot_never_connect',
                   MIGRATION_DATABASE_URL='postgresql://audit:audit@127.0.0.1:1/copilot_never_connect',
-                  OPENAI_API_KEY='', G2B_SERVICE_KEY='', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+                  OPENAI_API_KEY='', G2B_SERVICE_KEY='', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
 sys.dont_write_bytecode = True
 stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 output = ROOT / '.ci-results' / ('copilot-v31-' + stamp)
@@ -39,9 +39,9 @@ socket.socket.connect_ex = forbidden
 import pytest
 
 tests = ['test_copilot_narration.py', 'test_copilot_required_checks_narration.py',
-         'test_copilot_v31.py', 'test_copilot_v31_readiness.py', 'test_document_rag_store.py',
+         'test_copilot_v31.py', 'test_copilot_acceptance.py', 'test_copilot_v31_review.py', 'test_copilot_v31_readiness.py', 'test_document_rag_store.py',
          'test_copilot_chat_contract.py', 'test_copilot_semantic_router.py',
-         'test_copilot_intent_resolver.py', 'test_copilot_semantic_optin.py']
+         'test_copilot_intent_resolver.py', 'test_copilot_semantic_optin.py', 'test_copilot_v31_consent.py']
 code = pytest.main(['-v', '--noconftest', '-p', 'no:cacheprovider', '--tb=short',
                     '--junitxml=' + str(output / 'tests.xml'),
                     *['apps/api/tests/' + t for t in tests]])

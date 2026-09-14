@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useState, useSyncExternalStore, type SyntheticEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 
@@ -17,12 +17,17 @@ import { Label } from '@/components/ui/label';
 import { ApiError } from '@/lib/api';
 import { getCurrentUser, login } from '@/lib/auth';
 
+const subscribeHydration = () => () => {};
+
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // SSR cannot submit credentials before React attaches the submit handler.
+  // Readiness does not depend on an auth request completing.
+  const ready = useSyncExternalStore(subscribeHydration, () => true, () => false);
 
   useEffect(() => {
     void getCurrentUser()
@@ -89,7 +94,7 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pt-4">
-              <form className="space-y-5" onSubmit={submit}>
+              <form method="post" className="space-y-5" onSubmit={submit}>
                 <div className="space-y-2">
                   <Label htmlFor="username">아이디</Label>
                   <Input
@@ -120,7 +125,7 @@ export default function LoginPage() {
                     {error}
                   </p>
                 )}
-                <Button type="submit" size="lg" className="mt-2 h-11 w-full text-base" disabled={loading}>
+                <Button type="submit" size="lg" className="mt-2 h-11 w-full text-base" disabled={!ready || loading}>
                   {loading ? <LoaderCircle className="animate-spin" /> : <LockKeyhole />}
                   {loading ? '로그인 중' : '로그인'}
                 </Button>

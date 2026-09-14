@@ -93,3 +93,26 @@ cross.adopt('other',action); assert.equal(cross.get('other').proposal,null);
 const reval=new ActionController(async()=>m.revalidationProposal);
 await reval.propose(id,true); assert.equal(reval.get(id).proposal.action_type,'REVALIDATE');
 console.log('PASS askability, stale viewed judgment, cross-case adoption, whole-scope revalidation');
+
+// Rule-upgrade rejection stays visible, consumes the proposal, and never retries
+// the write. Recovery is a separate, explicitly started full review.
+for (const code of ['STALE_ACTION_CONTEXT', 'RULE_CHANGED_FULL_REJUDGMENT_REQUIRED']) {
+  const message = '참가자격 화면에서 기준·현재 차수를 다시 판정한 뒤 재검증해 주세요.';
+  let attempts = 0;
+  const controller = new ActionController(async () => fresh, async () => {
+    attempts++;
+    throw new ApiError(message, 409, code);
+  });
+  controller.adopt(id, m.revalidationProposal.actions[0]);
+  await controller.confirm(id, true);
+  assert.equal(controller.get(id).stage, 'STALE');
+  assert.equal(controller.get(id).message, message);
+  assert.equal(controller.get(id).proposal, null);
+  await controller.confirm(id, true);
+  assert.equal(attempts, 1);
+  assert.equal(controller.acquireReview(id), true);
+  assert.equal(controller.get(id).externalBusy, true);
+  assert.equal(attempts, 1, 'starting recovery cannot repeat the rejected action');
+  controller.releaseReview(id);
+}
+console.log('PASS rule-upgrade guidance, no write replay, explicit full-review recovery');

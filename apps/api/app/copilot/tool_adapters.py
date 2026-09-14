@@ -2,7 +2,7 @@
 import json
 import os
 
-from ..document_rag.readiness import digest, inspect_index, read_passages, snapshot_sources
+from ..document_rag.readiness import digest, full_source_request, inspect_index, read_passages, snapshot_sources
 from ..document_rag.service import load_notice_version_for_rag
 from ..document_rag.store import create_openai_embeddings
 from ..qualification.judgment import QualificationJudgmentError
@@ -41,12 +41,13 @@ class ProductTools:
             self.bundle.sources.append(source)
         return source_id
 
-    def _fact(self, kind, text, ids, *, target='DOCUMENT', key=None, scope=None):
+    def _fact(self, kind, text, ids, *, target='DOCUMENT', key=None, scope=None, origin=None, entity=None):
         scope = scope or self.scope
         fact_id = 'f-' + digest([kind, text, ids, scope.model_dump(mode='json')])[:20]
         if fact_id not in {f.fact_id for f in self.bundle.facts}:
             self.bundle.facts.append(Fact(fact_id=fact_id, kind=kind, text=text, source_ids=ids,
-                                          target_kind=target, requirement_key=key, scope=scope))
+                                          target_kind=target, requirement_key=key, scope=scope,
+                                          origin_tool=origin, entity_ref=entity or key))
         return fact_id
 
     def _summary(self):
@@ -76,7 +77,7 @@ class ProductTools:
             text = f'저장된 요건 상태: {item.status}. 요건: {item.raw}. 사유 코드: {item.reason_code}.'
             ids = [self._source('PRODUCT', text)]
             ids += [self._source('DOCUMENT', e.quote, evidence=e) for e in by_key[item.requirement_key] if e.quote.strip()]
-            self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=item.requirement_key)
+            self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=item.requirement_key, origin='READ_JUDGMENT')
         if summary.analysis_status == 'PARTIAL':
             self.bundle.limitations.append('현재 분석은 부분 완료 상태이며 자동 판정 범위가 완전하지 않습니다.')
 
@@ -86,7 +87,7 @@ class ProductTools:
         if profile.provenance != summary.provenance:
             raise ValueError('PRODUCT_SCOPE_CHANGED')
         text = '판정 당시 회사정보: ' + json.dumps(_profile_for_ai(profile.profile_snapshot), ensure_ascii=False)
-        self._fact('PROFILE_FACT', text, [self._source('PRODUCT', text)])
+        self._fact('PROFILE_FACT', text, [self._source('PRODUCT', text)], origin='READ_PROFILE', entity='profile_snapshot')
 
     def required_checks(self):
         summary = self._summary()
@@ -100,12 +101,13 @@ class ProductTools:
                                         manual_review_count=(len(scope.notice_facts) + len(scope.dropped_requirements)) if scope else 0)
         for q in checks.questions:
             text = ('답변 입력 가능: ' if q.askable else '직접 확인 필요·현재 입력 불가: ') + q.question
-            self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='REQUIREMENT', key=q.requirement_key)
+            self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='REQUIREMENT', key=q.requirement_key, origin='READ_CHECKS')
         if scope:
             for item in scope.notice_facts:
                 for e in item.evidence:
                     if e.quote.strip():
-                        self._fact('NOTICE_FACT', e.quote, [self._source('DOCUMENT', e.quote, evidence=e)], target='MANUAL')
+                        sid = self._source('DOCUMENT', e.quote, evidence=e)
+                        self._fact('NOTICE_FACT', e.quote, [sid], target='MANUAL', origin='READ_CHECKS', entity=sid)
             for item in scope.dropped_requirements:
                 # Raw dropped requirement alone has no original locator; never invent a citation.
                 self.bundle.limitations.append('구조화에서 제외된 항목은 참가자격 화면에서 원문을 확인해 주세요: ' + item.raw)
@@ -122,13 +124,19 @@ class ProductTools:
         # When no model key exists, lexical current-section reads require no query embedding.
         if not embeddings.available:
             readiness.index = None
-        broad = any(s in question for s in ('전체', '참가자격', '준비', '확인할', '모든'))
+        broad = full_source_request(question)
         try:
             passages, details = read_passages(readiness, question, broad=broad)
         except Exception:
             readiness.index = None
             passages, details = read_passages(readiness, question, broad=broad)
             details['query_embedding_failed'] = True
+        target = getattr(self, 'selected_target', None)
+        if target and target.origin_tool == 'READ_DOCUMENT' and target.entity_ref:
+            # The target stores the original chunk identity. Do not search using
+            # generated answer prose to locate an already selected source.
+            passages = [r for r in snapshot.records if r.metadata.chunk_id == target.entity_ref]
+            details['strategy'] = 'selected_current_chunk'
         self.trace.append({'tool': 'READ_DOCUMENT', 'source_status': snapshot.source_status,
                            'index_status': readiness.index_status, 'generation': readiness.generation,
                            'fingerprint': snapshot.fingerprint, 'verification': snapshot.verification, **details})
@@ -136,6 +144,8 @@ class ProductTools:
         self.bundle.coverage['READ_DOCUMENT'] = 'FOUND' if passages else 'NOT_FOUND'
         if snapshot.source_status != 'AVAILABLE':
             self.bundle.limitations.append('확인 가능한 문서 범위가 제한되어 전체 조건을 확인했다고 볼 수 없습니다.')
+            if broad and passages:
+                self.bundle.coverage['READ_DOCUMENT'] = 'PARTIAL'
         from types import SimpleNamespace
         for passage in passages:
             m = passage.metadata
@@ -145,7 +155,7 @@ class ProductTools:
                                        extracted_text_sha256=m.extracted_text_sha256,
                                        location={'chunk_id': m.chunk_id, 'page': m.page, 'locations': m.source_locations})
             sid = self._source('DOCUMENT', passage.text, evidence=evidence)
-            self._fact('NOTICE_FACT', passage.text, [sid])
+            self._fact('NOTICE_FACT', passage.text, [sid], origin='READ_DOCUMENT', entity=m.chunk_id)
 
     def changes(self):
         result = get_changed_notice(self.db, self.case.id)
@@ -161,7 +171,8 @@ class ProductTools:
                 scope = self.scope.model_copy(update={'notice_version_id': version.notice_version_id,
                                                       'analysis_run_id': version.analysis_run_id, 'judgment_run_id': version.judgment_run_id})
                 text = f'{label} 버전 {version.version_number}: {requirement.raw} ({change.change_type})'
-                self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text, scope=scope)], target='CHANGE', scope=scope)
+                self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text, scope=scope)], target='CHANGE', scope=scope,
+                           origin='READ_CHANGES', entity=str(version.notice_version_id) + ':' + requirement.raw)
 
     def execute(self, task):
         if task.kind == 'READ_JUDGMENT': self.judgment()

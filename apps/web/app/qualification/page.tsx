@@ -182,6 +182,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     async function hydrateCase(caseId: string, request: number) {
       const workspace = await loadCaseWorkspace(caseId);
       if (request !== generation.current) return;
+      // Case ID가 있는 진입에서는 검토 상세만으로 첫 화면을 그릴 수 있다.
+      // 전체 공고/Case 목록을 기다리지 않고 현재 항목을 먼저 넣어 로딩 화면을 끝낸다.
+      setNotices((previous) => previous.length ? previous : [workspace.notice]);
+      setCompanies((previous) => previous.length || !workspace.company ? previous : [workspace.company]);
+      setCases((previous) => previous.some((item) => item.id === workspace.caseItem.id)
+        ? previous
+        : [workspace.caseItem, ...previous]);
       setActiveCase(workspace.caseItem);
       setNoticeId(workspace.caseItem.notice_id);
       setCompanyId(workspace.caseItem.company_id ?? '');
@@ -208,6 +215,19 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setBusy('load');
     setError('');
     try {
+      const targetCase = requestedCaseId;
+      if (targetCase) {
+        // 공고 100건과 Case 드롭다운 자료는 보조 데이터다. 검토 상세와 동시에 요청하되
+        // 첫 화면 렌더링을 막지 않고 도착하는 대로 갱신한다.
+        const supportingData = Promise.allSettled([listNotices(), listPreflightCases()]);
+        await hydrateCase(targetCase, request);
+        void supportingData.then(([noticeResult, caseResult]) => {
+          if (request !== generation.current) return;
+          if (noticeResult.status === 'fulfilled') setNotices(noticeResult.value.items);
+          if (caseResult.status === 'fulfilled') setCases(caseResult.value.items);
+        });
+        return;
+      }
       const [noticeResult, companyResult, caseResult] = await Promise.all([listNotices(), listCompanies(), listPreflightCases()]);
       if (request !== generation.current) return;
       setNotices(noticeResult.items);
@@ -215,10 +235,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setCases(caseResult.items);
       setNoticeId(noticeResult.items[0]?.id ?? '');
       setCompanyId(companyResult[0]?.id ?? '');
-      const targetCase = requestedCaseId;
-      if (targetCase) {
-        await hydrateCase(targetCase, request);
-      } else if (caseResult.items[0]) {
+      if (caseResult.items[0]) {
         // 로그인한 회사에 허용된 가장 최근 Case로 바로 진입한다.
         router.replace(`/qualification?caseId=${encodeURIComponent(caseResult.items[0].id)}`);
       }

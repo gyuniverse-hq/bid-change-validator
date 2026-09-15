@@ -251,6 +251,18 @@ def test_notice_version_deduplication_file_download_and_api(
             == "DOCUMENT_PREVIEW_CONVERSION_REQUIRED"
         )
 
+        same_version_case_response = client.post(
+            "/api/v1/preflight-cases",
+            json={
+                "notice_id": str(notice_id),
+                "baseline_version_number": 2,
+                "current_version_number": 2,
+                "title": "동일 차수 비교 요청",
+            },
+        )
+        assert same_version_case_response.status_code == 422
+        assert same_version_case_response.json()["error"]["code"] == "INVALID_VERSION_RANGE"
+
         case_response = client.post(
             "/api/v1/preflight-cases",
             json={

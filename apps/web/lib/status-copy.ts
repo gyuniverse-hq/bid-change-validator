@@ -92,6 +92,19 @@ export const OVERALL_STATUS_COPY: Record<OverallStatus, { label: string; descrip
 };
 
 /**
+ * 목록·카드의 판정 배지. 라벨은 위 OVERALL_STATUS_COPY와 같은 말을 쓴다.
+ * 화면마다 자기 맵을 두면 같은 값이 화면마다 다른 이름으로 불린다 — 공고 목록은
+ * 「응찰 가능·자격 미달」, 검토 결론은 「참가 가능·참가 불가」로 갈려 있었다 (#138 리뷰).
+ * 목록에는 아직 판정이 없는 행이 있어 'unreviewed'를 하나 더 둔다.
+ */
+export const OVERALL_STATUS_BADGE: Record<OverallStatus | 'unreviewed', { label: string; className: string }> = {
+  eligible: { label: '참가 가능', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  insufficient_data: { label: '확인 필요', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  ineligible: { label: '참가 불가', className: 'border-rose-200 bg-rose-50 text-rose-700' },
+  unreviewed: { label: '미검토', className: 'border-slate-200 bg-slate-50 text-slate-600' },
+};
+
+/**
  * 되묻기 이유 3종 (03 확인 필요 화면).
  * 이유마다 사용자가 할 수 있는 일이 다르므로 화면도 달라야 한다.
  *  - answerable  : 답하면 그 항목만 다시 판정된다

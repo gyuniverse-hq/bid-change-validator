@@ -67,14 +67,14 @@ function sameStructuredValue(before: QualificationRequirement | null, after: Qua
 function RequirementSide({ label, requirement, missing }: { label: string; requirement: QualificationRequirement | null; missing: string }) {
   return (
     <div className="rounded-[14px] border border-[#eef0f4] bg-[#fafbfc] px-4 py-3">
-      <span className="text-[12px] font-semibold text-[var(--product-muted)]">{label}</span>
+      <span className="text-[13px] font-semibold text-[var(--product-muted)]">{label}</span>
       {requirement ? (
         <>
-          <p className="mt-1.5 text-[13px] leading-6 text-[var(--product-ink)]">{requirement.raw}</p>
-          <p className="mt-2 text-[12px] text-[var(--product-muted)]">구조화 값 · {requirementValue(requirement)}</p>
+          <p className="mt-1.5 text-[15px] leading-6 text-[var(--product-ink)]">{requirement.raw}</p>
+          <p className="mt-2 text-[13px] text-[var(--product-muted)]">구조화 값 · {requirementValue(requirement)}</p>
         </>
       ) : (
-        <p className="mt-1.5 text-[13px] leading-6 text-[var(--product-muted)]">{missing}</p>
+        <p className="mt-1.5 text-[15px] leading-6 text-[var(--product-muted)]">{missing}</p>
       )}
     </div>
   );
@@ -151,34 +151,34 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
         </section>}
 
         <section className="mt-8">
-          <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">공고 차수</h2><span className="text-[13.5px] text-[var(--product-muted)]">판정은 차수에 묶입니다</span></div>
+          <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">공고 차수</h2><span className="text-[15px] text-[var(--product-muted)]">판정은 차수에 묶입니다</span></div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {workspace.versions.map((version) => <article key={version.id} className={`rounded-[20px] border px-5 py-[18px] ${version.version_number === workspace.caseItem.current_version_number ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}><div className="flex items-center gap-2"><strong className="text-[14.5px]">{version.version_number}차 {version.version_number === 1 ? '공고' : '변경'}</strong>{version.version_number === workspace.caseItem.current_version_number && <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold">현재 판정 기준</span>}</div><p className="mt-2 text-[12.5px] text-[var(--product-muted)]">{formatDate(version.changed_at ?? version.posted_at ?? version.collected_at)}</p><p className="mt-2 text-[13px]">{version.change_reason ?? (version.version_number === 1 ? '최초 공고' : '변경 사유 미기재')}</p></article>)}
+            {workspace.versions.map((version) => <article key={version.id} className={`rounded-[20px] border px-5 py-[18px] ${version.version_number === workspace.caseItem.current_version_number ? 'border-[var(--product-accent)] bg-[#edeafb]' : 'border-[var(--product-line)] bg-white'}`}><div className="flex items-center gap-2"><strong className="text-[15px]">{version.version_number}차 {version.version_number === 1 ? '공고' : '변경'}</strong>{version.version_number === workspace.caseItem.current_version_number && <span className="rounded-full bg-white px-2 py-1 text-[12px] font-bold">현재 판정 기준</span>}</div><p className="mt-2 text-[13px] text-[var(--product-muted)]">{formatDate(version.changed_at ?? version.posted_at ?? version.collected_at)}</p><p className="mt-2 text-[15px]">{version.change_reason ?? (version.version_number === 1 ? '최초 공고' : '변경 사유 미기재')}</p></article>)}
           </div>
         </section>
 
         {!baseline ? (
           <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-12 text-center">
-            <h2 className="text-[20px] font-extrabold tracking-[-0.03em]">아직 변경 이력이 없습니다</h2>
-            <p className="mt-3 text-[13.5px] leading-6 text-[var(--product-muted)]">현재 검토 건은 최초 공고만 존재합니다. 변경공고가 수집되면 이전 차수와 현재 차수를 비교하고, 바뀐 자격조건만 다시 판정합니다.</p>
+            <h2 className="text-[21px] font-extrabold tracking-[-0.03em]">아직 변경 이력이 없습니다</h2>
+            <p className="mt-3 text-[15px] leading-6 text-[var(--product-muted)]">현재 검토 건은 최초 공고만 존재합니다. 변경공고가 수집되면 이전 차수와 현재 차수를 비교하고, 바뀐 자격조건만 다시 판정합니다.</p>
           </section>
         ) : (
           <>
-            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[13px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
-              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[13.5px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
+            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[15px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
+              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[15px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
-                <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
+                <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[13px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
                 {comparison.map(([label, before, after]) => {
                   const changed = before !== after;
-                  return <div key={label} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[13.5px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[12px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span></div></div>;
+                  return <div key={label} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[15px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[13px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span></div></div>;
                 })}
               </div>
             </section>
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[13.5px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
-              {!canRevalidate && <p className="mt-4 text-[12.5px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[14px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
+              {!canRevalidate && <p className="mt-4 text-[13px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
+              {result && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
                 // 재검증 결과가 양쪽 차수의 요건을 그대로 담아 온다. 따로 조회해 이어붙이지 않는다.
                 const before = item.baseline;
                 const after = item.current;
@@ -207,19 +207,19 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
                       onClick={() => setToggledRows((previous) => ({ ...previous, [item.identity]: !open }))}
                       className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-[#fafbfc]"
                     >
-                      <span aria-hidden className={`mt-0.5 text-[12px] text-[var(--product-muted)] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                      <span aria-hidden className={`mt-0.5 text-[13px] text-[var(--product-muted)] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2">
                           {/* 요건 유형을 못 찾으면 내부 키라도 보여준다. 빈 칸보다는 낫고, 못 찾았다는 사실도 드러난다. */}
-                          <strong className="text-[14px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
-                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[12px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
+                          <strong className="text-[15px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
+                          <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[13px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
                           {comparable && (sameStructured
-                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 차이 있음</span>
-                            : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[12px] font-bold text-[#9a2b2b]">구조화 값 변경</span>)}
+                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[13px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 차이 있음</span>
+                            : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[13px] font-bold text-[#9a2b2b]">구조화 값 변경</span>)}
                         </span>
-                        <span className="mt-1 block truncate text-[12.5px] text-[var(--product-muted)]">{summary}</span>
+                        <span className="mt-1 block truncate text-[13px] text-[var(--product-muted)]">{summary}</span>
                       </span>
-                      <span className="mt-0.5 shrink-0 text-[12px] text-[var(--product-muted)]">{open ? '접기' : '원문 보기'}</span>
+                      <span className="mt-0.5 shrink-0 text-[13px] text-[var(--product-muted)]">{open ? '접기' : '원문 보기'}</span>
                     </button>
                     {open && (
                       <div className="grid gap-2 px-4 pb-4 lg:grid-cols-2">
@@ -229,11 +229,11 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
                     )}
                   </div>
                 );
-              })}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[13px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
+              })}</div> : <p className="rounded-[18px] border border-dashed border-[#eef0f4] px-4 py-6 text-center text-[15px] text-[var(--product-muted)]">자격조건에 영향 있는 변경이 없습니다. 기존 판정이 그대로 유지됩니다.</p>}</div>}            </section>
           </>
         )}
 
-        <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5 text-[13px] leading-6 text-[var(--product-muted)]">
+        <section className="mt-8 rounded-[20px] border border-[var(--product-line)] bg-[var(--product-tint)] p-5 text-[15px] leading-6 text-[var(--product-muted)]">
           <strong className="text-[var(--product-ink)]">현재 판정 반영 기준</strong><br />공고 값 변경은 나라장터 수집 값끼리 비교하고, 자격 판정 영향은 백엔드의 자격조건 비교와 다시 판정한 결과를 기준으로 표시합니다.
       </section>
       </div>

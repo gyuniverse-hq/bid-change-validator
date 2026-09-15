@@ -40,17 +40,25 @@ _COMPLEX_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"대표자.*(동일|중복)|중복.*대표자|대표자.*변경등록", "REPRESENTATIVE_CONFLICT_RULE"),
     (r"\b또는\b|\b다만\b|각\s*호|중\s*하나|어느\s*하나", "ALTERNATIVE_OR_EXCEPTION_RULE"),
     (r"관계\s*법령|시행규칙|법률|규정에\s*따라|입찰무효", "LEGAL_PROCEDURAL_RULE"),
-    # [재현 2026-09-15] 나라장터(국가종합전자조달시스템) 입찰참가자격등록·전자입찰 이용자
-    # 등록은 모든 입찰자가 거치는 절차이지 회사 프로필과 대조할 자격이 아니다. 골든셋도
-    # 요건으로 보지 않는다. 그런데 모델이 이것을 등록 요건으로 냈다 안 냈다 해서 실행마다
-    # 요건 수가 오락가락했다(J14 6·5·6). 절차 규칙으로 고정한다.
-    # 「…입찰참가자격등록규정」 은 법령명이라 가드 전에 벗겨진다. 남는 "나라장터(G2B시스템)에
-    # 등록한 업체" 도 같은 절차다 — 나라장터·G2B 에 '등록' 이 붙은 모양까지 잡는다.
-    (r"(?:국가종합전자조달시스템|나라장터|G2B)"
-     r".{0,20}?(?:입찰\s*참가\s*자격\s*등록|이용자\s*등록|입찰참가등록|에\s*등록)"
-     r"|입찰\s*참가\s*자격\s*등록\s*규정", "LEGAL_PROCEDURAL_RULE"),
     (r"아니어야|하지\s*않아야|아닌\s*자|제외한다|제외됨", "NEGATED_RULE"),
     (r"계약.*해지|낙찰자.*결정|제한을\s*받는", "POST_AWARD_OR_RESTRICTION_RULE"),
+)
+
+# [재현 2026-09-15, 검수에서 재현] 나라장터(국가종합전자조달시스템) 입찰참가자격등록·전자입찰
+# 이용자 등록은 모든 입찰자가 거치는 절차이지 회사 프로필과 대조할 자격이 아니다. 골든셋도
+# 요건으로 보지 않는다.
+#
+# 09-15 첫 수정 때 이 패턴을 `_COMPLEX_PATTERNS`(stripped 텍스트 대상)에 넣었는데, 실제
+# 01634263-003 문구 "「국가종합전자조달시스템 입찰참가자격등록규정」에 따라 …" 로 검수하니
+# 다시 4/5 실행에서 REGISTRATION_CERTIFICATION 유령이 살아났다. 원인은 순서였다 —
+# `strip_decorations` 가 「…규정」+"에 따라" 를 정확히 법령 인용으로 보고 먼저 지워버려서,
+# '국가종합전자조달시스템' 이라는 글자 자체가 패턴이 돌기 전에 이미 없어져 있었다. 이 규정은
+# 인용이 곧 요건 전문이라 다른 조항의 "근거 법령 인용" 과 다르다 — 지우면 안 되는 인용이다.
+# 그래서 decoration 을 벗기기 전, 원문 그대로에 먼저 이 패턴을 댄다.
+_NARA_MARKET_PROCEDURAL_RE = re.compile(
+    r"(?:국가종합전자조달시스템|나라장터|G2B)"
+    r".{0,20}?(?:입찰\s*참가\s*자격\s*등록|이용자\s*등록|입찰참가등록|에\s*등록)"
+    r"|입찰\s*참가\s*자격\s*등록\s*규정"
 )
 
 # 조항의 뜻과 무관한 장식. 법령명 인용, 조문 번호, 주소 증빙 설명 괄호.
@@ -109,5 +117,10 @@ def strip_decorations(raw: str) -> str:
 
 def unsafe_clause_reason(raw: str) -> str | None:
     """Share conservative source-clause screening with mapping and rules."""
+    # 나라장터 등록 규정은 인용(「…」)이 곧 요건 전문이다 — 벗기기 전에 원문(줄바꿈만
+    # 접어서)으로 먼저 검사한다. 벗긴 뒤 검사하면 규정명 자체가 지워져 못 잡는다.
+    collapsed_raw = " ".join((raw or "").split())
+    if _NARA_MARKET_PROCEDURAL_RE.search(collapsed_raw):
+        return "LEGAL_PROCEDURAL_RULE"
     text = strip_decorations(raw)
     return next((code for pattern, code in _COMPLEX_PATTERNS if re.search(pattern, text)), None)

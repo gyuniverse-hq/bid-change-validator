@@ -148,3 +148,33 @@ def test_nara_market_registration_is_a_procedure_not_a_qualification() -> None:
     # 업종 등록은 절차가 아니라 자격이다 — 그대로 통과해야 한다.
     assert unsafe_clause_reason("폐기물수집·운반업(1227) 등록업체") is None
     assert unsafe_clause_reason("영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자") is None
+
+
+def test_nara_market_registration_is_caught_even_when_properly_cited() -> None:
+    """[재현 2026-09-15, 검수] 01634263-003 실제 원문. 위 테스트의 세 raw 는 전부 "나라장터
+    (G2B시스템)에 등록" 처럼 꾸밈없는 꼬리 문구를 겸해 갖고 있어서, 「…규정」 인용이
+    strip_decorations 에 지워져도 나머지 꼬리로 걸렸다. 실제 공고는 인용 하나뿐이다 —
+
+        「국가종합전자조달시스템 입찰참가자격등록규정」에 따라 입찰 참가등록
+        마감일시까지 입찰참가자격을 등록한 업체
+
+    strip_decorations 는 「…규정」+"에 따라" 를 정상적인 법령 인용으로 보고 지운다. 그러면
+    '국가종합전자조달시스템' 이라는 글자 자체가 패턴이 돌기 전에 사라져, 이 조항이 절차가
+    아니라 일반 등록 요건처럼 통과해버렸다(검수 재현: 5회 중 4회 REGISTRATION_CERTIFICATION
+    유령 생성). 이 규정은 인용이 곧 요건 전문이라 다른 조항의 "근거 법령 인용"과 다르므로,
+    벗기기 전 원문에 먼저 댄다."""
+    from apps.api.app.qualification.rules.clause_safety import unsafe_clause_reason
+
+    real = (
+        "「지방자치단체를 당사자로 하는 계약에 관한 법률」 시행령 제13조 및 같은 법 시행규칙\n"
+        "제14조에 따른 자격을 갖추고 「국가종합전자조달시스템 입찰참가자격등록규정」에 따라 입찰\n"
+        "참가등록 마감일시까지 입찰참가자격을 등록한 업체로 아래의 자격을 모두 갖추어야 합니다."
+    )
+    assert unsafe_clause_reason(real) == "LEGAL_PROCEDURAL_RULE"
+
+    # 같은 공고의 업종코드 조항(나./다.)은 인용을 달고 있어도 절차가 아니라 그대로 통과해야
+    # 한다 — 이 조항들이 이번 요건 도달의 핵심(REACHED 2)이다.
+    assert unsafe_clause_reason(
+        "「건설폐기물의 재활용촉진에 관한 법률」 제21조에 따른 건설폐기물중간처리업\n"
+        "(업종코드 : 1253)을 등록한 업체"
+    ) is None

@@ -8,7 +8,7 @@ import { LoaderCircle } from 'lucide-react';
 import { CaseHeader, CaseTabs } from '@/components/product/case-header';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
 import { BASIS_TYPE_LABEL, EXTRACTION_STATUS_LABEL, REASON_CODE_LABEL, judgmentBadgeLabel, labelOf } from '@/lib/status-copy';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { absoluteApiUrl, getDocumentText, type NoticeDocumentText } from '@/lib/api';
 import { currentVersion, useCaseWorkspace, workspaceHref, type CaseWorkspace } from '@/lib/case-workspace';
 
@@ -137,7 +137,7 @@ function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorksp
               <div className="mt-3 divide-y divide-[var(--product-line)]">{nearbyEvidence.map((item) => <button key={item.evidence_key} type="button" onClick={() => { setSelectedEvidenceKey(item.evidence_key); setDocumentId(item.document_id); }} className="flex w-full items-center justify-between gap-3 py-3 text-left"><span className="truncate text-[13px]">{item.quote}</span><span className="shrink-0 text-[12px] font-semibold text-[var(--product-accent)]">{displayLocation(item.location)}</span></button>)}</div>
             </section>
 
-            <Button variant="outline" className="w-full rounded-full" render={<Link href={workspaceHref('/ask-back', workspace.caseItem.id)} />}>확인 필요에 답하기</Button>
+            <Link href={workspaceHref('/ask-back', workspace.caseItem.id)} className={buttonVariants({ variant: 'outline', className: 'w-full rounded-full' })}>확인 필요에 답하기</Link>
           </aside>
         </section>
       </div>

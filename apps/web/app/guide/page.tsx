@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, CircleHelp, FileCheck2, XCircle } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 
 const STEPS = [
@@ -123,7 +123,7 @@ export default function GuidePage() {
               <p className="mt-2 max-w-[58ch] text-[15px] leading-[1.75] text-[var(--product-muted)]">대조할 회사 정보가 없으면 판정 결과가 나오지 않습니다. 채워진 정도는 공고 찾기 화면 맨 위에 표시됩니다.</p>
               <p className="mt-2 max-w-[58ch] text-[15px] leading-[1.75] text-[var(--product-muted)]">실적이나 인증처럼 공고마다 달라지는 값은 미리 받지 않고, 판정 중에 필요해지면 그때 묻습니다.</p>
             </div>
-            <Button variant="outline" className="shrink-0 rounded-full border-[var(--product-accent)] bg-white px-5 text-[var(--product-accent-deep)]" render={<Link href="/company" />}>회사 프로필 열기 <ArrowRight /></Button>
+            <Link href="/company" className={buttonVariants({ variant: 'outline', className: 'shrink-0 rounded-full border-[var(--product-accent)] bg-white px-5 text-[var(--product-accent-deep)]' })}>회사 프로필 열기 <ArrowRight /></Link>
           </div>
         </section>
 
@@ -187,7 +187,7 @@ export default function GuidePage() {
         </section>
 
         <div className="mt-12 flex justify-center">
-          <Button className="rounded-full px-6" render={<Link href="/notices" />}>공고 찾기로 가기 <ArrowRight /></Button>
+          <Link href="/notices" className={buttonVariants({ className: 'rounded-full px-6' })}>공고 찾기로 가기 <ArrowRight /></Link>
         </div>
       </div>
     </main>

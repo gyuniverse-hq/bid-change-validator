@@ -12,6 +12,7 @@ from .copilot.router import router as copilot_router
 from .database import get_db
 from .errors import ApiError
 from .qualification.routers.analysis import router as qualification_analysis_router
+from .qualification.routers.graph import router as qualification_graph_router
 from .qualification.routers.ask_back import router as qualification_ask_back_router
 from .qualification.routers.judgment import router as qualification_judgment_router
 from .qualification.routers.matching import router as qualification_matching_router
@@ -82,6 +83,7 @@ protected_api_router.include_router(master_codes_router)
 protected_api_router.include_router(notices_router)
 protected_api_router.include_router(preflight_cases_router)
 protected_api_router.include_router(qualification_analysis_router)
+protected_api_router.include_router(qualification_graph_router)
 protected_api_router.include_router(qualification_judgment_router)
 protected_api_router.include_router(qualification_ask_back_router)
 protected_api_router.include_router(qualification_revalidation_router)

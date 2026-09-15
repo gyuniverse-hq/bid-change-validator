@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     auth_required: bool = False
     # 새 경로는 검증 환경에서 명시적으로 켠다. 기존 기본 경로는 바꾸지 않는다.
     qualification_review_v1_enabled: bool = False
+    qualification_graph_enabled: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

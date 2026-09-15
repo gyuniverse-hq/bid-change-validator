@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 import re
 import unicodedata
 
-from .document import GraphError, fingerprint, validate_snapshot, source_complete, decision_meaning, relation_fingerprint
+from .document import GraphError, fingerprint, validate_snapshot, source_complete, decision_meaning, relation_fingerprint, snapshot_plan_version
 
 COMPARE_VERSION = 'qualification-graph-comparison-v1'
 _REVIEW = {'REVIEW_REQUIRED', 'ANALYSIS_INCONSISTENCY'}
@@ -55,6 +55,9 @@ def compare_document_graphs(before: dict, after: dict) -> dict:
         issues.append('SOURCE_INPUT_INCOMPLETE')
     if before['semantic_version'] != after['semantic_version'] or before['relation_version'] != after['relation_version']:
         issues.append('ANALYSIS_CONTRACT_CHANGED')
+    plan_changed = snapshot_plan_version(before) != snapshot_plan_version(after)
+    if plan_changed:
+        issues.append('CANDIDATE_PLAN_CHANGED')
     same_source = complete and sorted(_text(''.join(u.candidate.text for u in units)) for units in bdocs.values()) == sorted(
         _text(''.join(u.candidate.text for u in units)) for units in adocs.values())
     serial = 0
@@ -67,7 +70,7 @@ def compare_document_graphs(before: dict, after: dict) -> dict:
         bmng, amng = decision_meaning(b), decision_meaning(a)
         equal_text = bunit is not None and aunit is not None and _text(bunit.candidate.text) == _text(aunit.candidate.text)
         reason = None
-        if not confident or not complete or 'ANALYSIS_CONTRACT_CHANGED' in issues:
+        if not confident or not complete or plan_changed or 'ANALYSIS_CONTRACT_CHANGED' in issues:
             kind, reason = 'REVIEW_REQUIRED', 'SOURCE_ALIGNMENT_OR_COMPLETENESS_UNVERIFIED'
         elif bunit is None:
             kind, reason = ('ADDED', None) if _usable(a) and a.status == 'REQUIREMENT' else ('REVIEW_REQUIRED', 'NEW_CLAUSE_UNRESOLVED')
@@ -131,7 +134,9 @@ def compare_document_graphs(before: dict, after: dict) -> dict:
         issues.append('DOCUMENT_ALIGNMENT_OR_EXTRACTION_REQUIRED')
     br = relation_fingerprint(before['composition'], aliases_b)
     ar = relation_fingerprint(after['composition'], aliases_a)
-    if br is None or ar is None:
+    if plan_changed:
+        relation_change = 'REVIEW_REQUIRED'
+    elif br is None or ar is None:
         relation_change = 'REVIEW_REQUIRED'; issues.append('DOCUMENT_RELATION_UNRESOLVED')
     elif br == ar:
         relation_change = 'UNCHANGED'

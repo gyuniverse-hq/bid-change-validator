@@ -17,7 +17,9 @@ from ...ai.qualification.extraction.analysis_pipeline import QualificationAnalys
 from ...ai.qualification.extraction.review_conditions import AtomicCondition, validate_graph, semantic_fingerprint
 from ...ai.qualification.extraction.review_execution import ReviewOptions, _keys, _object, _json, _sha, execute_review_plan
 from ...ai.qualification.extraction.review_grounding import resolve_source_quote
-from ...ai.qualification.extraction.review_plan import build_review_inventory, plan_review_requests
+from ...ai.qualification.extraction.review_plan import (
+    PLAN_VERSION, SUPPORTED_PLAN_VERSIONS, build_review_inventory, plan_review_requests,
+)
 from ...ai.qualification.extraction.review_semantics import SemanticDecision, semantic_response_contract, SEMANTIC_VERSION
 
 VERSION = 'qualification-document-graph-v1'
@@ -56,11 +58,22 @@ def unpack_decision(data: dict) -> SemanticDecision:
         raise GraphError('INVALID_SAVED_DECISION') from error
 
 
-def inventory_for(source: QualificationAnalysisInput):
+def inventory_for(source: QualificationAnalysisInput, *, plan_version: str = PLAN_VERSION):
     blocks = [{**block, 'document_id': doc.document_id, 'source_sha256': doc.file_sha256,
                'extracted_text_sha256': doc.extracted_text_sha256}
               for doc in source.documents for block in doc.extracted_blocks]
-    return build_review_inventory(blocks, notice_version_id=source.notice_version_id)
+    return build_review_inventory(blocks, notice_version_id=source.notice_version_id, plan_version=plan_version)
+
+
+def snapshot_plan_version(snapshot: dict) -> str:
+    """저장 당시 규칙을 사용한다. 누락/미지원 버전을 현재 버전으로 대체하지 않는다."""
+    try:
+        version = snapshot["audit"]["plan"]["plan_version"]
+        if not isinstance(version, str) or version not in SUPPORTED_PLAN_VERSIONS:
+            raise GraphError("UNSUPPORTED_SNAPSHOT_PLAN_VERSION")
+        return version
+    except (KeyError, TypeError) as error:
+        raise GraphError("MISSING_SNAPSHOT_PLAN_VERSION") from error
 
 
 def relation_schema() -> dict:
@@ -264,9 +277,13 @@ def validate_snapshot(snapshot: dict):
         source = QualificationAnalysisInput.model_validate(snapshot['source'])
         if fingerprint(source.model_dump(mode='json')) != snapshot['input_sha256']:
             raise GraphError('GRAPH_INPUT_INTEGRITY')
-        inventory = inventory_for(source)
+        inventory = inventory_for(source, plan_version=snapshot_plan_version(snapshot))
         if inventory.inventory_sha256 != snapshot['inventory_sha256']:
             raise GraphError('GRAPH_INVENTORY_INTEGRITY')
+        saved_plan = snapshot['audit']['plan']
+        if (saved_plan.get('inventory_sha256') != inventory.inventory_sha256
+                or saved_plan.get('input_blocks_sha256') != inventory.input_blocks_sha256):
+            raise GraphError('SAVED_PLAN_BASIS_MISMATCH')
         by_id = {u.candidate.candidate_id: u for u in inventory.units}
         manifest = snapshot['document_manifest']
         if (not isinstance(manifest, list) or any(not isinstance(d, dict) or not isinstance(d.get('id'), str)

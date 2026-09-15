@@ -19,8 +19,10 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-PROBE_VERSION = 'qualification-repeatability-v1'
-STRATEGIES = ('legacy', 'review_v1', 'review_graph_v1')
+PROBE_VERSION = 'qualification-repeatability-v2'
+LEGACY_STRATEGIES = ('legacy', 'review_v1', 'review_graph_v1')
+STRATEGIES = (*LEGACY_STRATEGIES, 'document_graph_v1')
+CLI_DEFAULT_STRATEGIES = ('legacy', 'review_v1', 'document_graph_v1')
 
 
 class ProbeError(ValueError):
@@ -57,8 +59,9 @@ class CapturedCase:
     def manifest(self) -> dict:
         return {'case_sha256': digest(self.case_id), 'notice_number': self.notice_number,
             'profile_sha256': digest(self.profile.model_dump(mode='json')),
-            'versions': [{key: value for key, value in item.items() if key != 'input'}
-                         for item in self.versions]}
+            'versions': [{**{key: value for key, value in item.items() if key not in {'input', 'source_documents'}},
+                'source_documents': [{key: doc.get(key) for key in ('id', 'status', 'file_sha256', 'text_sha256')}
+                                     for doc in item.get('source_documents', [])]} for item in self.versions]}
 
 
 def capture_case(engine, case_id: UUID, expected_notice: str) -> CapturedCase:
@@ -99,10 +102,14 @@ def capture_case(engine, case_id: UUID, expected_notice: str) -> CapturedCase:
             captured.append({'role': role, 'version_number': version.version_number,
                 'notice_version_id': str(version.id), 'source_order': version.bid_notice_order,
                 'input': source, 'input_sha256': digest(source.model_dump(mode='json')),
-                'notice_date': notice_day, 'document_count': len(version.documents),
+                'notice_date': notice_day,
+                'submission_deadline_date': (version.bid_closed_at.astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()
+                    if version.bid_closed_at and version.bid_closed_at.tzinfo else None),
+                'document_count': len(version.documents),
                 'extracted_document_count': len(source.documents),
                 'block_count': sum(len(doc.extracted_blocks) for doc in source.documents),
-                'source_documents': [{'id': str(doc.id), 'status': doc.extraction_status,
+                'source_documents': [{'id': str(doc.id), 'name': doc.name, 'source_field': doc.source_field,
+                    'status': doc.extraction_status,
                     'file_sha256': doc.file_sha256, 'text_sha256': doc.extracted_text_sha256}
                     for doc in sorted(version.documents, key=lambda doc: str(doc.id))]})
         db.rollback()
@@ -152,8 +159,16 @@ def summarize_repeats(rows: list[dict], expected_runs: int) -> list[dict]:
     return summaries
 
 
+def _comparison_summary(compared: dict, *, run: int, mode: str, role: str | None = None) -> dict:
+    """비교 출력의 원문·회사자료는 보고서에 넣지 않는다."""
+    return {'run': run, 'mode': mode, 'role': role,
+        **{key: compared[key] for key in ('same_source_text', 'comparison_status',
+                                         'counts', 'relation_change', 'issues')},
+        'eligibility_change_asserted': False}
+
+
 def measure(capture: CapturedCase, *, reference_date: date, extractor: BudgetedExtractor,
-            runs: int = 3, strategies: tuple[str, ...] = STRATEGIES) -> dict:
+            runs: int = 3, strategies: tuple[str, ...] = LEGACY_STRATEGIES) -> dict:
     from apps.api.app.ai.qualification.extraction.analysis_pipeline import analyze_qualification_documents
     from apps.api.app.ai.qualification.extraction.review_execution import ReviewOptions
     from apps.api.app.qualification.rules.judgment import judge_requirements
@@ -167,8 +182,10 @@ def measure(capture: CapturedCase, *, reference_date: date, extractor: BudgetedE
         raise ProbeError('INVALID_STRATEGIES')
     if any(not version['input'].documents for version in capture.versions):
         raise ProbeError('EXTRACTED_DOCUMENTS_REQUIRED')
-    rows = []
+    rows, comparisons = [], []
+    repeat_baselines = {}
     for index in range(runs):
+        version_pair = {}
         for version in capture.versions:
             for strategy in strategies:
                 row = {'run': index+1, 'role': version['role'], 'strategy': strategy,
@@ -176,7 +193,48 @@ def measure(capture: CapturedCase, *, reference_date: date, extractor: BudgetedE
                 try:
                     source = version['input'].model_copy(deep=True)
                     profile = capture.profile.model_copy(deep=True)
-                    if strategy == 'review_graph_v1':
+                    if strategy == 'document_graph_v1':
+                        from apps.api.app.qualification.graph.document import (
+                            extract_document_graph, validate_snapshot, graph_status,
+                            decision_meaning, relation_fingerprint, source_complete,
+                        )
+                        from apps.api.app.qualification.graph.judgment import judge_document_graph
+                        from apps.api.app.qualification.graph.comparison import compare_document_graphs
+                        manifest = version.get('source_documents')
+                        if not isinstance(manifest, list) or not manifest:
+                            raise ProbeError('DOCUMENT_MANIFEST_REQUIRED')
+                        snapshot = extract_document_graph(source, structured_extract=extractor,
+                            document_manifest=manifest, options=ReviewOptions(max_calls=extractor.maximum))
+                        # Product snapshot serialization and validation; no production DB writes.
+                        saved = json.loads(json.dumps(snapshot, ensure_ascii=False))
+                        _, inventory, decisions_by_id = validate_snapshot(saved)
+                        dates = {name: date.fromisoformat(version[key]) for name, key in (
+                            ('NOTICE_DATE', 'notice_date'), ('SUBMISSION_DEADLINE', 'submission_deadline_date'))
+                            if version.get(key)}
+                        judged = judge_document_graph(saved, profile, case_id=capture.case_id,
+                            reference_date=reference_date, anchor_dates=dates)
+                        aliases = {u.candidate.candidate_id: u.candidate.candidate_id for u in inventory.units}
+                        row.update(analysis_status=graph_status(saved),
+                            requirement_count=sum(d.item_count for d in decisions_by_id.values()),
+                            relation_status=saved['composition']['status'],
+                            plan_version=inventory.plan_version,
+                            source_complete=source_complete(saved),
+                            semantic_sha256=digest({
+                                'clauses': sorted((key, decision_meaning(value)) for key, value in decisions_by_id.items()),
+                                'relations': relation_fingerprint(saved['composition'], aliases)}),
+                            judgment_sha256=digest({
+                                'overall': judged['overall_status'],
+                                'clauses': sorted((item['candidate_id'], item['status'], item['semantic_sha256'], item['pending_codes'])
+                                                  for item in judged['clause_results'])}),
+                            notice_overall_status=judged['overall_status'],
+                            diagnostic_codes=saved['composition']['pending_codes'])
+                        version_pair[version['role']] = saved
+                        prior = repeat_baselines.setdefault(version['role'], saved)
+                        if index:
+                            compared = compare_document_graphs(prior, saved)
+                            comparisons.append(_comparison_summary(compared, run=index+1,
+                                mode='SAME_VERSION_REPEAT', role=version['role']))
+                    elif strategy == 'review_graph_v1':
                         dates = {'NOTICE_DATE': date.fromisoformat(version['notice_date'])} if version['notice_date'] else {}
                         result = analyze_semantics_with_state(source, structured_extract=extractor,
                             profile=profile, preflight_case_id=capture.case_id, reference_date=reference_date,
@@ -208,19 +266,24 @@ def measure(capture: CapturedCase, *, reference_date: date, extractor: BudgetedE
                 except Exception as error:
                     row.update(execution='ERROR', error_code=str(error) if isinstance(error, ProbeError) else 'PIPELINE_EXECUTION_ERROR')
                 rows.append(row)
+        if set(version_pair) >= {'baseline', 'current'}:
+            from apps.api.app.qualification.graph.comparison import compare_document_graphs
+            compared = compare_document_graphs(version_pair['baseline'], version_pair['current'])
+            comparisons.append(_comparison_summary(compared, run=index+1, mode='VERSION_CHANGE'))
     return {'probe_version': PROBE_VERSION, 'mode': 'PROVIDER_CALLS', 'manifest': capture.manifest(),
         'reference_date': reference_date.isoformat(), 'model': extractor.model, 'model_calls': extractor.calls,
         'call_budget': extractor.maximum, 'call_events': extractor.events, 'rows': rows,
-        'summary': summarize_repeats(rows, runs), 'db_writes': False, 'quality_verdict': 'NOT_ESTABLISHED',
+        'summary': summarize_repeats(rows, runs), 'comparisons': comparisons, 'db_writes': False, 'quality_verdict': 'NOT_ESTABLISHED',
         'graph_product_default_enabled': False,
         'limitations': ['모델 응답/원문/회사 상세는 보고서에 포함하지 않음',
                        'graph는 조항 수준 판정이므로 legacy 공고 전체 결과와 직접 비교 불가',
-                       '변경공고 의미 diff 및 실제 브라우저/Copilot 검증은 별도']}
+                       'document_graph_v1은 제품 그래프 함수·JSON 왕복·변경 비교이며 HTTP/운영 DB 저장 검증은 아니다',
+                       '원문 정답 정확도와 실제 브라우저 검증은 별도; Copilot은 실행하지 않는다']}
 
 
 def emit(report: dict, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # 동명 파일을 덮어써 검증 기록을 잃지 않는다. 사용자 자료 접근 범위를 최소화한다.
+    # 동명 파일을 덮어써 검증 기록을 잃지 않는다.
     with open(destination, 'x', encoding='utf-8', opener=lambda path, flags: os.open(path, flags, 0o600)) as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
         handle.write('\n')
@@ -235,7 +298,7 @@ def main() -> int:
     parser.add_argument('--live-model', action='store_true')
     parser.add_argument('--runs', type=int, choices=range(2, 11), default=3)
     parser.add_argument('--max-calls', type=int, choices=range(1, 201), default=60)
-    parser.add_argument('--strategies', nargs='+', choices=STRATEGIES, default=list(STRATEGIES))
+    parser.add_argument('--strategies', nargs='+', choices=STRATEGIES, default=list(CLI_DEFAULT_STRATEGIES))
     parser.add_argument('--model')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()

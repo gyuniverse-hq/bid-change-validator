@@ -17,7 +17,9 @@ from typing import Any, Literal
 
 from .review_coverage import ReviewCandidate, build_review_candidates
 
-PLAN_VERSION = "qualification-review-plan-v1"
+LEGACY_PLAN_VERSION = "qualification-review-plan-v1"
+PLAN_VERSION = "qualification-review-plan-v2"
+SUPPORTED_PLAN_VERSIONS = frozenset({LEGACY_PLAN_VERSION, PLAN_VERSION})
 REQUEST_VERSION = "qualification-review-request-v1"
 # 본문 숫자(1.3억원 등)는 제목으로 읽지 않는다. 행 시작의 명시적 기호만 사용한다.
 _MARKER = re.compile(
@@ -78,6 +80,7 @@ class ReviewInventory:
     input_blocks_sha256: str
     source_block_count: int
     empty_block_count: int
+    plan_version: str = PLAN_VERSION
 
     @property
     def candidates(self) -> tuple[ReviewCandidate, ...]:
@@ -129,7 +132,7 @@ class ReviewPlan:
         max_body_chars는 문자 예산이며 토큰/모델 context window 보증이 아니다.
         """
         payload = {
-            "plan_version": PLAN_VERSION,
+            "plan_version": self.inventory.plan_version,
             "status": self.status,
             "notice_version_id": self.inventory.notice_version_id,
             "inventory_sha256": self.inventory.inventory_sha256,
@@ -179,8 +182,61 @@ def _ranges(text: str) -> list[tuple[int, int]]:
     return list(zip(starts, [*starts[1:], len(text)]))
 
 
+# v1의 _heading/_ranges는 저장된 스냅샷 재생을 위해 변경하지 않는다.
+# 새 규칙은 명시적 기호만 추가하며 조건의 의미/적용 관계를 판정하지 않는다.
+_ATTACHED_MARKER = re.compile(
+    r"^[ \t]*(?:(?P<paren_num>\(\d+\))|(?P<num_paren>\d+\))|(?P<han_paren>[가-힣]\)))"
+    r"(?=[A-Za-z가-힣「『〈《【\[])"
+)
+_BULLET = re.compile(r"^[ \t]*[○●□■◎](?=\S|[ \t]+\S)")
+_BARE_NUMBER = re.compile(r"[ \t]*[1-9]\d?[ \t]*")
+_DATE_PREFIX = re.compile(r"^[ \t]*[12]\d{3}[./-][ \t]*\d{1,2}[./-][ \t]*\d{1,2}(?:[.]|\s|$)")
+# PDF에서 번호와 제목이 두 행으로 갈린 명확한 절만 보조 인식한다.
+# 숫자+임의 문장은 표/금액/날짜일 수 있으므로 제목으로 추정하지 않는다.
+_BARE_TITLES = frozenset({
+    "참가자격", "입찰참가자격", "입찰에부치는사항", "현장방문", "현장설명",
+    "입찰서제출", "계약조건", "기타사항", "기타참고사항", "용역개요", "과업내용",
+})
+
+
+def _bare_heading(lines: list[str], index: int) -> str | None:
+    if index + 1 >= len(lines) or not _BARE_NUMBER.fullmatch(lines[index].rstrip("\r\n")):
+        return None
+    if re.sub(r"\s+", "", lines[index + 1]) not in _BARE_TITLES:
+        return None
+    return lines[index].strip()
+
+
+def _heading_v2(text: str) -> tuple[str, str | None, int | None]:
+    lines = text.lstrip().splitlines()
+    if not lines:
+        return "UNMARKED", None, None
+    if _DATE_PREFIX.match(lines[0]):
+        return "UNMARKED", None, None
+    if marker := _bare_heading(lines, 0):
+        return "CLAUSE", marker, 10
+    if _BULLET.match(lines[0]):
+        return "CLAUSE", _BULLET.match(lines[0]).group(0).strip(), 20
+    if match := _ATTACHED_MARKER.match(lines[0]):
+        return "CLAUSE", match.group(0).strip(), _RANKS[match.lastgroup]
+    return _heading(text)
+
+
+def _ranges_v2(text: str) -> list[tuple[int, int]]:
+    starts, offset = [0], 0
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        explicit = ((not _DATE_PREFIX.match(line) and _MARKER.match(line)) or _NOTE.match(line) or _BULLET.match(line)
+                    or _ATTACHED_MARKER.match(line) or _bare_heading(lines, index))
+        if offset and explicit and text[starts[-1]:offset].strip():
+            starts.append(offset)
+        offset += len(line)
+    return list(zip(starts, [*starts[1:], len(text)]))
+
+
 def build_review_inventory(
     source_blocks: Iterable[Mapping[str, Any]], *, notice_version_id: str,
+    plan_version: str = PLAN_VERSION,
 ) -> ReviewInventory:
     """전달된 모든 비어 있지 않은 블록을 검토 대상으로 만든다. 키워드로 제외하지 않는다.
 
@@ -188,6 +244,10 @@ def build_review_inventory(
     법적/의미적 적용 관계가 아니다. 공백뿐인 블록은 1단계 정책과 같이 대상에서 제외한다.
     원문 전체를 받았는지/파서가 누락했는지는 이 함수로 보증할 수 없다.
     """
+    if plan_version not in SUPPORTED_PLAN_VERSIONS:
+        raise ValueError("UNSUPPORTED_REVIEW_PLAN_VERSION")
+    ranges = _ranges if plan_version == LEGACY_PLAN_VERSION else _ranges_v2
+    heading = _heading if plan_version == LEGACY_PLAN_VERSION else _heading_v2
     blocks = list(source_blocks)
     base = build_review_candidates(blocks, notice_version_id=notice_version_id)
     locations = {(row["document_id"], row["block_index"]): _json(
@@ -217,13 +277,13 @@ def build_review_inventory(
             stack = []
             segment_id = original.candidate_id
         previous_document, previous_index = document, original.block_index
-        for start, end in _ranges(original.text):
+        for start, end in ranges(original.text):
             text = original.text[start:end]
             candidate = replace(original,
-                candidate_id="CAND-" + _sha(_json({"version": PLAN_VERSION,
+                candidate_id="CAND-" + _sha(_json({"version": plan_version,
                     "block_candidate_id": original.candidate_id, "start": start, "end": end})),
                 text=text, start_offset=start, end_offset=end)
-            kind, marker, rank = _heading(text)
+            kind, marker, rank = heading(text)
             if rank is not None:
                 while stack and stack[-1][0] >= rank:
                     stack.pop()
@@ -240,11 +300,11 @@ def build_review_inventory(
                      "extracted_text_sha256", *_LOCATION_FIELDS)
     input_digest = _sha(_json([{key: row.get(key) for key in source_fields}
         for row in sorted(blocks, key=lambda row: (row["document_id"], row["block_index"]))]))
-    digest = _sha(_json({"version": PLAN_VERSION, "notice_version_id": notice_version_id,
+    digest = _sha(_json({"version": plan_version, "notice_version_id": notice_version_id,
         "input_blocks_sha256": input_digest,
         "units": [asdict(unit) for unit in units], "source_gaps": gaps}))
     return ReviewInventory(notice_version_id, tuple(units), tuple(gaps), digest,
-                           input_digest, len(blocks), sum(not row["text"].strip() for row in blocks))
+                           input_digest, len(blocks), sum(not row["text"].strip() for row in blocks), plan_version)
 
 
 def _contexts(inventory: ReviewInventory, radius: int) -> dict[str, list[dict[str, str]]]:
@@ -314,6 +374,8 @@ def plan_review_requests(
     다시 만들어 기존 ID를 바꾸지 않는다. 한 대상의 문맥만으로도 예산을 넘으면
     자르거나 문맥을 버리지 않고 blocked에 기록한다. 토큰 예산은 호출 계층의 책임이다.
     """
+    if inventory.plan_version not in SUPPORTED_PLAN_VERSIONS:
+        raise ValueError("UNSUPPORTED_REVIEW_PLAN_VERSION")
     _integer(max_body_chars, "max_body_chars")
     _integer(max_targets_per_request, "max_targets_per_request")
     _integer(neighbor_radius, "neighbor_radius", 0)

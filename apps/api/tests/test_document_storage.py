@@ -1,7 +1,7 @@
 from io import BytesIO
 from unittest.mock import patch
 
-from app.services.document_storage import S3DocumentStorage, build_s3_client
+from apps.api.app.services.document_storage import S3DocumentStorage, build_s3_client
 
 
 def test_s3_client_uses_compatible_endpoint() -> None:

@@ -84,17 +84,14 @@ body {
   gap: 10px;
 }
 
+/* 마크는 SVG다. 배경·라운드는 SVG 안에 있고, color는 rect fill(currentColor)로 들어간다. */
 .app-brand-mark {
   display: grid;
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--product-accent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
+  color: var(--product-accent);
 }
 
 .app-brand-copy {

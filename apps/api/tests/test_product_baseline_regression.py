@@ -5,6 +5,8 @@ from sqlalchemy import select
 
 from apps.api.app.analysis_models import QualificationAnalysisRun, QualificationRequirementRecord
 from apps.api.app.database import SessionLocal
+from apps.api.app.judgment_models import QualificationJudgmentRun
+from apps.api.app.qualification.rules.judgment import RULE_VERSION
 from apps.api.tests.test_mvp_golden_e2e import _seed_golden_case, _cleanup, client, REFERENCE_DATE
 
 
@@ -67,6 +69,27 @@ def test_revalidation_refuses_incompatible_source(scenario, override, code):
     response = client.post(f"/api/v1/preflight-cases/{scenario['case_id']}/qualification-revalidation", json=payload)
     assert response.status_code in (409, 422), response.text
     assert response.json()['error']['code'] == code
+
+
+def test_revalidation_refuses_source_from_previous_rule_version(scenario):
+    source = judge(scenario)
+    assert source['rule_version'] == RULE_VERSION == 'qualification-rules-v0.3'
+
+    with SessionLocal() as db:
+        run = db.get(QualificationJudgmentRun, source['id'])
+        run.rule_version = 'qualification-rules-v0.2'
+        db.commit()
+
+    response = client.post(
+        f"/api/v1/preflight-cases/{scenario['case_id']}/qualification-revalidation",
+        json={
+            'source_judgment_run_id': source['id'],
+            'current_analysis_run_id': str(scenario['current_analysis_id']),
+            'reference_date': REFERENCE_DATE,
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()['error']['code'] == 'RULE_CHANGED_FULL_REJUDGMENT_REQUIRED'
 
 
 @pytest.mark.parametrize("operation", ["qualification-judgments", "qualification-revalidation"])

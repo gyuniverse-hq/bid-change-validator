@@ -200,6 +200,9 @@ export type QualificationJudgmentSummary = {
   company_id: string;
   notice_version_id: string;
   overall_status: 'eligible' | 'ineligible' | 'insufficient_data';
+  rule_version: string;
+  reference_date: string;
+  analysis_status: string;
   judgment_count: number;
   unknown_count: number;
   unsatisfied_count: number;

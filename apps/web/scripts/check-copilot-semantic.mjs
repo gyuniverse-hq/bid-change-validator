@@ -1,4 +1,4 @@
-// Verify that semantic-routing and document-RAG consent are explicit HTTP boundaries.
+// Verify that v3.1 orchestration stays on while semantic-routing and document-RAG consent remain explicit HTTP boundaries.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -57,6 +57,9 @@ try {
   assert.equal(calls.length, 3);
   assert.equal(calls[0].url.endsWith('/api/v1/copilot/chat'), true);
 
+  // v3.1 conversation state/targets are independent from model-processing consent.
+  for (const call of calls) assert.equal(call.body.response_version, '3.1');
+
   // Semantic routing consent is a header, never a JSON product field.
   assert.equal(calls[0].init.headers['X-Copilot-Semantic-Processing'], undefined);
   assert.equal(calls[1].init.headers['X-Copilot-Semantic-Processing'], 'true');
@@ -73,7 +76,7 @@ try {
   for (const call of calls) assert.equal('document_processing' in call.body, false);
 
   assert.equal(calls[2].body.user_input, undefined);
-  console.log('PASS semantic and document-RAG consent stay separate; internal flags are not serialized');
+  console.log('PASS v3.1 stays active while semantic and document-RAG consent remain separate');
 } finally {
   globalThis.fetch = originalFetch;
 }

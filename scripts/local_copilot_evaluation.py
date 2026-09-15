@@ -215,6 +215,8 @@ def install_budgeted_model(key):
                 ledger['calls'].append({'stage':stage,'status':'reserved','reserved_estimate_usd':amount,
                                         'time':datetime.now(timezone.utc).isoformat()})
                 save(path, ledger)
+            started = time.monotonic()
+            previous_calls = len(self.calls)
             try:
                 result = super().call(stage, system, body, schema)
                 status = 'succeeded'
@@ -226,6 +228,9 @@ def install_budgeted_model(key):
                 with lock:
                     ledger = json.loads(path.read_text(encoding='utf-8'))
                     ledger['calls'][index]['status'] = status
+                    ledger['calls'][index]['elapsed_ms'] = round((time.monotonic() - started) * 1000)
+                    if len(self.calls) > previous_calls:
+                        ledger['calls'][index]['usage'] = self.calls[-1].get('usage')
                     save(path, ledger)
         def embed_query(self, text):
             raise BudgetExceeded('LOCAL_EVALUATION_NO_EMBEDDING; use lexical retrieval or full document')

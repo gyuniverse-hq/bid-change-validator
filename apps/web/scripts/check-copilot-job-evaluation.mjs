@@ -37,12 +37,13 @@ try {
   await page.locator('#copilot-semantic-processing').check();
   await page.locator('#copilot-document-processing').check();
   const questions = [
-    '이 공고에 참여할 준비를 하고 있어. 저장된 우리 회사 판정과 추가로 확인할 일, 공고의 제출 서류와 마감일을 함께 정리해줘.',
-    '처음 요청에서 아직 해결하지 못한 내용을 이어서 검토하고 남은 일을 알려줘. 값을 저장하거나 새 판정을 실행하지 마.',
+    '우리 회사가 이 공고에 참여하려고 해. 현재 회사 정보로 충족하는 조건과 추가로 확인할 사항을 정리하고, 제출할 서류와 각각의 마감일·제출 방법까지 확인해서 준비 순서를 알려줘. 근거가 부족한 부분은 따로 표시해줘.',
+    '처음 부탁한 참여 준비에서 아직 확인하지 못한 항목이 정확히 뭐야? 확인할 수 있는 것은 이어서 확인하고, 끝내 확인할 수 없는 것은 이유와 내가 해야 할 행동을 알려줘. 이미 설명한 내용은 반복하지 마.',
   ];
   for (const question of questions) {
     await page.locator('#copilot-question').fill(question);
     const response = page.waitForResponse(r => r.url().endsWith('/api/v1/copilot/chat'), { timeout: 180000 });
+    const started = Date.now();
     await page.getByRole('button', { name: '질문 보내기', exact: true }).click();
     const result = await response;
     const body = await result.json();
@@ -52,10 +53,15 @@ try {
     assert(body.envelope.job && body.envelope.job.goal === questions[0]);
     assert.equal(body.envelope.actions.length, 0);
     await page.waitForFunction(n => document.querySelectorAll('[data-copilot-version="3.1"]').length === n, report.chats.length);
+    report.chats.at(-1).ui_elapsed_ms = Date.now() - started;
+    assert(body.envelope.processing.calls.length <= 3);
   }
   const last = report.chats.at(-1).body.envelope;
   assert.equal(last.job.status, 'COMPLETE');
   assert.equal(last.processing.task_status, 'PASS');
+  const firstTexts = new Set(report.chats[0].body.envelope.claims.filter(c => c.method === 'semantic').map(c => c.text));
+  assert(!last.claims.some(c => c.method === 'semantic' && firstTexts.has(c.text)));
+  assert(last.processing.validation_events.some(e => e.stage === 'answer_resume'));
   const answer = page.locator('[data-copilot-version="3.1"]').last();
   await answer.locator('.copilot-job-progress > summary').click();
   assert(await answer.getByText(questions[0], { exact: true }).isVisible());

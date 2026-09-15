@@ -71,6 +71,13 @@ def bind_plan(state, plan):
     by_id = {r.requirement_id: r for r in state.job.requirements}
     # Resume reads only. A pending action is never replayed by job resumption.
     if plan.resume_unresolved:
+        if state.answer_review and all(t.kind in READS for t in plan.tasks):
+            # Re-read cheap product/source snapshots for freshness. Model work is
+            # narrowed by the retained, independently verified criteria afterwards.
+            previous = [r for r in state.job.requirements if r.tool in READS]
+            if len(previous) <= 6 and previous:
+                plan.tasks = [Task(kind=r.tool, question=r.request, requirement_id=r.requirement_id)
+                              for r in previous]
         for task in plan.tasks:
             candidates = [r for r in state.job.requirements if r.tool == task.kind and r.status not in FINISHED]
             if task.requirement_id is None and len(candidates) == 1 and task.kind in READS:
@@ -111,12 +118,19 @@ def bind_plan(state, plan):
 
 
 def finish_turn(state, bindings, bundle, claims, events, *, complete, turn_id, actions):
-    """Conservative: a partial turn cannot promote requested requirements.
-
-No source ID alone establishes semantic completeness. Only the existing
-generation/validation/coverage result can qualify the current response, and an
-action proposal remains pending even if its explanation passed.
-"""
+    """Promote only a complete turn or independently assessed task criteria."""
+    from .answer_progress import latest_assessment
+    assessment = latest_assessment(events)
+    definitions = next((e['criteria'] for e in events if e.get('stage') == 'acceptance'), [])
+    assessed = bool(assessment and 'reason' not in assessment)
+    missing = set(assessment.get('missing_criterion_ids', [])) if assessed else set()
+    def remaining_label(criterion):
+        if criterion.get('mode') == 'CHECKLIST':
+            basis = next((f for f in bundle.facts if f.fact_id in criterion.get('fact_ids', [])), None)
+            if basis:
+                text = basis.text.split('\n', 1)[-1]
+                return '확인할 조건의 설명 검증: ' + text[:240] + ('… (원문에서 전체 확인)' if len(text) > 240 else '')
+        return criterion['requirement']
     for task, requirement in bindings:
         facts = {f.fact_id for f in bundle.facts if f.origin_tool == task.kind}
         supported = [c for c in claims if c.validation == 'SUPPORTED' and facts.intersection(c.fact_ids)]
@@ -125,12 +139,19 @@ action proposal remains pending even if its explanation passed.
         requirement.last_turn_id = turn_id
         requirement.claim_ids = [c.claim_id for c in supported]
         requirement.source_ids = list(dict.fromkeys(s for c in supported for s in c.source_ids))
+        task_criteria = [c for c in definitions if c.get('task_kind') == task.kind]
+        rows = {r['criterion_id'] for r in assessment.get('criteria', [])} if assessed else set()
+        task_complete = (assessed and bool(task_criteria) and bundle.coverage.get(task.kind) == 'FOUND'
+                         and all(c['criterion_id'] in rows and c['criterion_id'] not in missing for c in task_criteria)
+                         and not any(e.get('reason') == 'EVIDENCE_BUDGET' for e in events))
+        requirement.remaining = [remaining_label(c) for c in task_criteria
+                                 if not assessed or c['criterion_id'] in missing or c['criterion_id'] not in rows]
         if task.kind == 'PROPOSE_ACTION':
             requirement.action_keys = [action_key(action) for action in actions]
             requirement.execution_result_ids = []
             requirement.status = 'AWAITING_CONFIRMATION' if actions else 'OPEN'
             requirement.reason = '사용자 확인과 실제 실행 결과가 필요합니다.'
-        elif complete and supported and task.kind != 'REVIEW_ASSUMPTION':
+        elif (complete or task_complete) and supported and task.kind in READS:
             requirement.status = 'ANSWERED'
             requirement.reason = '현재 기준에서 요청한 설명을 검증했습니다. 현실 자격이나 실행 완료를 뜻하지 않습니다.'
         elif complete and task.kind == 'REVIEW_ASSUMPTION' and any(f.kind == 'ASSUMPTION' for f in bundle.facts):
@@ -138,7 +159,11 @@ action proposal remains pending even if its explanation passed.
             requirement.reason = '가정 검토 설명만 완료했으며 저장하지 않았습니다.'
         else:
             requirement.status = 'UNAVAILABLE' if bundle.coverage.get(task.kind) in {'UNAVAILABLE', 'NOT_FOUND'} else 'OPEN'
-            requirement.reason = '근거 또는 답변 검증이 충분하지 않아 남은 요청으로 유지합니다.'
+            requirement.reason = ('현재 자료를 읽을 수 없습니다. 원문 화면 또는 자료 제공 여부를 확인해 주세요.'
+                                  if requirement.status == 'UNAVAILABLE' else
+                                  '아래 항목의 설명을 충분히 검증하지 못했습니다. 이어서 검토하거나 원문에서 확인해 주세요.')
     if state.job:
         state.job.revision += 1
-        state.job.status = 'COMPLETE' if state.job.requirements and all(r.status in FINISHED for r in state.job.requirements) else 'OPEN'
+        state.job.remaining = [remaining_label(c) for c in definitions
+                               if not assessed or c['criterion_id'] in missing]
+        state.job.status = 'COMPLETE' if complete and state.job.requirements and all(r.status in FINISHED for r in state.job.requirements) else 'OPEN'

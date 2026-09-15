@@ -221,7 +221,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     job_checkpoint = state.job.model_copy(deep=True) if state.job else None
     try:
         bindings = [] if clarification else bind_plan(state, plan)
-        if plan.resume_unresolved and state.job and all(r.status != 'ANSWERED' for r in state.job.requirements):
+        if plan.resume_unresolved and state.job:
             # No part of the original compound goal has passed yet. Keep that
             # goal, including anything omitted by the prior planner, in coverage.
             plan.goal = state.job.goal
@@ -385,6 +385,14 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
                 and all(bundle.coverage.get(t.kind) == 'FOUND' for t in plan.tasks)
                 and not missing_tasks and not any(e.get('reason') == 'EVIDENCE_BUDGET' for e in events))
     finish_turn(state, bindings, bundle, claims, events, complete=complete, turn_id=mid, actions=actions)
+    reused = {cid for e in events if e.get('stage') == 'answer_resume' for cid in e.get('claim_ids', [])}
+    if reused:
+        claims = [c for c in claims if c.claim_id not in reused]
+        visible_facts = {fid for c in claims for fid in c.fact_ids}
+        targets = [t for t in targets if set(t.fact_ids) & visible_facts]
+        bundle.limitations.append('이전 답변에서 검증한 내용은 현재 근거가 같은지 확인한 뒤 재사용했습니다. 새로 확인한 내용만 표시합니다.')
+        if not claims:
+            bundle.limitations.append('새로 추가할 검증된 설명은 없습니다. 앞선 답변과 요청별 처리 내역을 확인해 주세요. 회사의 실제 준비·증빙 확인이나 저장을 완료했다는 뜻은 아닙니다.')
     envelope = AnswerEnvelope(conversation_id=state.conversation_id, context_revision=revision + 1, message_id=mid,
                               status_card=tools.card, claims=claims, sources=[s for s in bundle.sources if s.source_id in used],
                               limitations=list(dict.fromkeys(bundle.limitations)), follow_up_targets=targets,

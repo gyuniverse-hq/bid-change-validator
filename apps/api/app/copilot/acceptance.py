@@ -129,6 +129,12 @@ def freeze_acceptance(plan, bundle):
             add('request', 'EXPLANATION',
                 '서버가 생성한 제안의 대상·입력 내용과 명시 확인 전 저장되지 않는다는 점을 설명한다. '
                 '사용자 입력은 제안 값이며 증명된 회사 사실이 아니다. 실행·저장 완료를 요구하지 않는다.')
+        elif kind == 'READ_DOCUMENT' and freeze_document_acceptance(plan).mode == 'DOCUMENTS_AND_DEADLINES':
+            add('documents', 'EXPLANATION',
+                '요청 범위의 제출서류·부수·주체·제출 단계 및 대체·면제 조건을 설명한다. 빈 서식이나 작성 목차 전체는 열거하지 않는다.')
+            add('schedule', 'EXPLANATION',
+                '각 제출 단계의 마감일·시각·방법·장소와 선행 기한을 구분한다. 원문에 없는 별도 기한은 만들지 않는다. '
+                '참여 준비를 요청했다면 이를 시간 순서로 안내한다. 협조 요청은 필수 참가 조건과 구분한다.')
         elif kind == 'REVIEW_ASSUMPTION':
             add('request', 'EXPLANATION',
                 '사용자 가정과 조회된 해당 요건을 비교해 가정하에서의 조건부 결론을 설명한다. '

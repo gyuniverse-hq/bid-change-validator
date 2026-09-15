@@ -58,8 +58,8 @@ def test_core_job_sources_and_multiple_turns(seed_required_master_codes, live_mo
                 analysis_run_id=analyses[versions[after].id].id, reference_date=date.fromisoformat(profile['reference_date']))
             report['stored_result'] = {'status': run.overall_status, 'counts': dict(Counter(j.status for j in run.judgments))}
             repository, envelope = ConversationRepository(), None
-            questions = ['이 공고에 참여할 준비를 하고 있어. 저장된 우리 회사 판정과 추가로 확인할 일, 공고의 제출 서류와 마감일을 함께 정리해줘.',
-                         '처음 요청에서 아직 해결하지 못한 내용을 이어서 검토하고 남은 일을 알려줘. 값을 저장하거나 새 판정을 실행하지 마.']
+            questions = ['우리 회사가 이 공고에 참여하려고 해. 현재 회사 정보로 충족하는 조건과 추가로 확인할 사항을 정리하고, 제출할 서류와 각각의 마감일·제출 방법까지 확인해서 준비 순서를 알려줘. 근거가 부족한 부분은 따로 표시해줘.',
+                         '처음 부탁한 참여 준비에서 아직 확인하지 못한 항목이 정확히 뭐야? 확인할 수 있는 것은 이어서 확인하고, 끝내 확인할 수 없는 것은 이유와 내가 해야 할 행동을 알려줘. 이미 설명한 내용은 반복하지 마.']
             for question in questions:
                 envelope, tools = coordinate(CopilotChatRequest(case_id=case.id, message=question,
                     response_version='3.1', allow_external_processing=True,
@@ -67,11 +67,14 @@ def test_core_job_sources_and_multiple_turns(seed_required_master_codes, live_mo
                     context_revision=envelope.context_revision if envelope else None),
                     'core-developer', ProductTools(db, case, allow_documents=True), repository=repository)
                 report['turns'].append({'question': question, 'envelope': envelope.model_dump(mode='json')})
+                assert len(envelope.processing.calls) <= 3, 'Long review performed hidden repair/revalidation'
                 assert envelope.job and envelope.job.goal == questions[0]
                 assert not envelope.actions and not db.new and not db.dirty and not db.deleted
                 assert envelope.status_card is None or envelope.status_card.status == run.overall_status
             report['job_complete'] = envelope.job.status == 'COMPLETE'
             report['all_turns_pass'] = all(t['envelope']['processing']['task_status'] == 'PASS' for t in report['turns'])
+            first_texts = {c['text'] for c in report['turns'][0]['envelope']['claims'] if c['method']=='semantic'}
+            assert not first_texts.intersection(c.text for c in envelope.claims if c.method=='semantic'), 'Continuation repeated verified prose'
             assert report['job_complete'], 'Job remains open; inspect per-requirement reasons and source limitations'
         finally:
             output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

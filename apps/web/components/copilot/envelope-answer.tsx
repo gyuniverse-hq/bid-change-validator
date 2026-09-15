@@ -16,18 +16,20 @@ export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelo
       <small>공고 v{envelope.status_card.provenance.version_number} · 저장된 판정 기준</small>
     </output>}
     {envelope.clarification && <p>{envelope.clarification}</p>}
-    {envelope.job && <details className="copilot-job-progress">
+    {envelope.job && <details className="copilot-job-progress" open={envelope.job.status !== 'COMPLETE'}>
       <summary>검토 목적과 남은 항목 · {envelope.job.status === 'COMPLETE' ? '요청 처리 완료' : '진행 중'}</summary>
       <p>{envelope.job.goal}</p>
-      <ul>{envelope.job.requirements.map(item => <li key={item.requirement_id}>
+      <p>설명 확인 {envelope.job.requirements.filter(item => item.status === 'ANSWERED').length}개 · 남은 요청 {envelope.job.requirements.filter(item => item.status !== 'ANSWERED' && item.status !== 'EXECUTED').length}개</p>
+      {!!envelope.job.remaining?.length && <ul>{envelope.job.remaining.map((text, index) => <li key={index}>{displayText(text)}</li>)}</ul>}
+      <details><summary>요청별 처리 내역</summary><ul>{envelope.job.requirements.map(item => <li key={item.requirement_id}>
         <strong>{progressLabels[item.status]}</strong> · {item.request}
         <small style={{ display: 'block' }}>{item.reason}</small>
-      </li>)}</ul>
+      </li>)}</ul></details>
       <small>대화의 요청 처리 상태입니다. 참가자격 판정과는 별개이며 서버를 재시작하면 대화 기록이 초기화됩니다.</small>
     </details>}
-    {envelope.claims.map(claim => <div className="copilot-claim" key={claim.claim_id}>
+    {envelope.claims.filter(claim => claim.reason !== 'EXACT_SOURCE').map(claim => <div className="copilot-claim" key={claim.claim_id}>
       <p style={{ whiteSpace: 'pre-wrap' }}>{displayText(claim.text)}</p>
-      <div className="copilot-evidence-chips">{claim.source_ids.map(id => {
+      <details className="copilot-evidence-chips"><summary>근거 {claim.source_ids.length}건 보기</summary>{claim.source_ids.map(id => {
         const source = sources.get(id);
         if (!source) return null;
         return <details key={id}><summary>{source.kind === 'DOCUMENT' ? '공고문 원문' : source.kind === 'TURN' ? '대화에서 제시한 가정' : source.kind === 'PROCEDURE' ? '작업 안내' : '저장된 데이터'}</summary>
@@ -35,12 +37,21 @@ export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelo
           <small>버전 {source.scope.notice_version_id.slice(0, 8)} {typeof source.location.page === 'number' ? `· p.${source.location.page}` : ''}</small>
           {source.kind === 'DOCUMENT' && <Link href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</Link>}
         </details>;
-      })}</div>
+      })}</details>
     </div>)}
-    {envelope.follow_up_targets.length > 0 && <div aria-label="답변에서 확인한 항목">{envelope.follow_up_targets.map(target =>
+    {envelope.claims.some(claim => claim.reason === 'EXACT_SOURCE') && <details>
+      <summary>설명 검증이 끝나지 않은 항목의 원문 보기</summary>
+      <p>아래 인용은 원문 확인용입니다. 요청한 설명이 완료됐다는 뜻은 아닙니다.</p>
+      {envelope.claims.filter(claim => claim.reason === 'EXACT_SOURCE').map(claim => <blockquote key={claim.claim_id} style={{ whiteSpace: 'pre-wrap' }}>
+        {claim.text}
+        {claim.source_ids.map(id => { const source = sources.get(id); return source?.kind === 'DOCUMENT'
+          ? <Link key={id} href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</Link> : null; })}
+      </blockquote>)}
+    </details>}
+    {envelope.follow_up_targets.length > 0 && <details aria-label="답변에서 확인한 항목"><summary>항목별 추가 확인 {envelope.follow_up_targets.length}건</summary>{envelope.follow_up_targets.map(target =>
       <button type="button" className="copilot-detail-link" key={target.target_id} onClick={() => onTarget(target.target_id)}>
         {target.origin_tool === 'READ_PROFILE' ? '판정 당시 회사정보' : target.origin_tool === 'READ_CHECKS' && target.kind === 'REQUIREMENT' ? '추가 확인 질문' : labels[target.kind] ?? '확인 항목'} {target.ordinal} · 이 항목 근거 보기
-      </button>)}</div>}
+      </button>)}</details>}
     {'answerable_count' in envelope.capabilities && <p>
       추가 답변 입력 가능 {envelope.capabilities.answerable_count}건 · 입력으로 해결할 수 없는 항목 {envelope.capabilities.unanswerable_count}건 · 직접 확인할 공고 항목 {envelope.capabilities.manual_review_count}건
     </p>}

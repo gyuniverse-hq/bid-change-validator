@@ -68,6 +68,7 @@ class JobRequirement(Contract):
     source_ids: list[str] = Field(default_factory=list)
     last_turn_id: str | None = None
     reason: str = ''
+    remaining: list[str] = Field(default_factory=list)
     action_keys: list[str] = Field(default_factory=list)
     execution_result_ids: list[str] = Field(default_factory=list)
 
@@ -78,6 +79,7 @@ class JobState(Contract):
     requirements: list[JobRequirement] = Field(default_factory=list)
     status: Literal['OPEN', 'COMPLETE'] = 'OPEN'
     revision: int = 0
+    remaining: list[str] = Field(default_factory=list)
 
 
 class EvidenceBundle(Contract):
@@ -240,3 +242,4 @@ class ConversationState(Contract):
     fingerprints: dict[str, str] = Field(default_factory=dict)
     job: JobState | None = None
     document_reviews: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    answer_review: dict[str, Any] = Field(default_factory=dict)

@@ -116,6 +116,12 @@ export type RevalidationResult = {
 };
 export type ConfirmActionResult = AnswerResult | RevalidationResult;
 
+export async function fetchLatestRevalidation(caseId: string): Promise<RevalidationResult | null> {
+  const response = await apiFetch(`/api/v1/preflight-cases/${encodeURIComponent(caseId)}/qualification-revalidation`);
+  if (!response.ok) throw new ApiError('저장된 재검증 결과를 불러오지 못했습니다.', response.status, 'REVALIDATION_READ_FAILED');
+  return response.json() as Promise<RevalidationResult | null>;
+}
+
 async function post<T>(path: string, payload: CopilotChatRequest | ConfirmAction, signal?: AbortSignal): Promise<T> {
   const response = await apiFetch(path, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal,

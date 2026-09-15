@@ -64,6 +64,20 @@ def _copy_judgment(record: QualificationJudgmentRecord, *, notice_version_id: UU
     )
 
 
+def latest_qualification_revalidation(db: Session, *, case_id: UUID) -> QualificationRevalidationRead | None:
+    """Read saved lineage only; never re-execute a mutation during recovery."""
+    lineage = db.scalar(select(QualificationRevalidationRun).where(
+        QualificationRevalidationRun.preflight_case_id == case_id
+    ).order_by(QualificationRevalidationRun.created_at.desc(), QualificationRevalidationRun.id.desc()).limit(1))
+    if lineage is None:
+        return None
+    result = judgment_run_response(load_qualification_judgment_run(db, lineage.result_judgment_run_id))
+    return QualificationRevalidationRead(
+        **{name: getattr(lineage, name) for name in QualificationRevalidationRead.model_fields if name != "result"},
+        result=result,
+    )
+
+
 def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: QualificationRevalidationCreate) -> QualificationRevalidationRead:
     case = _load_case(db, case_id)
     source = load_qualification_judgment_run(db, payload.source_judgment_run_id)

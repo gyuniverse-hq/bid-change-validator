@@ -77,6 +77,9 @@ def test_company_user_cannot_access_other_company_copilot_case(state, api):
         )
         assert confirm_response.status_code == 403
         assert confirm_response.json()["error"]["code"] == "COMPANY_ACCESS_DENIED"
+        recovered = api.get(f'/api/v1/preflight-cases/{case.id}/qualification-revalidation')
+        assert recovered.status_code == 403
+        assert recovered.json()['error']['code'] == 'COMPANY_ACCESS_DENIED'
     finally:
         app.dependency_overrides.pop(get_optional_current_user, None)
 
@@ -318,6 +321,9 @@ def test_changed_notice_golden_and_revalidation_replay():
             confirmed = ConfirmAction(confirmed=True, action=proposal)
             app.dependency_overrides[get_db] = lambda: db
             with TestClient(app) as client:
+                endpoint = f'/api/v1/preflight-cases/{case.id}/qualification-revalidation'
+                empty = client.get(endpoint)
+                assert empty.status_code == 200 and empty.json() is None
                 read = ask(client, case.id, '변경공고에서 뭐 바뀌었어?')
                 assert read['actions'] == []
                 requested = ask(client, case.id, '전체 변경 요건 재검증해줘')
@@ -325,6 +331,10 @@ def test_changed_notice_golden_and_revalidation_replay():
                 assert read['product_state']['provenance']['current']['judgment_run_id'] is None
                 response = client.post('/api/v1/copilot/actions/confirm', json=confirmed.model_dump(mode='json'))
                 assert response.status_code == 200, response.text
+                for _ in range(2):
+                    recovered = client.get(endpoint)
+                    assert recovered.status_code == 200
+                    assert recovered.json() == response.json()
             from apps.api.app.revalidation_schemas import QualificationRevalidationRead
             result = QualificationRevalidationRead.model_validate(response.json())
             assert result.revalidated_keys == ['REQ-PERFORMANCE-AMOUNT']

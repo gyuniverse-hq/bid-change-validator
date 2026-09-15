@@ -15,7 +15,7 @@ import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-wo
   분석 조회(qualification-api)의 CanonicalRequirement와 모양은 같지만 다른 타입이라,
   이 화면은 실제로 받는 쪽인 copilot-api의 것을 쓴다. (#132 리뷰)
 */
-import type { QualificationRequirement } from '@/lib/copilot-api';
+import { fetchLatestRevalidation, type QualificationRequirement, type RevalidationResult } from '@/lib/copilot-api';
 import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
@@ -88,11 +88,26 @@ export default function ChangesPage() {
 function ChangesWorkspace({ caseId }: { caseId: string | null }) {
   const { workspace, error: loadError, reload } = useCaseWorkspace(caseId);
   const { controller, action } = useActions(caseId ?? '');
-  const result = currentRevalidation(action.result, {
+  const [savedResult, setSavedResult] = useState<RevalidationResult | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    setResultError(null);
+    void fetchLatestRevalidation(caseId).then(value => {
+      if (!cancelled) setSavedResult(value);
+    }).catch(error => {
+      if (!cancelled) setResultError(error instanceof Error ? error.message : '재검증 결과 조회에 실패했습니다.');
+    });
+    return () => { cancelled = true; };
+  }, [caseId, workspace?.displayJudgment?.id, readAttempt]);
+  const basis = {
     caseId: caseId ?? '', baselineAnalysisId: workspace?.baselineAnalysis?.id,
     currentAnalysisId: workspace?.currentAnalysis?.id, judgmentId: workspace?.displayJudgment?.id,
-  });
-  const hasPastResult = Boolean(action.result && 'revalidated_keys' in action.result && !result);
+  };
+  const result = currentRevalidation(action.result, basis) ?? currentRevalidation(savedResult, basis);
+  const hasPastResult = Boolean((savedResult || (action.result && 'revalidated_keys' in action.result)) && !result);
   const busy = isLocked(action);
   useEffect(() => {
     if (action.stage === 'COMPLETED') void reload();
@@ -176,6 +191,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             </section>
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
+              {resultError && <p role="alert">{resultError} <Button variant="outline" onClick={() => setReadAttempt(value => value + 1)}>저장 결과 조회만 다시 시도</Button></p>}
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[13px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
               {result && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {

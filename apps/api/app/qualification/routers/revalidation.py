@@ -10,11 +10,24 @@ from ...auth_models import AppUser
 from ...database import get_db
 from ...errors import ApiError
 from ..judgment import QualificationJudgmentError
-from ..revalidation import run_qualification_revalidation
+from ..revalidation import run_qualification_revalidation, latest_qualification_revalidation
 from ...revalidation_schemas import QualificationRevalidationCreate, QualificationRevalidationRead
 
 
 router = APIRouter(prefix="/api/v1", tags=["qualification revalidation"])
+
+
+@router.get("/preflight-cases/{case_id}/qualification-revalidation", response_model=QualificationRevalidationRead | None)
+def read_latest_qualification_revalidation(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+) -> QualificationRevalidationRead | None:
+    authorize_case_access(db, user, case_id)
+    try:
+        return latest_qualification_revalidation(db, case_id=case_id)
+    except QualificationJudgmentError as error:
+        raise _as_api_error(error) from error
 
 
 def _as_api_error(error: QualificationJudgmentError) -> ApiError:

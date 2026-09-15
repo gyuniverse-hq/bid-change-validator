@@ -207,7 +207,7 @@ def install_budgeted_model(key):
             with lock:
                 ledger = json.loads(path.read_text(encoding='utf-8'))
                 amount = self.call_cost_upper(stage)
-                if ledger['reserved_estimate_usd'] + amount > min(3.0, ledger['cap_estimate_usd']) or self.reserved + amount > .25:
+                if ledger['reserved_estimate_usd'] + amount > min(3.5, ledger['cap_estimate_usd']) or self.reserved + amount > .25:
                     raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
                 self.reserved += amount
                 ledger['reserved_estimate_usd'] += amount

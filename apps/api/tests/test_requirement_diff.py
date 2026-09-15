@@ -54,3 +54,19 @@ def test_reordered_positional_keys_match_conditions_before_keys():
     changes = diff_requirements([a, b], [b.model_copy(update={"requirement_key": "REQ-1"}), a.model_copy(update={"requirement_key": "REQ-2"})])
     assert all(item.change_type == "UNCHANGED" for item in changes)
     assert {(item.baseline_key, item.current_key) for item in changes} == {("REQ-1", "REQ-2"), ("REQ-2", "REQ-1")}
+
+
+def test_shifted_region_key_and_list_bullet_remain_one_modified_condition():
+    before = _req("REQ-005", req_type="REGION", value="전북특별자치도", raw="○ 전북특별자치도에 소재한 업체")
+    after = _req("REQ-003", req_type="REGION", value="전북특별자치도", raw="전북특별자치도에 소재한 업체")
+    changes = diff_requirements([before], [after])
+    assert len(changes) == 1
+    assert changes[0].change_type == "MODIFIED"
+    assert changes[0].baseline_key == "REQ-005"
+    assert requirements_to_revalidate(changes) == ["REQ-003"]
+
+
+def test_bullet_normalization_does_not_discard_substantive_region_words():
+    before = _req("A", req_type="REGION", value="전북특별자치도", raw="○ 전북특별자치도 본점 업체")
+    after = _req("B", req_type="REGION", value="전북특별자치도", raw="전북특별자치도 지점 업체")
+    assert {c.change_type for c in diff_requirements([before], [after])} == {"ADDED", "REMOVED"}

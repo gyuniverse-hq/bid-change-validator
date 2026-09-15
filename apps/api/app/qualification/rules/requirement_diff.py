@@ -24,7 +24,9 @@ def _norm_text(value: object | None)->str:
     return re.sub(r"\s+","",str(value).casefold())
 
 def _raw_skeleton(req: QualificationRequirement)->str:
-    raw=_norm_text(req.raw)
+    # A leading list bullet is presentation, not a different condition identity.
+    # Keep it in decision_payload so the changed original still gets revalidated.
+    raw=_norm_text(re.sub(r"^\s*[○●•]\s*", "", req.raw))
     value=_norm_text(req.value)
     if value:
         raw=raw.replace(value,"<value>")

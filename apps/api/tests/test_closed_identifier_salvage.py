@@ -125,3 +125,23 @@ def test_a_normal_amount_still_maps() -> None:
     )
 
     assert [(i.type, i.value) for i in requirements] == [("PERFORMANCE_AMOUNT", 50000000)]
+
+
+def test_nara_market_registration_is_still_caught_when_the_model_splits_the_field() -> None:
+    """[재현 2026-09-15, 검수 2차] 01634263-003 5회 중 1회, 모델이 "「국가종합전자조달시스템
+    입찰참가자격등록규정」" 을 raw 가 아니라 등록인증_raw 에 담고 raw 에는 "입찰참가등록
+    마감일시까지 입찰참가자격을 등록한 업체" 꼬리만 남겼다. 가드가 raw 만 보면 나라장터
+    표시가 없는 문장이라 통과시켜 REGISTRATION_CERTIFICATION 유령을 만든다(실측 5회 중 1회
+    재현). 어느 필드에 담겼든 절차는 절차다."""
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "등록요건",
+            "raw": "입찰참가등록 마감일시까지 입찰참가자격을 등록한 업체",
+            "등록인증_raw": "국가종합전자조달시스템 입찰참가자격등록규정",
+        },
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    assert requirements == []
+    assert [d["code"] for d in diagnostics] == ["UNMAPPED_REQUIREMENT"]
+    assert diagnostics[0]["reason"] == "LEGAL_PROCEDURAL_RULE"

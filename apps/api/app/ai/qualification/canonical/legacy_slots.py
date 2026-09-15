@@ -120,7 +120,13 @@ def adapt_legacy_slot(
     """Map one validated extraction slot into zero or more canonical requirements."""
     slot_type = slot.get("유형")
     raw = (slot.get("raw") or "").strip()
-    unsafe_reason = unsafe_clause_reason(raw)
+    # [재현 2026-09-15, 검수 2차] 나라장터 절차 가드가 raw 만 보면 놓치는 경우가 있었다 —
+    # 01634263-003 를 5회 중 1회는 모델이 "「국가종합전자조달시스템 입찰참가자격등록규정」"
+    # 을 raw 가 아니라 등록인증_raw 에 담고, raw 에는 "입찰참가등록 마감일시까지 …" 꼬리만
+    # 남겼다. 어느 필드에 담겼는지는 모델 마음이라 가드는 둘을 합쳐서 본다. 요건에 실제로
+    # 저장되는 raw 는 그대로(raw=raw) — 가드 판단에만 쓴다.
+    registration_name = (slot.get("등록인증_raw") or "").strip()
+    unsafe_reason = unsafe_clause_reason(f"{raw} {registration_name}" if registration_name else raw)
     alternation = (
         industry_code_alternation(raw)
         if unsafe_reason == "ALTERNATIVE_OR_EXCEPTION_RULE"

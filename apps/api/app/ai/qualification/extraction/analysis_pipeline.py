@@ -26,6 +26,7 @@ from .backend_blocks import canonical_source_blocks
 from ..canonical.canonicalize import canonicalize_validated_slots
 from .chunking import chunk_source_blocks
 from ...normalization import normalize_value as default_normalize_value
+from .code_salvage import salvage_missing_industry_slots
 from .requirement_extraction import StructuredExtractor, extract_legacy_slots
 
 ValueNormalizer = Callable[[str], dict[str, Any]]
@@ -130,8 +131,17 @@ def analyze_qualification_documents(
         max_retry=max_retry,
     )
 
+    slots = list(extraction.get("slots") or [])
+    if extraction.get("status") != "failed":
+        # 모델이 빠뜨린 업종코드 조항을 원문에서 채운다. 같은 공고를 반복해 돌리면 어떤
+        # 실행에서는 업종 조항이 통째로 안 올라온다 — 원문의 숫자는 그대로인데. 코드가
+        # 확신할 수 있는 것은 코드가 채운다. LLM 호출은 없다.
+        target_ids = set(extraction.get("target_chunk_ids") or [])
+        target_chunks = [chunk for chunk in chunks if chunk.get("chunk_id") in target_ids]
+        slots.extend(salvage_missing_industry_slots(slots, target_chunks))
+
     normalized_slots = _normalize_extracted_slots(
-        list(extraction.get("slots") or []),
+        slots,
         normalize_value=normalize_value,
     )
 

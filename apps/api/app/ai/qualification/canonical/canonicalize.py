@@ -29,6 +29,14 @@ def canonicalize_validated_slot(
         notice_version_id=notice_version_id,
         key_prefix=key_prefix,
     )
+    if slot.get("_salvaged_codes"):
+        # 모델이 빠뜨려 코드가 원문에서 채운 슬롯. 요건은 정상 경로로 만들어졌고, 빠뜨렸다는
+        # 사실만 남긴다 — 이 진단이 많이 찍히면 모델 쪽이 흔들린다는 신호다.
+        diagnostics.append({
+            "code": "INDUSTRY_CODE_SALVAGED_FROM_SOURCE",
+            "raw": slot.get("raw") or "",
+            "codes": list(slot["_salvaged_codes"]),
+        })
     evidence_key = f"{key_prefix}-EVD"
     evidence = build_evidence_from_slot(
         slot,

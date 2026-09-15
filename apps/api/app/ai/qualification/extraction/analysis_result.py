@@ -122,6 +122,8 @@ _DIAGNOSTIC_MESSAGES = {
     "INDUSTRY_CODE_SALVAGED_FROM_SOURCE": "모델이 올리지 않은 업종코드 조항을 원문에서 직접 채웠습니다.",
     "INDUSTRY_ALTERNATION": "업종코드가 '또는' 로 갈린 조항을 ANY_OF 묶음으로 담았습니다.",
     "SALVAGED_CLOSED_IDENTIFIER": "분류가 기타요건이었으나 원문의 닫힌 식별자(업종코드·세부품명번호)로 유형을 되살렸습니다.",
+    "INDUSTRY_CODE_EXCEPTION_UNRESOLVED": "업종코드 조항 다음 줄에 갈음·대체·예외 단서가 있어 무조건 필수로 확정하지 않았습니다.",
+    "COMPANY_SIZE_FROM_CERTIFICATE": "규모 확인서(중소기업·소기업·소상공인확인서)는 인증이 아니라 회사 규모의 증빙이라 기업규모 요건으로 담았습니다.",
 }
 
 _NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
@@ -129,6 +131,7 @@ _NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
 # 요건을 하나 **살려낸** 기록이다. 무엇이 안 된 기록이 아니므로 분석을 PARTIAL 로
 # 내리지 않는다. 그래도 남기는 이유는 모델 분류가 틀렸다는 신호이기 때문이다.
 _INFORMATIONAL_PIPELINE_CODES = {
+    "COMPANY_SIZE_FROM_CERTIFICATE",
     "SALVAGED_CLOSED_IDENTIFIER",
     "INDUSTRY_ALTERNATION",
     "INDUSTRY_CODE_SALVAGED_FROM_SOURCE",

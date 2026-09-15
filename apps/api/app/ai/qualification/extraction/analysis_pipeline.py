@@ -26,7 +26,7 @@ from .backend_blocks import canonical_source_blocks
 from ..canonical.canonicalize import canonicalize_validated_slots
 from .chunking import chunk_source_blocks
 from ...normalization import normalize_value as default_normalize_value
-from .code_salvage import salvage_missing_industry_slots
+from .code_salvage import exception_guarded_codes, salvage_missing_industry_slots
 from .requirement_extraction import StructuredExtractor, extract_legacy_slots
 
 ValueNormalizer = Callable[[str], dict[str, Any]]
@@ -168,6 +168,29 @@ def analyze_qualification_documents(
             canonicalized["requirements"].extend(extra["requirements"])
             canonicalized["evidence"].extend(extra["evidence"])
             canonicalized["diagnostics"].extend(extra["diagnostics"])
+
+        # [검수 3차] 업종코드 조항 바로 다음 줄이 갈음·대체·예외 단서면, 그 코드는 무조건
+        # 필수로 확정하지 않는다 — 모델 슬롯에서 왔든 위 salvage 에서 왔든 똑같이 적용한다.
+        # 원문 청크만 보고 판단하므로 모델이 그 줄을 raw 에 담았는지와 무관하게 매번 같다.
+        guarded = exception_guarded_codes(target_chunks)
+        if guarded:
+            kept, exempted = [], []
+            for item in canonicalized["requirements"]:
+                if item.type == "INDUSTRY" and str(item.value) in guarded:
+                    exempted.append(item)
+                else:
+                    kept.append(item)
+            if exempted:
+                canonicalized["requirements"] = kept
+                canonicalized["diagnostics"].extend([
+                    {
+                        "code": "INDUSTRY_CODE_EXCEPTION_UNRESOLVED",
+                        "raw": item.raw,
+                        "value": item.value,
+                        "reason": "업종코드 조항 다음 줄에 갈음·대체·예외 단서가 있어 무조건 필수로 확정하지 않습니다.",
+                    }
+                    for item in exempted
+                ])
 
     return build_requirement_analysis_result(
         notice_id=analysis_input.notice_id,

@@ -178,3 +178,58 @@ def test_nara_market_registration_is_caught_even_when_properly_cited() -> None:
         "「건설폐기물의 재활용촉진에 관한 법률」 제21조에 따른 건설폐기물중간처리업\n"
         "(업종코드 : 1253)을 등록한 업체"
     ) is None
+
+
+def test_the_procurement_service_is_also_a_name_for_the_same_registration() -> None:
+    """[골든 17개 실측 2026-09-15] 실제 공고가 쓰는 세 표현. 두 개는 3/3 으로 고정된 유령이었다
+    (01697220·01706001), 하나는 목적격 조사 '을' 때문에 빠져나갔다(01635124)."""
+    from apps.api.app.qualification.rules.clause_safety import unsafe_clause_reason
+
+    for raw in (
+        "3.2. 조달청에 입찰참가자격등록을 한 자이어야 합니다.",
+        "아. 본 입찰은 전자입찰방식에 의하여 집행하므로 조달청 전자입찰 이용자등록한 업체만이 입찰에 참여할 수 있습니다.",
+        "나라장터에 입찰참가자격을 등록한 업체",
+    ):
+        assert unsafe_clause_reason(raw) == "LEGAL_PROCEDURAL_RULE", raw
+
+    # '조달청' 은 진짜 자격도 수식한다 — 우수제품 등록은 절차가 아니다.
+    assert unsafe_clause_reason("조달청 우수제품에 등록된 업체") is None
+
+
+def test_an_industry_code_in_the_same_sentence_outranks_the_procedural_wording() -> None:
+    """[재현 2026-09-15, 골든 17개 실측] 절차 문구와 업종코드가 한 문장에 온다. 문장 전체를
+    절차로 막았더니 골든이 기대하는 INDUSTRY 1468(01635124)·9901(01684825, J20)이 사라졌다.
+    코드는 닫힌 식별자라 그 문장의 요건을 확신할 수 있다 — 코드가 있으면 절차 문구는 무시한다."""
+    from apps.api.app.qualification.rules.clause_safety import unsafe_clause_reason
+
+    mixed_1468 = (
+        "○「소프트웨어진흥법」 제24조의 규정에 의거 입찰공고일 현재 소프트웨어사업자"
+        "(컴퓨터관련서비스사업[업종코드:1468])로 등록을 필한 업체로 나라장터에 입찰참가자격을 등록한 업체"
+    )
+    mixed_9901 = (
+        "국가종합전자조달시스템입찰참가자격등록규정에 따라 반드시 전자입찰서 제출마감일 전일까지 "
+        "나라장터(G2B시스템)에 아래의 사항을 입찰참가자격으로 등록한 자 "
+        "-[기타자유업(행사대행업)(9901)] 업종을 등록한 업체"
+    )
+    assert unsafe_clause_reason(mixed_1468) is None
+    assert unsafe_clause_reason(mixed_9901) is None
+
+    # 코드가 없으면 그대로 절차다.
+    assert unsafe_clause_reason("나라장터에 입찰참가자격을 등록한 업체") == "LEGAL_PROCEDURAL_RULE"
+    # 시스템명이 하나도 없는 맨 형태도 절차다(우치공원 1/3 재발 raw 그대로).
+    assert unsafe_clause_reason("입찰참가등록 마감일시까지 입찰참가자격을 등록한 업체") == "LEGAL_PROCEDURAL_RULE"
+    # 코드 항목들의 우산 문장(J14 1/3 재발 raw 그대로) — 코드는 각자 줄에서 살아난다.
+    assert unsafe_clause_reason(
+        "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다."
+    ) == "LEGAL_PROCEDURAL_RULE"
+    # 제목·제한 문구에는 '등록' 이 안 붙어서 이 패턴에 안 걸린다.
+    assert unsafe_clause_reason("3. 입찰참가자격 가. 지역 소재 업체") is None
+    # 코드는 낱말 안에서 줄이 바뀌어도 코드다 — 원문 "[업⏎종코드: 5898]"(골든 01688607).
+    assert unsafe_clause_reason(
+        "「국가종합전자조달시스템 입찰참가자격등록규정(조달청 고시)」에 의하여 전자입찰서 제출 마감일 "
+        "전일까지 아래 자격을 등록한 업체 1) ｢자동차관리법 제30조에 의한 제작자 등(자동차-국내 제작·조립[업\n종코드: 5898])"
+    ) is None
+    # 논리를 바꾸는 가드는 코드가 있어도 그대로 건다.
+    assert unsafe_clause_reason(
+        "업종코드 1468 등록업체. 다만 공동수급체 구성원은 제외한다"
+    ) in ("ALTERNATIVE_OR_EXCEPTION_RULE", "COMPOSITE_PARTY_RULE")

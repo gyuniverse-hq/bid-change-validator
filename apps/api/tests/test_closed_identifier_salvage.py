@@ -167,6 +167,21 @@ def test_a_condition_riding_along_with_one_alternative_is_not_silently_dropped()
     assert diagnostics[0]["reason"] == "ALTERNATIVE_OR_EXCEPTION_RULE"
 
 
+def test_a_code_wrapped_inside_the_word_is_still_read_as_a_code() -> None:
+    """[재현 2026-09-15, 골든 01688607] 원문이 "[업⏎종코드: 5898]" 로 낱말 안에서 줄을 바꾼다.
+    raw 는 원문 구간으로 스냅되므로 그 줄바꿈이 그대로 들어오고, 코드 5898 대신 이름 값
+    "제작자등(자동차-국내제작·조립[업종코드:5898])" 이 INDUSTRY 값으로 나왔다. 숫자는
+    공백을 걷어내도 뜻이 안 바뀌니 걷어내고 읽는다."""
+    raw = "1) ｢자동차관리법\n제30조에 의한 제작자 등(자동차-국내 제작·조립[업\n종코드: 5898])"
+
+    requirements, _ = adapt_legacy_slot(
+        {"유형": "업종요건", "raw": raw, "업종_raw": "자동차-국내 제작·조립[업\n종코드: 5898]"},
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    assert [(i.type, i.value) for i in requirements] == [("INDUSTRY", "5898")]
+
+
 def test_a_plain_code_alternative_without_extra_conditions_still_opens() -> None:
     """추가 조건이 안 붙은 원래 모양은 그대로 ANY_OF 로 열려야 한다 — 위 가드가 정상
     사례까지 막으면 안 된다."""

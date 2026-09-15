@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     document_max_file_size_bytes: int = 100 * 1024 * 1024
     document_s3_bucket: str | None = None
     document_s3_prefix: str = "notice-documents"
+    document_s3_endpoint_url: str | None = None
     aws_region: str | None = None
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     notice_poll_interval_seconds: int = Field(default=300, ge=30)

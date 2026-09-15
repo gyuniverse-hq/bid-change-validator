@@ -301,6 +301,10 @@ def test_pipeline_does_not_report_empty_retry_as_success():
         {
             "raw": "원문에 없는 부산 소재 업체",
             "reason_code": "RAW_NOT_FOUND_IN_SOURCE",
+            # raw 자체를 못 찾은 경우라 세부 조건 자리는 비어 있다.
+            # 채워지는 것은 DETAIL_NOT_FOUND_IN_SOURCE 일 때뿐이다.
+            "detail_field": None,
+            "detail_value": None,
         }
     ]
 

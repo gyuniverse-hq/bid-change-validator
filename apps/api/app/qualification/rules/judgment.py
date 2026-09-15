@@ -19,7 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ...ai.contracts import Judgment, QualificationRequirement
-from .clause_safety import unsafe_clause_reason
+from .clause_safety import is_guard_assessed, unsafe_clause_reason
 
 
 RULE_VERSION = "qualification-rules-v0.3"
@@ -776,7 +776,15 @@ def judge_requirement(
     # 안전 가드가 가장 먼저다. 판정하기 위험한 조항(복합 조건·부정 조건 등)이면
     # 확장 경로라고 예외일 이유가 없다. 순서를 뒤집으면 SW등급 요건이 가드를
     # 우회해서, 하나로 줄일 수 없는 조건을 충족/미충족으로 단정하게 된다.
-    if unsafe_clause_reason(requirement.raw) or requirement.condition_complexity == "composite":
+    #
+    # [2026-09-15] 추출이 가드 평가를 마치고 구조에 새긴 요건(scope.guard == "assessed")은
+    # raw 를 다시 읽지 않는다 — condition_complexity 가 그 결과다. 추출이 ANY_OF 로 담아 둔
+    # 대안 묶음의 raw 에는 '또는' 이 있고, 그것을 여기서 또 읽으면 이미 구조로 표현된 대안을
+    # 다시 막는다(J14: 1257 보유 회사가 적합이 아니라 확인 필요). 표시가 없는 요건(예전 저장
+    # 행, 골든 고정본)은 예전처럼 raw 를 본다.
+    if requirement.condition_complexity == "composite" or (
+        not is_guard_assessed(requirement.scope) and unsafe_clause_reason(requirement.raw)
+    ):
         return _unknown(requirement, preflight_case_id, unsupported=True)
 
     # 공고별 확장 요건은 일반 유형보다 먼저 판정한다. 특히 SW기술자 등급은

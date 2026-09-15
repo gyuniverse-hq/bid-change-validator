@@ -20,6 +20,7 @@ from apps.api.app.ai.contracts import QualificationRequirement
 from apps.api.app.ai.qualification.canonical.deduplicate import deduplicate_requirements
 from apps.api.app.qualification.rules.judgment import CompanyProfileSnapshot
 from apps.api.app.qualification.rules.judgment import judge_requirement
+from apps.api.app.qualification.rules.judgment import judge_requirements
 
 
 LONG_RAW = (
@@ -334,3 +335,43 @@ def test_named_industries_in_different_chunks_are_not_folded() -> None:
     ], notice_version_id="NV-1")
 
     assert len(result["requirements"]) == 2
+
+
+def test_any_of_members_are_not_collapsed_as_exact_duplicates() -> None:
+    """[재현 2026-09-15, 코덱스 검수] "(A 또는 B) 그리고 (A 또는 C)" 에서 두 묶음에 같은
+    값 A 가 있으면, 완전중복 규칙이 뒤에 나온 A 를 지워 조건이 (A 또는 B) 그리고 C 로
+    바뀐다 — A만 가진 회사가 충족→미달로 뒤집힌다. ANY_OF 묶음 소속은 완전중복 정리
+    대상에서 뺀다."""
+    def any_of(key: str, group: str, value: str) -> QualificationRequirement:
+        return QualificationRequirement(
+            requirement_key=key, notice_version_id="NV-1", type="INDUSTRY",
+            operator="MATCH", value=value, raw=f"{value} 등록업체",
+            requirement_group_key=group, group_operator="ANY_OF",
+        )
+
+    requirements = [
+        any_of("G1-A", "G1", "1257"), any_of("G1-B", "G1", "6770"),
+        any_of("G2-A", "G2", "1257"), any_of("G2-C", "G2", "1227"),
+    ]
+
+    kept, diagnostics = deduplicate_requirements(requirements)
+
+    # 넷 다 남는다 — 값이 같아도 서로 다른 묶음 소속이면 지우지 않는다.
+    assert len(kept) == 4
+    assert not any(d["code"] == "DUPLICATE_REQUIREMENT" for d in diagnostics)
+
+    # 판정까지 내려가서 확인한다. 1257 만 가진 회사는 두 묶음 다 충족해야 한다.
+    profile = CompanyProfileSnapshot.model_validate({
+        "company_id": "C-1",
+        "industries": [{"code": "1257", "name": "가공업", "verified": False}],
+        "certifications": [],
+        "completeness": {
+            "certifications": True, "company_size": True, "industries": True,
+            "performances": True, "region": True, "staff_roles": True, "staff_total": True,
+        },
+    })
+    result = judge_requirements(
+        kept, profile, preflight_case_id="X", reference_date=date(2026, 9, 15)
+    )
+
+    assert result.overall_status == "eligible"

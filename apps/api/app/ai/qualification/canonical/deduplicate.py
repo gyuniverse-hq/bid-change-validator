@@ -158,6 +158,17 @@ def deduplicate_requirements(
     seen: set[tuple[str, str, str]] = set()
 
     for requirement in requirements:
+        # [재현 2026-09-15, 검수] identity 는 소속 그룹(requirement_group_key)을 안 본다 —
+        # 두 문서에 같은 요건이 두 벌 있는 흔한 경우(그룹이 각자 하나뿐)를 잡으려면 그래야
+        # 한다. 그런데 "(A 또는 B) 그리고 (A 또는 C)" 처럼 서로 다른 ANY_OF 묶음에 같은 값
+        # A 가 있으면, 완전중복 규칙이 뒤에 나온 A 를 지워 조건 자체가 바뀐다 —
+        # (A 또는 B) 그리고 C 가 되어 A 만 가진 회사가 미달로 뒤집힌다. ANY_OF 묶음 소속은
+        # 그래서 이 정리 대상에서 아예 뺀다. 대가로 같은 대안 묶음이 두 문서에 그대로
+        # 중복돼도 남지만, 그건 판정 결과를 안 바꾸는 중복일 뿐이다 — 조건이 바뀌는 쪽보다
+        # 안전하다.
+        if requirement.group_operator == "ANY_OF":
+            kept.append(requirement)
+            continue
         identity = _identity(requirement)
         if identity in seen:
             diagnostics.append({

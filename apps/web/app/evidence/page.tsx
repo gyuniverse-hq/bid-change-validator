@@ -105,7 +105,7 @@ function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorksp
             <div className="flex flex-wrap items-center gap-3 border-b border-[var(--product-line)] pb-[14px]">
               <strong className="text-[14px]">{document?.name ?? '문서 없음'}</strong>
               <span className="text-[12.5px] text-[var(--product-muted)]">{labelOf(EXTRACTION_STATUS_LABEL, document?.extraction_status)}</span>
-              {document && <Button variant="outline" size="sm" className="ml-auto" render={<a href={absoluteApiUrl(document.render_source_url)} target="_blank" rel="noreferrer" />}>원본 열기</Button>}
+              {document && <Button variant="outline" size="sm" className="ml-auto" render={<a href={absoluteApiUrl(document.render_source_url)} target="_blank" rel="noreferrer" aria-label="원본 열기" />}>원본 열기</Button>}
             </div>
 
             <div className="mt-3 max-h-[620px] overflow-y-auto pr-2">

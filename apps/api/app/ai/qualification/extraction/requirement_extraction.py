@@ -260,12 +260,26 @@ _GROUNDING_PUNCTUATION = str.maketrans(
 # 비교할 때만 지운다. 저장되는 raw 는 그대로다.
 _DECORATION_MARKS_RE = re.compile(r"[※▶▷◆◇■□●○◦☞‣✓✔★☆]")
 
+# [재현 2026-09-15, 우치공원 1/5 PARTIAL] PDF 는 쪽 번호를 "- 4 -" 한 줄로 찍는다. 청크 안에서
+# 그 줄이 문장 한가운데 오면(쪽이 바뀌는 자리) 대조용 본문이 "종사자의-4-안전" 이 되고, 모델은
+# 당연히 그 마커 없이 인용하니 RAW_NOT_FOUND_IN_SOURCE 로 버려져 분석이 PARTIAL 로 떨어졌다.
+# 쪽 번호는 공고의 말이 아니다 — 대조에서도, 저장되는 값에서도 걷어낸다. 한 줄 전체가 마커일
+# 때만 잡는다(날짜 "2026-09-15" 같은 하이픈 숫자는 줄 전체가 아니라 안 걸린다).
+_PAGE_MARKER_RE = re.compile(r"(?m)^[ \t]*-\s*\d{1,3}\s*-[ \t]*$")
+
+
+def _page_marker_indices(value: str) -> set[int]:
+    skip: set[int] = set()
+    for match in _PAGE_MARKER_RE.finditer(value):
+        skip.update(range(match.start(), match.end()))
+    return skip
+
 
 def _squash(value: str) -> str:
     """Normalize source text only for containment checks; stored raw stays untouched."""
     # U+2024 (ONE DOT LEADER) becomes an ASCII period under NFKC, so translate
     # punctuation variants first and apply compatibility normalization afterward.
-    normalized = unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION))
+    normalized = unicodedata.normalize("NFKC", _PAGE_MARKER_RE.sub("", value).translate(_GROUNDING_PUNCTUATION))
     normalized = _DECORATION_MARKS_RE.sub("", normalized)
     return re.sub(r"\s+", "", normalized)
 
@@ -278,7 +292,10 @@ def _squash_with_map(value: str) -> tuple[str, list[int]]:
     """
     squashed: list[str] = []
     origin: list[int] = []
+    skip = _page_marker_indices(value)
     for index, char in enumerate(value):
+        if index in skip:
+            continue
         piece = unicodedata.normalize("NFKC", char.translate(_GROUNDING_PUNCTUATION))
         piece = _DECORATION_MARKS_RE.sub("", piece)
         piece = re.sub(r"\s+", "", piece)
@@ -286,6 +303,20 @@ def _squash_with_map(value: str) -> tuple[str, list[int]]:
             squashed.append(produced)
             origin.append(index)
     return "".join(squashed), origin
+
+
+def join_wrapped_lines(text: str) -> str:
+    """저장되는 값에서 PDF 줄바꿈·쪽 번호를 걷어낸다.
+
+    [재현 2026-09-15] REGION 값이 "전북특⏎별자치도" 로, raw 가 "…재활용업⏎(6770)또는…" 로
+    저장됐다. 판정은 공백을 접어 비교하니 통과했지만 화면엔 그대로 보이고, 같은 조항의 raw 가
+    실행마다 줄바꿈 위치만 달라 지문이 갈렸다(코덱스 Core-4 실행 기록). 한국어 PDF 의 줄바꿈은
+    낱말 한가운데서도 일어나므로 공백 없이 잇는다 — 원래 띄어쓰기는 줄바꿈 앞에 공백 문자로
+    남아 있다. 대조(_squash)가 이미 같은 가정을 쓴다.
+    """
+    text = _PAGE_MARKER_RE.sub("", text or "")
+    text = re.sub(r"[ \t]*\r?\n[ \t]*", "", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
 
 
 # 모델이 같은 문장에서 어디까지 끊어 적을지가 실행마다 다르다. 실측(2026-09-14) —
@@ -337,7 +368,7 @@ def snap_to_source_span(detail: str, source: str, *, whole_sentence: bool = Fals
     end = origin[position + len(squashed_detail) - 1] + 1
     if whole_sentence:
         start, end = _sentence_span(source, start, end)
-    return source[start:end].strip()
+    return join_wrapped_lines(source[start:end])
 
 
 def _normalize_reference(value: str) -> str:
@@ -459,6 +490,8 @@ def validate_extracted_slot(
     source_chunk = _find_source_chunk(raw, chunks)
     if source_chunk is None:
         return False, "raw가 본문에 존재하지 않음(과잉 추출 의심)", None
+    # 원문에 있는 것이 확인됐으니, 저장되는 raw 는 줄바꿈·쪽 번호를 걷어낸 모양으로 둔다.
+    slot["raw"] = join_wrapped_lines(raw)
 
     source_original = source_chunk.get("text") or ""
     source_text = _squash(source_original)

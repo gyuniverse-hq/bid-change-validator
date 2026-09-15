@@ -19,6 +19,10 @@ from .deduplicate import _INDUSTRY_NAME_VALUE_RE, _REGISTRATION_ACT_VALUE_RE
 _MIN_PLAUSIBLE_AMOUNT_KRW = 10_000
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 _INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")
+# 지역값 뒤에 붙는 서술 꼬리 — "전남광주통합특별시에 소재한 업체" → "전남광주통합특별시".
+_REGION_TAIL_RE = re.compile(
+    r"(?:에|의|을|를)?\s*(?:소재한?|위치한?|있는|둔|두고\s*있는)\s*(?:업체|자|기업|법인|사업자)?\s*$"
+)
 _SIZE_EXCLUSION_RE = re.compile(
     r"참여\s*(?:제한|불가|배제|금지)"
     r"|참가\s*(?:제한|불가|배제)"
@@ -361,7 +365,10 @@ def adapt_legacy_slot(
             diagnostics.append({"code": "UNMAPPED_INDUSTRY", "raw": raw})
 
     elif slot_type == "지역요건":
-        region = (slot.get("지역_raw") or "").strip()
+        # [재현 2026-09-15, 우치공원 1/5] 모델이 지역값에 "…에 소재한 업체" 꼬리를 붙여 낼 때가
+        # 있다. 판정은 포함 비교라 통과하지만 값이 달라져 실행마다 요건 지문이 갈렸다. 지역명은
+        # 행정구역 이름이지 문장이 아니다 — 꼬리를 뗀다.
+        region = _REGION_TAIL_RE.sub("", (slot.get("지역_raw") or "").strip()).strip()
         if region:
             add("REGION", "REGION", operator="MATCH", value=region)
         else:

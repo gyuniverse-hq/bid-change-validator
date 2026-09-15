@@ -13,6 +13,7 @@ from typing import Any
 
 from ...contracts import QualificationRequirement, RequirementOperator, RequirementType
 from ....qualification.rules.clause_safety import unsafe_clause_reason
+from .deduplicate import _INDUSTRY_NAME_VALUE_RE, _REGISTRATION_ACT_VALUE_RE
 
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 _INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")
@@ -86,6 +87,10 @@ def salvage_closed_identifier(raw: str) -> tuple[RequirementType, str] | None:
         return "REGISTRATION_CERTIFICATION", next(iter(product_codes))
 
     return None
+
+
+def _squash_name(value: str) -> str:
+    return re.sub(r"\s+", "", value)
 
 
 def _op(word: str | None) -> RequirementOperator | None:
@@ -295,11 +300,18 @@ def adapt_legacy_slot(
             "등록요건": "REGISTRATION",
         }[slot_type]
         # [재현 2026-09-15] 등록요건뿐 아니라 인증·면허로 분류돼도 원문에 업종코드가 하나
-        # 있으면 업종 요건이다. 실측에서 같은 "영업신고(업종코드 : 1450)" 조항을 모델이
+        # 있으면 업종 요건일 수 있다. 실측에서 같은 "영업신고(업종코드 : 1450)" 조항을 모델이
         # 인증요건으로 낸 실행이 있었고, 그때 INDUSTRY 1450 이 아예 안 만들어져 인증 쪽에서
-        # 미달이 났다. 프롬프트가 "혼동하지 마라" 라고 적어둔 바로 그 쌍이다 — 코드는
-        # 흔들리지 않으니 코드를 따른다.
-        if industry_codes:
+        # 미달이 났다.
+        #
+        # 단, **값이 업종명이나 등록 행위 모양일 때만**이다. "업종코드: 1468 업체는 ISO 27001
+        # 인증 보유" 처럼 같은 조항에 진짜 인증이 적혀 있으면 그 인증은 별개 요건이다 —
+        # 코드가 있다고 그것을 업종으로 바꾸면 ISO 27001 을 삼킨다(test_canonicalize 가 막는다).
+        looks_like_industry = bool(name) and (
+            _INDUSTRY_NAME_VALUE_RE.fullmatch(_squash_name(name))
+            or _REGISTRATION_ACT_VALUE_RE.fullmatch(_squash_name(name))
+        )
+        if industry_codes and (slot_type == "등록요건" or looks_like_industry):
             add("INDUSTRY", "INDUSTRY", operator="MATCH", value=next(iter(industry_codes)), scope={"kind": kind, "industry_name": name})
         elif name:
             scope: dict[str, Any] = {"kind": kind}

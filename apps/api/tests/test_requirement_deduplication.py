@@ -261,3 +261,21 @@ def test_a_coded_industry_never_folds_onto_another() -> None:
     ])
 
     assert len(kept) == 2
+
+
+def test_a_real_certification_in_a_coded_clause_is_not_turned_into_industry() -> None:
+    """기존 test_canonicalize 가 막는 경우를 여기서도 고정한다. 코드가 있다고 값을 업종으로
+    바꾸면 같은 조항의 ISO 27001 을 삼킨다. 값 모양이 업종명·등록행위일 때만 바꾼다."""
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+
+    kept_cert, _ = adapt_legacy_slot(
+        {"유형": "인증요건", "raw": "업종코드: 1468 업체는 ISO 27001 인증 보유", "등록인증_raw": "ISO 27001"},
+        notice_version_id="NV-1", key_prefix="R",
+    )
+    assert [(i.type, i.value) for i in kept_cert] == [("REGISTRATION_CERTIFICATION", "ISO 27001")]
+
+    turned, _ = adapt_legacy_slot(
+        {"유형": "인증요건", "raw": LONG_RAW, "등록인증_raw": "영업신고"},
+        notice_version_id="NV-1", key_prefix="R",
+    )
+    assert [(i.type, i.value) for i in turned] == [("INDUSTRY", "1450")]

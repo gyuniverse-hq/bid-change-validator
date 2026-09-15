@@ -127,10 +127,11 @@ jobs:
             sleep 2
           done
           if [ "$READY" != 1 ]; then cat "$OUT/web.log"; exit 1; fi
-          QUALIFICATION_UI_URL=http://localhost:3000 \
-          QUALIFICATION_SCREENSHOT_DIR="$OUT" \
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/qualification-browser/node_modules/playwright" \
+          export QUALIFICATION_UI_URL=http://localhost:3000
+          export QUALIFICATION_SCREENSHOT_DIR="$OUT"
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/qualification-browser/node_modules/playwright"
           node scripts/check-qualification-browser.cjs 2>&1 | tee "$OUT/check.log"
+          node scripts/check-qualification-graph-browser.cjs 2>&1 | tee "$OUT/graph-check.log"
       - name: Preserve frontend verification logs
         if: always()
         uses: actions/upload-artifact@v4

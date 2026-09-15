@@ -387,9 +387,12 @@ def extract_pending_documents(
             elif backend == "S3":
                 if not settings.document_s3_bucket:
                     raise ValueError("DOCUMENT_S3_BUCKET is required when backend is S3")
-                import boto3
+                from .document_storage import build_s3_client
 
-                s3 = boto3.client("s3", region_name=settings.aws_region)
+                s3 = build_s3_client(
+                    region=settings.aws_region,
+                    endpoint_url=settings.document_s3_endpoint_url,
+                )
                 with SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b") as temp:
                     s3.download_fileobj(settings.document_s3_bucket, document.storage_key, temp)
                     extract_into_document(document, temp)

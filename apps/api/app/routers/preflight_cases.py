@@ -27,6 +27,7 @@ from ..services.preflight_cases import (
     create_preflight_case,
     store_proposal_document,
 )
+from ..services.document_storage import build_s3_client
 
 
 router = APIRouter(prefix="/api/v1/preflight-cases", tags=["preflight cases"])
@@ -114,8 +115,6 @@ def _serve_document(document: ProposalDocument, *, inline: bool) -> Response:
     if backend == "S3":
         if not settings.document_s3_bucket:
             raise ApiError(503, "DOCUMENT_STORAGE_NOT_CONFIGURED", "S3 저장소 설정이 없습니다.")
-        import boto3
-
         params = {
             "Bucket": settings.document_s3_bucket,
             "Key": document.storage_key,
@@ -123,7 +122,10 @@ def _serve_document(document: ProposalDocument, *, inline: bool) -> Response:
         }
         if inline:
             params["ResponseContentDisposition"] = "inline"
-        s3 = boto3.client("s3", region_name=settings.aws_region)
+        s3 = build_s3_client(
+            region=settings.aws_region,
+            endpoint_url=settings.document_s3_endpoint_url,
+        )
         url = s3.generate_presigned_url("get_object", Params=params, ExpiresIn=300)
         return RedirectResponse(url, status_code=307)
     raise ApiError(503, "DOCUMENT_STORAGE_NOT_CONFIGURED", "첨부파일 저장소 설정이 잘못되었습니다.")

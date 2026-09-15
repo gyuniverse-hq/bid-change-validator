@@ -84,14 +84,14 @@ export function AppHeader({
 
           <nav className="app-primary-nav" aria-label="주요 메뉴">
             {PRIMARY_NAV.map((item) => (
-              <Link
+              <a
                 key={item.href}
                 href={item.href}
                 className="app-nav-link"
                 aria-current={isActive(pathname, item.href) ? 'page' : undefined}
               >
                 {item.label}
-              </Link>
+              </a>
             ))}
           </nav>
 

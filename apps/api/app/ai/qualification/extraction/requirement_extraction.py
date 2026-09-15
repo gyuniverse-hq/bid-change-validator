@@ -410,10 +410,18 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
 # **조각 하나라도 원문에 없으면 그대로 버리기** 때문이다 — 쪼개기가 틀렸으면 조각이
 # 원문에 없고, 결과는 쪼개기 전과 같다.
 _DETAIL_PART_SPLIT_RE = re.compile(r"[;；,，]")
+# [재현 2026-09-15, 골든 17개 실측] 기업규모는 원문이 "「중소기업기본법」 제2조에 따른 소기업자
+# 또는 「…특별조치법」 제2조에 따른 소상공인" 처럼 법령 인용을 사이에 끼고 나열되는데, 모델은
+# "소기업자 또는 소상공인" 으로 인용을 빼고 적는다. 조각은 다 원문에 있는데 이어붙인 문자열이
+# 없어 DETAIL_NOT_FOUND 로 버려졌고, 그것이 실행마다 있다 없다 해서 흔들렸다(01694234 0건).
+# 규모 낱말은 닫힌 어휘라 '또는·및' 로도 쪼개서 조각마다 확인한다 — 이 필드에만 쓴다.
+_SIZE_DETAIL_SPLIT_RE = re.compile(r"[;；,，·ㆍ]|또는|및|\s와\s|\s과\s")
+_SIZE_DETAIL_FIELDS = ("기업규모_raw",)
 
 
-def _detail_parts(detail: str) -> list[str]:
-    parts = [part.strip() for part in _DETAIL_PART_SPLIT_RE.split(detail)]
+def _detail_parts(detail: str, field_name: str | None = None) -> list[str]:
+    splitter = _SIZE_DETAIL_SPLIT_RE if field_name in _SIZE_DETAIL_FIELDS else _DETAIL_PART_SPLIT_RE
+    parts = [part.strip() for part in splitter.split(detail)]
     return [part for part in parts if part] or [detail]
 
 
@@ -471,7 +479,7 @@ def validate_extracted_slot(
         if squashed_whole and squashed_whole in haystack:
             slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
             continue
-        for part in _detail_parts(detail):
+        for part in _detail_parts(detail, field_name):
             squashed = _squash(part)
             if not squashed or squashed in source_text:
                 continue

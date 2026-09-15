@@ -12,7 +12,8 @@ import re
 from typing import Any
 
 from ...contracts import QualificationRequirement, RequirementOperator, RequirementType
-from ....qualification.rules.clause_safety import unsafe_clause_reason
+from ....qualification.rules.clause_safety import strip_decorations, unsafe_clause_reason
+from ....qualification.rules.judgment import _COMPANY_SIZE_ALIASES
 from .deduplicate import _INDUSTRY_NAME_VALUE_RE, _REGISTRATION_ACT_VALUE_RE
 
 _MIN_PLAUSIBLE_AMOUNT_KRW = 10_000
@@ -34,6 +35,59 @@ _REGISTRATION_CONTEXT_RE = re.compile(r"등록|신고|영업|허가|면허")
 _PRODUCT_CONTEXT_RE = re.compile(r"직접\s*생산\s*확인|세부\s*품명|품명\s*번호")
 
 
+def _compact(text: str) -> str:
+    """닫힌 식별자를 읽을 때 쓰는 본문 — 공백·줄바꿈을 전부 걷어낸다.
+
+    [재현 2026-09-15, 골든 01688607] PDF 원문이 "[업⏎종코드: 5898]" 처럼 **낱말 안에서** 줄을
+    바꾼다. 모델 raw 는 원문 구간으로 스냅되므로 그 줄바꿈이 그대로 들어오고, "업종코드"
+    정규식이 못 읽어 코드 5898 대신 이름 값으로 떨어졌다. 숫자는 사람이 달리 못 쓰는 값이라
+    공백을 걷어내도 뜻이 안 바뀐다.
+    """
+    return re.sub(r"\s+", "", text or "")
+
+
+# 회사 규모 낱말도 닫힌 어휘다 — 소상공인·소기업·중소기업·중견기업·대기업 다섯 개뿐이고,
+# 판정기는 이 다섯 낱말을 열쇠로 허용 규모 집합을 찾는다(`_COMPANY_SIZE_ALIASES`).
+#
+# [재현 2026-09-15, 골든 17개 실측] 그런데 모델은 "중·소기업·소상공인", "중소기업자 및
+# 소상공인" 처럼 낱말을 이어 붙여 낸다. 그 값은 alias 표에 없어서 판정기가 문자열 비교로
+# 떨어지고, SMALL 회사가 **UNSATISFIED** 를 받았다(실제 실행으로 확인). 같은 사실이
+# 실행마다 COMPANY_SIZE / "…확인서" REGISTRATION_CERTIFICATION / 검증 탈락 세 모양으로 갈려
+# 7개 공고가 흔들렸다. 골든셋은 전부 COMPANY_SIZE(allowed 집합)로 본다.
+#
+# 이어 붙인 값은 각 낱말의 허용 집합의 합집합이다 — "소기업·소상공인" = 소기업(MICRO,SMALL)
+# ∪ 소상공인(MICRO) = 소기업. 합집합이 정확히 어느 한 낱말의 집합과 같을 때만 그 낱말로
+# 정규화한다. "대기업 및 중견기업" 처럼 어느 낱말과도 안 맞으면 손대지 않는다(그건 참여
+# 제한 조항이고 기존 EXCLUDE 경로가 맞게 처리한다). 법령명 안의 낱말("「중소기업기본법」에
+# 따른 소상공인")이 섞이지 않게 먼저 인용을 벗긴다.
+_SIZE_WORD_RE = re.compile(r"중견기업|대기업|중소기업|소기업|소상공인")
+# "중·소기업" 은 중기업·소기업을 가운뎃점으로 이어 쓴 것이다 — 점을 걷어내면 "중소기업" 이다.
+_SIZE_JOINERS_RE = re.compile(r"[·ㆍ.\s]")
+# 규모 확인서 이름 — 낱말·'자'·및/와/과·확인서/증명서 접미만으로 이루어진 값(점·공백은 미리
+# 걷어낸다). "ISO 9001" 처럼 고유명사가 섞이면 진짜 인증이므로 여기 안 걸린다.
+_SIZE_CERT_NAME_RE = re.compile(
+    r"^(?:(?:중견기업|대기업|중소기업|소기업|소상공인)자?[,및와과]*)+(?:확인서|증명서|확인증)?$"
+)
+
+
+def _size_text(text: str) -> str:
+    return _SIZE_JOINERS_RE.sub("", strip_decorations(text or ""))
+
+
+def company_size_alias(text: str) -> str | None:
+    """규모 낱말들의 허용 집합 합집합이 정확히 한 낱말의 집합이면 그 낱말. 아니면 None."""
+    allowed: set[str] = set()
+    for word in _SIZE_WORD_RE.findall(_size_text(text)):
+        allowed |= _COMPANY_SIZE_ALIASES[word]
+    if not allowed:
+        return None
+    return next((key for key, sizes in _COMPANY_SIZE_ALIASES.items() if sizes == allowed), None)
+
+
+def is_company_size_certificate_name(name: str) -> bool:
+    return bool(_SIZE_CERT_NAME_RE.fullmatch(_size_text(name)))
+
+
 # "A(1257) 또는 B(6770) 또는 C(6786) 등록업체" — 안전 가드는 이것을 막는다. 하나로
 # 줄일 수 없는 조건을 충족/미충족으로 단정하면 안 되기 때문이다. 옳은 판단이지만,
 # **ANY_OF 가 바로 그 '또는' 의 안전한 표현**이다. 줄이지 않고 관계를 그대로 담을 수
@@ -46,7 +100,8 @@ _ALTERNATION_SPLIT_RE = re.compile(r"\s*또는\s*")
 _EXCEPTION_WORDS_RE = re.compile(
     r"다만|단서|예외|제외|불구하고|각\s*호|아니(?:어야|하여야|한)|해당되지|경우에\s*한"
 )
-_NAMED_INDUSTRY_CODE_RE = re.compile(r"[가-힣A-Za-z·ㆍ\s]{2,}?업\s*\(\s*([0-9]{4})\s*\)")
+# "기타자유업(행사대행업)(9901)" 처럼 업종명 뒤에 설명 괄호가 하나 더 끼기도 한다(01684825, J20).
+_NAMED_INDUSTRY_CODE_RE = re.compile(r"[가-힣A-Za-z·ㆍ\s]{2,}?업\s*\)?\s*\(\s*([0-9]{4})\s*\)")
 # [재현 2026-09-15, 검수] "가공업(1257)을 등록하고 ISO 9001을 보유한 업체 또는 운반업(1227)을
 # 등록한 업체" 를 실제로 돌리면 ["1257","1227"] 를 돌려줬다. 조각마다 코드가 "하나 있는지"만
 # 보고 "그것 말고 다른 게 있는지"는 안 봤다 — "AND ISO 9001" 이 조용히 사라진 채
@@ -67,7 +122,7 @@ def industry_code_alternation(raw: str) -> list[str] | None:
         return None
     codes: list[str] = []
     for part in parts:
-        found = _NAMED_INDUSTRY_CODE_RE.findall(part)
+        found = _NAMED_INDUSTRY_CODE_RE.findall(_compact(part))
         if len(found) != 1:
             return None
         # 코드 문구를 뺀 나머지에 "보유·충족·ISO…" 같은 낱말이 남으면, 이 조각은 코드
@@ -92,13 +147,13 @@ def salvage_closed_identifier(raw: str) -> tuple[RequirementType, str] | None:
     """
     industry_codes = {
         code
-        for group in _INDUSTRY_CODE_RE.findall(raw)
+        for group in _INDUSTRY_CODE_RE.findall(_compact(raw))
         for code in re.findall(r"[0-9]{4}", group)
     }
     if len(industry_codes) == 1 and _REGISTRATION_CONTEXT_RE.search(raw):
         return "INDUSTRY", next(iter(industry_codes))
 
-    product_codes = set(_PRODUCT_CODE_RE.findall(raw))
+    product_codes = set(_PRODUCT_CODE_RE.findall(_compact(raw)))
     if len(product_codes) == 1 and _PRODUCT_CONTEXT_RE.search(raw):
         return "REGISTRATION_CERTIFICATION", next(iter(product_codes))
 
@@ -156,14 +211,14 @@ def adapt_legacy_slot(
     # Only a single explicit code can replace an industry/registration name.
     # Multiple codes need their AND/OR relationship resolved before mapping.
     industry_codes = {
-        code for group in _INDUSTRY_CODE_RE.findall(raw)
+        code for group in _INDUSTRY_CODE_RE.findall(_compact(raw))
         for code in re.findall(r"[0-9]{4}", group)
     }
     if not industry_codes:
         # "업종코드 : 1450" 뿐 아니라 "폐기물수집·운반업(1227)" 처럼 업종명 뒤 괄호에
         # 바로 적는 공고가 많다. 업종명이 앞에 붙어 있을 때만 읽는다 — 그냥 네 자리
         # 숫자를 코드로 보면 연도·금액을 업종으로 만든다.
-        named = set(_NAMED_INDUSTRY_CODE_RE.findall(raw))
+        named = set(_NAMED_INDUSTRY_CODE_RE.findall(_compact(raw)))
         if len(named) == 1:
             industry_codes = named
     if slot_type in {"업종요건", "등록요건"} and len(industry_codes) > 1 and alternation is None:
@@ -345,8 +400,20 @@ def adapt_legacy_slot(
             _INDUSTRY_NAME_VALUE_RE.fullmatch(_squash_name(name))
             or _REGISTRATION_ACT_VALUE_RE.fullmatch(_squash_name(name))
         )
+        size_alias = company_size_alias(name) if is_company_size_certificate_name(name) else None
         if industry_codes and (slot_type == "등록요건" or looks_like_industry):
             add("INDUSTRY", "INDUSTRY", operator="MATCH", value=next(iter(industry_codes)), scope={"kind": kind, "industry_name": name})
+        elif size_alias:
+            # [재현 2026-09-15] "소기업·소상공인확인서" 는 인증이 아니라 회사 규모의 증빙 서류다.
+            # 인증 요건으로 두면 회사 인증 목록과 대조돼 SMALL 회사가 미달을 받는다 —
+            # 1450 업종/등록 이중분류와 같은 틀린 확정 경로. 골든셋은 COMPANY_SIZE 로 본다.
+            add("COMPANY_SIZE", "COMPANY_SIZE", operator="MATCH", value=size_alias)
+            diagnostics.append({
+                "code": "COMPANY_SIZE_FROM_CERTIFICATE",
+                "raw": raw,
+                "certificate_name": name,
+                "company_size": size_alias,
+            })
         elif name:
             scope: dict[str, Any] = {"kind": kind}
             if issuer:
@@ -364,11 +431,13 @@ def adapt_legacy_slot(
     elif slot_type == "기업규모요건":
         company_size = (slot.get("기업규모_raw") or "").strip()
         if company_size:
+            # 이어 붙인 규모 낱말("중·소기업·소상공인")은 판정기의 alias 표에 없어 문자열
+            # 비교로 떨어진다 — 합집합이 한 낱말과 같으면 그 낱말로 정규화한다(위 주석).
             add(
                 "COMPANY_SIZE",
                 "COMPANY_SIZE",
                 operator="MATCH",
-                value=company_size,
+                value=company_size_alias(company_size) or company_size,
                 scope={"restriction": "EXCLUDE"}
                 if _SIZE_EXCLUSION_RE.search(raw)
                 else {},

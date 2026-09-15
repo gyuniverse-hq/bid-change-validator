@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import unicodedata
 from datetime import datetime
 from datetime import timezone
@@ -139,12 +140,15 @@ def main() -> int:
 
         records = []
         for index in range(args.runs):
+            started = time.perf_counter()
             result = analyze_qualification_documents(
                 analysis_input, structured_extract=extractor
             )
+            elapsed = round(time.perf_counter() - started, 1)
             shape = layers(result)
             records.append({
                 "run_index": index,
+                "elapsed_seconds": elapsed,
                 "status": result.status,
                 "system_fingerprint": extractor.last_system_fingerprint,
                 "counts": {name: len(rows) for name, rows in shape.items()},
@@ -152,7 +156,7 @@ def main() -> int:
                 "layers": shape,
             })
             print(
-                f"  run{index}  {result.status:<10} "
+                f"  run{index}  {result.status:<10} {elapsed:>6.1f}s  "
                 + "  ".join(
                     f"{name} {len(rows):>2}({fingerprint(rows)})"
                     for name, rows in shape.items()

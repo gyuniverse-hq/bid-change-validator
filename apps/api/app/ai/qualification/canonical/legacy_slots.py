@@ -294,7 +294,12 @@ def adapt_legacy_slot(
             "면허요건": "LICENSE",
             "등록요건": "REGISTRATION",
         }[slot_type]
-        if slot_type == "등록요건" and industry_codes:
+        # [재현 2026-09-15] 등록요건뿐 아니라 인증·면허로 분류돼도 원문에 업종코드가 하나
+        # 있으면 업종 요건이다. 실측에서 같은 "영업신고(업종코드 : 1450)" 조항을 모델이
+        # 인증요건으로 낸 실행이 있었고, 그때 INDUSTRY 1450 이 아예 안 만들어져 인증 쪽에서
+        # 미달이 났다. 프롬프트가 "혼동하지 마라" 라고 적어둔 바로 그 쌍이다 — 코드는
+        # 흔들리지 않으니 코드를 따른다.
+        if industry_codes:
             add("INDUSTRY", "INDUSTRY", operator="MATCH", value=next(iter(industry_codes)), scope={"kind": kind, "industry_name": name})
         elif name:
             scope: dict[str, Any] = {"kind": kind}

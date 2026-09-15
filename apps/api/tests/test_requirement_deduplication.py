@@ -152,3 +152,112 @@ def test_an_unrelated_clause_is_not_folded_even_with_a_matching_name() -> None:
     ])
 
     assert len(kept) == 2
+
+
+def test_a_certification_slot_with_one_industry_code_becomes_industry() -> None:
+    """[재현 2026-09-15] 같은 "영업신고(업종코드 : 1450)" 조항을 모델이 인증요건으로 낸
+    실행이 있었다. 그때 INDUSTRY 1450 이 안 만들어져 인증 쪽에서 미달이 났다.
+    분류가 뭐라 하든 업종코드가 하나면 업종 요건이다."""
+    from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+
+    for slot_type in ("인증요건", "면허요건", "등록요건"):
+        requirements, _ = adapt_legacy_slot(
+            {"유형": slot_type, "raw": LONG_RAW, "등록인증_raw": "영업신고"},
+            notice_version_id="NV-1", key_prefix="R",
+        )
+        assert [(item.type, item.value) for item in requirements] == [("INDUSTRY", "1450")], slot_type
+
+
+def test_the_run_that_produced_only_two_registrations_collapses_to_one_industry() -> None:
+    """luna run2 그대로 — INDUSTRY 없이 등록 둘. 하나는 코드가 있어 INDUSTRY 가 되고,
+    나머지 하나는 그 위로 접혀야 한다."""
+    from apps.api.app.ai.qualification.canonical.canonicalize import canonicalize_validated_slots
+
+    blocks = [{"document_id": "doc", "block_index": 0, "page": 1, "location": "p.1"}]
+    result = canonicalize_validated_slots([
+        {"유형": "등록요건", "raw": SHORT_RAW, "등록인증_raw": "단체급식업 등록업체",
+         "_source_blocks": blocks, "_source_chunk_id": "C1"},
+        {"유형": "인증요건", "raw": LONG_RAW, "등록인증_raw": "영업신고",
+         "_source_blocks": blocks, "_source_chunk_id": "C1"},
+    ], notice_version_id="NV-1")
+
+    assert [(item.type, item.value) for item in result["requirements"]] == [("INDUSTRY", "1450")]
+
+
+@pytest.mark.parametrize("value", ["단체급식업등록업체", "영업신고", "단체급식업"])
+def test_registration_act_phrases_count_as_industry_names(value: str) -> None:
+    kept, _ = deduplicate_requirements([
+        _requirement("A", "REGISTRATION_CERTIFICATION", value, SHORT_RAW),
+        _requirement("B", "INDUSTRY", "1450", LONG_RAW),
+    ])
+
+    assert [(item.type, item.value) for item in kept] == [("INDUSTRY", "1450")]
+
+
+# ---- 2026-09-15 두 번째 실측에서 나온 유령 셋 ----
+
+
+def test_a_name_valued_industry_folds_onto_the_coded_one() -> None:
+    """run0: 같은 조항에서 INDUSTRY "단체급식업" 과 INDUSTRY "1450" 이 둘 다 나왔다."""
+    kept, diagnostics = deduplicate_requirements([
+        _requirement("A", "INDUSTRY", "단체급식업", SHORT_RAW),
+        _requirement("B", "INDUSTRY", "1450", LONG_RAW),
+    ])
+
+    assert [(item.type, item.value) for item in kept] == [("INDUSTRY", "1450")]
+    assert diagnostics[0]["code"] == "MERGED_INDUSTRY_REGISTRATION"
+
+
+@pytest.mark.parametrize("act", ["인·허가", "인허가", "영업신고", "허가", "등록"])
+def test_a_bare_registration_act_folds_onto_the_industry_code(act: str) -> None:
+    """run1: "인·허가" 처럼 등록 행위 낱말만 값으로 낸 인증 요건. 인증 이름이 아니다."""
+    kept, _ = deduplicate_requirements([
+        _requirement("A", "REGISTRATION_CERTIFICATION", act, LONG_RAW),
+        _requirement("B", "INDUSTRY", "1450", LONG_RAW),
+    ])
+
+    assert [(item.type, item.value) for item in kept] == [("INDUSTRY", "1450")]
+
+
+def test_the_same_requirement_read_from_two_documents_is_one() -> None:
+    """run2: 공고문과 제안요청서에 같은 조항이 두 벌. 원문만 다르고 나머지는 같다."""
+    def req(key: str, raw: str) -> QualificationRequirement:
+        return QualificationRequirement(
+            requirement_key=key, notice_version_id="NV-1", type="EXPERIENCE_FIELD",
+            operator="MATCH", value="단체급식소 운영", raw=raw,
+            requirement_group_key="G", group_operator="ALL_OF",
+            scope={"experience_field": "단체급식소 운영"},
+        )
+
+    kept, diagnostics = deduplicate_requirements([
+        req("A", "다. 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영"),
+        req("B", "다. 2개 이상 각 단체급식소*(1일 평균 800식 이상)를 1년간 운영"),
+    ])
+
+    assert len(kept) == 1
+    assert [item["code"] for item in diagnostics] == ["DUPLICATE_REQUIREMENT"]
+
+
+def test_same_value_but_different_scope_stays_separate() -> None:
+    """금액이 같아도 경험분야가 다르면 별개 요건이다. 원문을 열쇠에서 뺀 대가로 범위는 넣는다."""
+    def req(key: str, field: str) -> QualificationRequirement:
+        return QualificationRequirement(
+            requirement_key=key, notice_version_id="NV-1", type="PERFORMANCE_AMOUNT",
+            operator=">=", value=50000000, raw=f"{field} 실적 5천만원 이상",
+            requirement_group_key="G", group_operator="ALL_OF",
+            scope={"experience_field": field}, period_months=36,
+        )
+
+    kept, _ = deduplicate_requirements([req("A", "IoT 플랫폼"), req("B", "AI 학습")])
+
+    assert len(kept) == 2
+
+
+def test_a_coded_industry_never_folds_onto_another() -> None:
+    """코드끼리는 접지 않는다. 1257 과 6770 은 다른 업종이다 — ANY_OF 묶음의 구성원들이다."""
+    kept, _ = deduplicate_requirements([
+        _requirement("A", "INDUSTRY", "1257", LONG_RAW),
+        _requirement("B", "INDUSTRY", "6770", LONG_RAW),
+    ])
+
+    assert len(kept) == 2

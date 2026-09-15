@@ -46,7 +46,12 @@ _INDUSTRY_CODE_VALUE_RE = re.compile(r"^[0-9]{4}$|^[0-9]{10}$")
 # 접히는 쪽의 값이 업종명 그 자체여야 한다. 한글로만 이루어지고 "…업" 으로 끝나거나
 # 그 뒤에 등록·신고·허가가 붙은 모양. 숫자나 로마자가 섞이면 인증 규격 이름이다
 # (ISO 9001, KS 27001). 그런 것은 별개 요건이므로 접지 않는다.
-_INDUSTRY_NAME_VALUE_RE = re.compile(r"[가-힣·ㆍ]{2,}업(?:등록|신고|허가|업체)?")
+# "단체급식업등록업체", "영업신고" 처럼 등록 행위까지 붙여 쓴 값도 업종명 모양이다.
+_INDUSTRY_NAME_VALUE_RE = re.compile(r"[가-힣·ㆍ]+업(?:등록|신고|허가)?(?:업체|업자)?")
+# 업종 등록 행위 그 자체를 값으로 낸 것 — "인·허가", "영업신고", "등록". 인증 이름이 아니다.
+# 진짜 인증은 고유명사가 붙는다(ISO 9001, 직접생산확인증명서). 이런 낱말만으로 된 값은
+# 같은 조항의 업종코드가 이미 말하는 사실이다.
+_REGISTRATION_ACT_VALUE_RE = re.compile(r"(?:인[·ㆍ]?허가|허가|영업신고|신고|등록)(?:필|완료)?")
 
 
 def _norm(value: object | None) -> str:
@@ -55,8 +60,26 @@ def _norm(value: object | None) -> str:
     return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value)))
 
 
-def _identity(requirement: QualificationRequirement) -> tuple[str, str, str]:
-    return requirement.type, _norm(requirement.value), _norm(requirement.raw)
+def _loose(value: str) -> str:
+    return value.replace("·", "").replace("ㆍ", "")
+
+
+def _identity(requirement: QualificationRequirement) -> tuple:
+    """같은 요건인가를 정하는 열쇠. 원문은 넣지 않는다.
+
+    [재현 2026-09-15] 같은 경험분야 요건이 원문만 다른 채 둘 나왔다 — 공고문과 제안요청서에
+    같은 조항이 두 벌 있어서다. 유형·값·범위·기간이 다 같으면 어느 문서에서 읽었든 같은
+    요건이다. 범위(scope)까지 넣는 이유는 금액이 같아도 경험분야가 다르면 별개 요건이기
+    때문이다.
+    """
+    scope = requirement.scope or {}
+    return (
+        requirement.type,
+        _norm(requirement.value),
+        _norm(requirement.operator),
+        _norm(requirement.period_months),
+        tuple(sorted((k, _norm(v)) for k, v in scope.items() if k != "industry_name")),
+    )
 
 
 def _has_closed_identifier(requirement: QualificationRequirement) -> bool:
@@ -72,17 +95,28 @@ def _folds_into(
     말을 바꿔 부른 것이지만, 같은 조항에 적힌 "ISO 9001" 은 별개의 인증 요건이다.
     이 구분이 없으면 진짜 인증 요건을 삼킨다 — 실제로 첫 판에서 그랬다.
     """
-    if candidate.type != "REGISTRATION_CERTIFICATION" or keeper.type != "INDUSTRY":
+    if keeper.type != "INDUSTRY" or not _has_closed_identifier(keeper):
         return False
-    if not _has_closed_identifier(keeper):
+    if candidate.type not in ("REGISTRATION_CERTIFICATION", "INDUSTRY"):
+        return False
+    if candidate is keeper or _has_closed_identifier(candidate):
         return False
     value = _norm(candidate.value)
-    if not _INDUSTRY_NAME_VALUE_RE.fullmatch(value):
+    if not (
+        _INDUSTRY_NAME_VALUE_RE.fullmatch(value)
+        or _REGISTRATION_ACT_VALUE_RE.fullmatch(value)
+    ):
         return False
+    # 같은 조항인가 — 한쪽 원문이 다른 쪽을 담고 있어야 한다. 방향은 상관없다: 모델이
+    # 코드 있는 쪽을 짧게 인용할 수도 있다.
     candidate_raw, keeper_raw = _norm(candidate.raw), _norm(keeper.raw)
-    if not candidate_raw or candidate_raw not in keeper_raw:
+    if not candidate_raw or not keeper_raw:
         return False
-    return value in keeper_raw
+    if candidate_raw not in keeper_raw and keeper_raw not in candidate_raw:
+        return False
+    # "인허가" 와 "인·허가" 는 같은 말이다. 가운뎃점만 다른 것으로 대조가 어긋나지 않게 한다.
+    loose = _loose(value)
+    return loose in _loose(keeper_raw) or loose in _loose(candidate_raw)
 
 
 def deduplicate_requirements(

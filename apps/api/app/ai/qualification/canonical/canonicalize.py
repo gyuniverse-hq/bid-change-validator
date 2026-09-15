@@ -7,6 +7,7 @@ from typing import Any
 from ...contracts import Evidence, QualificationRequirement
 from ..grounding.evidence_adapter import build_evidence_from_slot
 from .legacy_slots import adapt_legacy_slot
+from .deduplicate import deduplicate_requirements
 
 
 def canonicalize_validated_slot(
@@ -85,6 +86,8 @@ def canonicalize_validated_slots(
         evidence.extend(slot_evidence)
         diagnostics.extend(slot_diagnostics)
 
+    requirements, overlaps = deduplicate_requirements(requirements, evidence=evidence)
+    diagnostics.extend(overlaps)
     return {
         "requirements": requirements,
         "evidence": evidence,

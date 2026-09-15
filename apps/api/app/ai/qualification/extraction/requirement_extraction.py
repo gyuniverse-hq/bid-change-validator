@@ -1,129 +1,52 @@
-"""Eligibility requirement extraction over semantic chunks.
+"""Legacy extraction with source-owned quotes and same-clause detail validation.
 
-The production boundary is:
-
-    backend extracted_blocks
-        -> canonical source blocks
-        -> semantic chunks
-        -> structured extractor (LLM adapter supplied by caller)
-        -> validated extraction slots
-
-The LLM extracts source text only. Deterministic code validates, normalizes,
-resolves canonical values, and later judges them.
+Legacy remains an explicit compatibility strategy. It does not infer cross-clause
+relationships or silently recover codes after dropping exception text.
 """
-
 from __future__ import annotations
-
 import re
 import unicodedata
 from collections.abc import Callable
 from typing import Any
+from .review_grounding import SourceQuoteError, resolve_source_quote
 
+LEGACY_GROUNDING_VERSION = "qualification-legacy-grounding-v2"
 StructuredExtractor = Callable[[str, str, dict[str, Any]], dict[str, Any]]
-
-_SECTION_HEADER_KEYWORDS = (
-    "참가자격",
-    "입찰참가",
-    "자격요건",
-    "참가 자격",
-    "신청자격",
-    "제한사항",
-)
-
-_FALLBACK_REQUIREMENT_KEYWORDS = (
-    *_SECTION_HEADER_KEYWORDS,
-    "실적",
-    "면허",
-    "인증",
-    "등록",
-    "소재",
-    "지역",
-    "인력",
-    "업종",
-    "업태",
-    "경험",
-    "분야",
-    "소상공인",
-    "소기업",
-    "중소기업",
-    "중견기업",
-    "대기업",
-)
-
-_DETAIL_RAW_FIELDS = (
-    "기간_raw",
-    "금액_raw",
-    "건수_raw",
-    "업종_raw",
-    "경험분야_raw",
-    "지역_raw",
-    "인원_raw",
-    "인력역할_raw",
-    "등록인증_raw",
-    "발급기관_raw",
-    "기업규모_raw",
-    "실적기관_raw",
-)
+_SECTION_HEADER_KEYWORDS = ("참가자격", "입찰참가", "자격요건", "참가 자격", "신청자격", "제한사항")
+_FALLBACK_REQUIREMENT_KEYWORDS = (*_SECTION_HEADER_KEYWORDS, "실적", "면허", "인증", "등록", "소재", "지역", "인력",
+    "업종", "업태", "경험", "분야", "소상공인", "소기업", "중소기업", "중견기업", "대기업")
+_DETAIL_RAW_FIELDS = ("기간_raw", "금액_raw", "건수_raw", "업종_raw", "경험분야_raw", "지역_raw", "인원_raw",
+    "인력역할_raw", "등록인증_raw", "발급기관_raw", "기업규모_raw", "실적기관_raw")
 
 
 def _nullable_source_string(description: str) -> dict[str, Any]:
     return {"type": ["string", "null"], "description": description}
 
 
-SLOT_SCHEMA: dict[str, Any] = {
-    "name": "eligibility_slots",
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "requirements": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "유형": {
-                            "type": "string",
-                            "enum": [
-                                "실적요건",
-                                "인력요건",
-                                "인증요건",
-                                "면허요건",
-                                "등록요건",
-                                "지역요건",
-                                "업종요건",
-                                "경험분야요건",
-                                "기업규모요건",
-                                "기타요건",
-                            ],
-                        },
-                        "raw": {"type": "string", "description": "요건 원문 그대로. 요약·변형 금지"},
-                        "기간_raw": _nullable_source_string("기간 표현 원문. 없으면 null"),
-                        "금액_raw": _nullable_source_string("금액 표현 원문. 없으면 null"),
-                        "건수_raw": _nullable_source_string("실적 건수 표현 원문. 없으면 null"),
-                        "업종_raw": _nullable_source_string("업종·업태 제한 원문 명칭. 없으면 null"),
-                        "경험분야_raw": _nullable_source_string("과거 실적/경험에서 요구하는 분야 원문. 없으면 null"),
-                        "지역_raw": _nullable_source_string("지역·소재지 제한의 원문 명칭. 없으면 null"),
-                        "인원_raw": _nullable_source_string("필요 인원 수 표현 원문. 없으면 null"),
-                        "인력역할_raw": _nullable_source_string("요구 인력 역할·자격·등급 원문. 없으면 null"),
-                        "등록인증_raw": _nullable_source_string("등록·면허·인증 명칭 원문. 없으면 null"),
-                        "발급기관_raw": _nullable_source_string("등록·면허·인증 발급기관 원문. 없으면 null"),
-                        "기업규모_raw": _nullable_source_string("소상공인·소기업·중소기업·중견기업 등 기업규모 원문. 없으면 null"),
-                        "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
-                        "근거조항": _nullable_source_string("이 요건이 적힌 문서 자체의 조항 번호/라벨(예: 2, 3.1, 제5조). 인용된 법령 조문은 제외. 없으면 null"),
-                    },
-                    "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"],
-                },
-            }
-        },
-        "required": ["requirements"],
-    },
-}
+SLOT_SCHEMA: dict[str, Any] = {"name": "eligibility_slots", "schema": {
+    "type": "object", "additionalProperties": False, "properties": {"requirements": {
+        "type": "array", "items": {"type": "object", "additionalProperties": False, "properties": {
+            "유형": {"type": "string", "enum": ["실적요건", "인력요건", "인증요건", "면허요건", "등록요건", "지역요건", "업종요건", "경험분야요건", "기업규모요건", "기타요건"]},
+            "raw": {"type": "string", "description": "요건 원문 그대로. 요약·변형 금지"},
+            "기간_raw": _nullable_source_string("기간 표현 원문. 없으면 null"),
+            "금액_raw": _nullable_source_string("금액 표현 원문. 없으면 null"),
+            "건수_raw": _nullable_source_string("실적 건수 표현 원문. 없으면 null"),
+            "업종_raw": _nullable_source_string("업종·업태 제한 원문 명칭. 없으면 null"),
+            "경험분야_raw": _nullable_source_string("과거 실적/경험에서 요구하는 분야 원문. 없으면 null"),
+            "지역_raw": _nullable_source_string("지역·소재지 제한의 원문 명칭. 없으면 null"),
+            "인원_raw": _nullable_source_string("필요 인원 수 표현 원문. 없으면 null"),
+            "인력역할_raw": _nullable_source_string("요구 인력 역할·자격·등급 원문. 없으면 null"),
+            "등록인증_raw": _nullable_source_string("등록·면허·인증 명칭 원문. 없으면 null"),
+            "발급기관_raw": _nullable_source_string("등록·면허·인증 발급기관 원문. 없으면 null"),
+            "기업규모_raw": _nullable_source_string("소상공인·소기업·중소기업·중견기업 등 기업규모 원문. 없으면 null"),
+            "실적기관_raw": _nullable_source_string("실적 대상 발주기관·고객 범위 원문. 없으면 null"),
+            "근거조항": _nullable_source_string("이 요건이 적힌 문서 자체의 조항 번호/라벨(예: 2, 3.1, 제5조). 인용된 법령 조문은 제외. 없으면 null"),
+        }, "required": ["유형", "raw", *_DETAIL_RAW_FIELDS, "근거조항"]}}}, "required": ["requirements"]}}
 
 SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출하는 도구다. 규칙:
 1. 본문에 명시된 요건만 추출한다. 없는 요건을 만들어내지 마라. 없으면 빈 배열.
 2. raw에는 원문 문장을 그대로 담는다. 요약하거나 수치·코드·enum으로 변환하지 마라.
-3. 모든 *_raw 필드는 제공된 원문 표현을 그대로 담고, 해당 표현이 없으면 null로 둔다.
+3. 모든 *_raw 필드는 raw에 담은 같은 조건의 연속 원문 구간이어야 한다. 다른 조항의 값을 가져오거나 쉼표·세미콜론으로 떨어진 표현을 이어붙이지 않는다.
 4. 실적요건은 기간/금액/건수/경험분야/실적기관 표현을 같은 슬롯에 함께 담을 수 있다.
 5. 업종·업태 자체가 참가 제한이면 유형=업종요건, 업종_raw에 원문 명칭을 담는다. 등록·면허·인증 보유 여부와 혼동하지 마라.
 6. 금액·건수와 독립적으로 특정 경험 분야 보유 자체를 요구하는 경우에만 유형=경험분야요건을 사용한다.
@@ -137,55 +60,29 @@ SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출�
 14. 참가자격 섹션뿐 아니라 첨부 제안요청서·과업지시서에서 명시적으로 참가 자격을 요구하는 실적/인력/업종/지역/기업규모 조건도 추출 대상이다."""
 
 _TOP_LEVEL_LABEL_RE = re.compile(r"^(?:\d+|[가-힣]|[IVXivx]+|제\d+조(?:의\d+)?|제\d+장)$")
-
-# 한국 공고의 항목 위계. 숫자 1. 아래에 가. 아래에 1) 아래에 가) 가 온다.
-# 예전에는 이 넷을 전부 "상위 제목"으로 봐서, "3. 입찰참가자격" 의 자식을 걷다가
-# 바로 다음 "가." 에서 멈췄다. 자격 절의 본문(가·나·다 …)이 통째로 빠졌고, 그 항목들은
-# 제목에 키워드가 없어 앵커도 못 됐다. 위계를 분리해 자식 항목은 다음 동급·상위
-# 제목이 나타날 때까지 자격 절과 함께 전달한다.
 _LABEL_RANK_PATTERNS = (
-    (re.compile(r"^(?:제\d+장|제\d+조(?:의\d+)?)$"), 0),   # 제N장 · 제N조
-    (re.compile(r"^(?:\d+|[IVXivx]+)$"), 10),               # 1.  Ⅰ.
-    (re.compile(r"^[가-힣]$"), 20),                          # 가.
-    (re.compile(r"^\d+\)$"), 30),                           # 1)
-    (re.compile(r"^[가-힣]\)$"), 40),                        # 가)
-    (re.compile(r"^\(\d+\)$"), 50),                         # (1)
-)
-
-
-# 청커는 라벨에서 괄호를 뗀다 — "1)" 도 "1." 도 clause_label 은 '1' 이다. 위계는
-# 본문 첫 줄에 남아 있는 실제 기호로 읽는다.
+    (re.compile(r"^(?:제\d+장|제\d+조(?:의\d+)?)$"), 0),
+    (re.compile(r"^(?:\d+|[IVXivx]+)$"), 10),
+    (re.compile(r"^[가-힣]$"), 20), (re.compile(r"^\d+\)$"), 30),
+    (re.compile(r"^[가-힣]\)$"), 40), (re.compile(r"^\(\d+\)$"), 50))
 _HEADING_MARKER_RE = re.compile(
     r"^\s*(?:(?P<paren_num>\(\d+\))|(?P<num_paren>\d+\))|(?P<han_paren>[가-힣]\))"
     r"|(?P<dotted>\d+(?:\.\d+)+)|(?P<num>\d+)\s*[.．]|(?P<han>[가-힣])\s*[.．]"
-    r"|(?P<article>제\d+(?:장|조(?:의\d+)?)))"
-)
-_MARKER_RANK = {
-    "article": 0,
-    "num": 10,
-    "han": 20,
-    "num_paren": 30,
-    "han_paren": 40,
-    "paren_num": 50,
-}
+    r"|(?P<article>제\d+(?:장|조(?:의\d+)?)))")
+_MARKER_RANK = {"article": 0, "num": 10, "han": 20, "num_paren": 30, "han_paren": 40, "paren_num": 50}
 
 
 def _label_rank(chunk: dict[str, Any]) -> int | None:
-    """항목 기호의 위계. 낮을수록 상위. 기호가 없으면 None."""
     label = str(chunk.get("clause_label") or "").strip()
     if not label:
         return None
-    marker = _HEADING_MARKER_RE.match(_heading_text(chunk))
+    first = _heading_text(chunk)
+    if re.match(r"^\s*[12]\d{3}[./-]\s*\d{1,2}[./-]\s*\d{1,2}(?:[.]|\s|$)", first):
+        return None
+    marker = _HEADING_MARKER_RE.match(first)
     if marker:
-        if marker.lastgroup == "dotted":
-            # 숫자 절 안에서 점 하나마다 한 단계 깊어진다. 한글 항목(가.)보다
-            # 앞선 대역을 써서 `3.1 참가자격 -> 가. 업종`도 자식으로 유지한다.
-            return 10 + marker.group("dotted").count(".")
-        return _MARKER_RANK[marker.lastgroup]
-    for pattern, rank in _LABEL_RANK_PATTERNS:
-        if pattern.match(label):
-            return rank
-    return None
+        return 10 + marker.group("dotted").count(".") if marker.lastgroup == "dotted" else _MARKER_RANK[marker.lastgroup]
+    return next((rank for pattern, rank in _LABEL_RANK_PATTERNS if pattern.match(label)), None)
 
 
 def _is_top_level(chunk: dict[str, Any]) -> bool:
@@ -194,8 +91,8 @@ def _is_top_level(chunk: dict[str, Any]) -> bool:
 
 
 def _chunk_document_id(chunk: dict[str, Any]) -> str | None:
-    document_ids = {str(block.get("document_id")) for block in list(chunk.get("source_blocks") or []) if block.get("document_id")}
-    return next(iter(document_ids)) if len(document_ids) == 1 else None
+    ids = {str(b.get("document_id")) for b in list(chunk.get("source_blocks") or []) if b.get("document_id")}
+    return next(iter(ids)) if len(ids) == 1 else None
 
 
 def _heading_text(chunk: dict[str, Any]) -> str:
@@ -204,62 +101,37 @@ def _heading_text(chunk: dict[str, Any]) -> str:
 
 
 def _is_eligibility_section_anchor(chunk: dict[str, Any]) -> bool:
-    rank = _label_rank(chunk)
-    if rank is None:
-        return False
-    heading = _heading_text(chunk)
-    return any(keyword in heading for keyword in _SECTION_HEADER_KEYWORDS)
+    return _label_rank(chunk) is not None and any(k in _heading_text(chunk) for k in _SECTION_HEADER_KEYWORDS)
 
 
 def select_eligibility_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Select eligibility sections and their children without crossing documents."""
-    selected: dict[int, dict[str, Any]] = {}
-    anchors = [index for index, chunk in enumerate(chunks) if _is_eligibility_section_anchor(chunk)]
-
-    for index in anchors:
-        anchor = chunks[index]
-        selected[index] = anchor
-        anchor_document_id = _chunk_document_id(anchor)
-        anchor_rank = _label_rank(anchor)
-        for child_index in range(index + 1, len(chunks)):
-            candidate = chunks[child_index]
-            candidate_document_id = _chunk_document_id(candidate)
-            if anchor_document_id is not None and candidate_document_id is not None and candidate_document_id != anchor_document_id:
+    selected = {}
+    anchors = [i for i, c in enumerate(chunks) if _is_eligibility_section_anchor(c)]
+    for i in anchors:
+        anchor = chunks[i]
+        selected[i] = anchor
+        document, rank = _chunk_document_id(anchor), _label_rank(anchor)
+        for j in range(i + 1, len(chunks)):
+            child = chunks[j]
+            doc, child_rank = _chunk_document_id(child), _label_rank(child)
+            if document is not None and doc is not None and document != doc:
                 break
-            # 앵커와 같거나 더 상위인 기호가 나오면 절이 끝난 것이다. 더 깊은 기호
-            # (3. 아래의 가., 가. 아래의 1))는 그 절의 본문이므로 계속 걷는다.
-            candidate_rank = _label_rank(candidate)
-            if candidate_rank is not None and (anchor_rank is None or candidate_rank <= anchor_rank):
+            if child_rank is not None and (rank is None or child_rank <= rank):
                 break
-            selected[child_index] = candidate
+            selected[j] = child
+    anchored_documents = {_chunk_document_id(chunks[i]) for i in anchors}
+    keywords = _FALLBACK_REQUIREMENT_KEYWORDS[len(_SECTION_HEADER_KEYWORDS):] if anchors else _FALLBACK_REQUIREMENT_KEYWORDS
+    for i, chunk in enumerate(chunks):
+        if _chunk_document_id(chunk) not in anchored_documents and any(k in (chunk.get("text") or "") for k in keywords):
+            selected[i] = chunk
+    return [selected[i] for i in sorted(selected)] if selected else chunks
 
-    anchored_documents = {_chunk_document_id(chunks[index]) for index in anchors}
-    fallback_keywords = _FALLBACK_REQUIREMENT_KEYWORDS[len(_SECTION_HEADER_KEYWORDS):] if anchors else _FALLBACK_REQUIREMENT_KEYWORDS
-    for index, chunk in enumerate(chunks):
-        if _chunk_document_id(chunk) not in anchored_documents and any(keyword in (chunk.get("text") or "") for keyword in fallback_keywords):
-            selected[index] = chunk
-    return [selected[index] for index in sorted(selected)] if selected else chunks
 
-
-_GROUNDING_PUNCTUATION = str.maketrans(
-    {
-        "․": "·",
-        "ㆍ": "·",
-        "‧": "·",
-        "・": "·",
-        "‥": "·",
-        "（": "(",
-        "）": ")",
-    }
-)
+_GROUNDING_PUNCTUATION = str.maketrans({"․": "·", "ㆍ": "·", "‧": "·", "・": "·", "‥": "·", "（": "(", "）": ")"})
 
 
 def _squash(value: str) -> str:
-    """Normalize source text only for containment checks; stored raw stays untouched."""
-    # U+2024 (ONE DOT LEADER) becomes an ASCII period under NFKC, so translate
-    # punctuation variants first and apply compatibility normalization afterward.
-    normalized = unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION))
-    return re.sub(r"\s+", "", normalized)
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION)))
 
 
 def _normalize_reference(value: str) -> str:
@@ -273,68 +145,56 @@ def _reference_parts(reference: str) -> list[str]:
     return [part.strip() for part in _REFERENCE_SPLIT_RE.split(reference) if part.strip()]
 
 
-def classify_clause_reference(
-    reference: str,
-    chunks: list[dict[str, Any]],
-    source_chunk: dict[str, Any] | None,
-) -> str:
-    """Classify a model-supplied reference without discarding grounded text."""
+def classify_clause_reference(reference: str, chunks: list[dict[str, Any]], source_chunk: dict[str, Any] | None) -> str:
     parts = _reference_parts(reference)
     if not parts:
         return "UNVERIFIED"
-
-    source_labels: set[str] = set()
-    if source_chunk and source_chunk.get("clause_label"):
-        source_labels.add(str(source_chunk["clause_label"]))
-    source_text = (source_chunk.get("text") or "") if source_chunk else ""
-    if source_labels and all(
-        part in source_labels or _normalize_reference(part) in source_labels
-        for part in parts
-    ):
+    labels = {str(source_chunk["clause_label"])} if source_chunk and source_chunk.get("clause_label") else set()
+    text = (source_chunk.get("text") or "") if source_chunk else ""
+    if labels and all(p in labels or _normalize_reference(p) in labels for p in parts):
         return "DOCUMENT_CLAUSE"
-    if source_text and all(
-        re.search(
-            r"(?m)^\s*" + re.escape(_normalize_reference(part)) + r"(?:[.)\s]|$)",
-            source_text,
-        )
-        for part in parts
-    ):
+    if text and all(re.search(r"(?m)^\s*" + re.escape(_normalize_reference(p)) + r"(?:[.)\s]|$)", text) for p in parts):
         return "DOCUMENT_CLAUSE"
-
-    haystack = _squash(source_text)
-    if not haystack:
-        haystack = "".join(_squash(chunk.get("text") or "") for chunk in chunks)
-    if haystack and all(_squash(part) in haystack for part in parts):
-        return "STATUTE"
-    return "UNVERIFIED"
+    haystack = _squash(text) or "".join(_squash(c.get("text") or "") for c in chunks)
+    return "STATUTE" if haystack and all(_squash(p) in haystack for p in parts) else "UNVERIFIED"
 
 
 def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any] | None:
-    probe = _squash(raw)
-    if not probe:
-        return None
+    matches = []
     for chunk in chunks:
-        if probe in _squash(chunk.get("text") or ""):
-            return chunk
-    return None
+        try:
+            resolve_source_quote(chunk.get("text") or "", raw)
+        except SourceQuoteError:
+            continue
+        matches.append(chunk)
+    return matches[0] if len(matches) == 1 else None
 
 
 def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) -> tuple[bool, str, dict[str, Any] | None]:
-    """Reject unsupported source text; clear unverified document locations."""
+    """공고 어디엔가 있는 값이 아니라 해당 raw 구간의 실제 인용을 확인한다."""
     raw = (slot.get("raw") or "").strip()
     if not raw:
         return False, "raw 비어 있음", None
-
     source_chunk = _find_source_chunk(raw, chunks)
     if source_chunk is None:
-        return False, "raw가 본문에 존재하지 않음(과잉 추출 의심)", None
-
-    source_text = _squash(source_chunk.get("text") or "")
-    for field_name in _DETAIL_RAW_FIELDS:
-        detail = (slot.get(field_name) or "").strip()
-        if detail and _squash(detail) not in source_text:
-            return False, f"{field_name}가 본문에 존재하지 않음(과잉 추출 의심)", source_chunk
-
+        return False, "raw가 본문에 존재하지 않음(과잉 추출 또는 모호한 인용)", None
+    restored = resolve_source_quote(source_chunk.get("text") or "", raw)
+    grounded = {}
+    for field in _DETAIL_RAW_FIELDS:
+        detail = (slot.get(field) or "").strip()
+        if not detail:
+            continue
+        try:
+            grounded[field] = resolve_source_quote(restored.quote, detail, base_offset=restored.start_offset)
+        except SourceQuoteError as error:
+            slot["_rejected_detail"] = {"field": field, "value": detail, "code": str(error)}
+            return False, f"{field}가 본문에 존재하지 않음(같은 요건의 원문 범위 확인 필요)", source_chunk
+    slot["raw"] = restored.quote
+    slot["_grounding_basis"] = {"version": LEGACY_GROUNDING_VERSION, "coordinate_scope": "SOURCE_CHUNK",
+        "raw_start": restored.start_offset, "raw_end": restored.end_offset,
+        "fields": {key: {"start": span.start_offset, "end": span.end_offset, "method": span.method} for key, span in grounded.items()}}
+    for key, span in grounded.items():
+        slot[key] = span.quote
     reference = slot.get("근거조항")
     if reference:
         kind = classify_clause_reference(str(reference), chunks, source_chunk)
@@ -344,7 +204,6 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
             slot["근거조항"] = None
         elif kind == "UNVERIFIED":
             slot["근거조항"] = None
-
     return True, "", source_chunk
 
 
@@ -353,65 +212,54 @@ def _rejection_reason_code(reason: str) -> str:
         return "MISSING_RAW"
     if reason.startswith("raw가 본문에 존재하지 않음"):
         return "RAW_NOT_FOUND_IN_SOURCE"
-    if "_raw가 본문에 존재하지 않음" in reason:
-        return "DETAIL_NOT_FOUND_IN_SOURCE"
-    return "SOURCE_VALIDATION_FAILED"
+    return "DETAIL_NOT_FOUND_IN_SOURCE" if "_raw가 본문에 존재하지 않음" in reason else "SOURCE_VALIDATION_FAILED"
 
 
 def build_extraction_body(chunks: list[dict[str, Any]], *, max_chars: int | None = 32_000) -> str:
-    parts: list[str] = []
+    parts = []
     for chunk in chunks:
-        document_id = _chunk_document_id(chunk) or "(문서미상)"
-        clause_label = chunk.get("clause_label") or "(라벨없음)"
-        parts.append(f"[문서 {document_id} | 조항 {clause_label}]\n{chunk.get('text') or ''}")
+        doc = _chunk_document_id(chunk) or "(문서미상)"
+        label = chunk.get("clause_label") or "(라벨없음)"
+        parts.append(f"[문서 {doc} | 조항 {label}]\n{chunk.get('text') or ''}")
     return "\n\n".join(parts)[:max_chars]
 
 
 def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: StructuredExtractor, max_retry: int = 1) -> dict[str, Any]:
-    """Run structured extraction and source-grounding validation."""
     target = select_eligibility_chunks(chunks)
     full_body = build_extraction_body(target, max_chars=None)
-    body = full_body[:32_000]
-    last_notes = ""
-    last_rejected: list[dict[str, str]] = []
-
+    body, last_notes, last_rejected = full_body[:32_000], "", []
+    target_ids = [chunk.get("chunk_id") for chunk in target]
     for attempt in range(max_retry + 1):
         try:
             result = structured_extract(SYSTEM_PROMPT, body, SLOT_SCHEMA)
         except Exception as error:
-            return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": f"구조화 추출 호출 실패: {type(error).__name__}", "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
-
-        accepted: list[dict[str, Any]] = []
-        rejected: list[dict[str, str]] = []
+            return {"slots": [], "dropped_requirements": last_rejected, "status": "failed",
+                "notes": f"구조화 추출 호출 실패: {type(error).__name__}", "target_chunk_ids": target_ids}
+        accepted, rejected = [], []
         requirements = result.get("requirements", []) if isinstance(result, dict) else []
-
         for extracted in requirements:
             slot = dict(extracted)
-            valid, reason, source_chunk = validate_extracted_slot(slot, target)
+            valid, reason, chunk = validate_extracted_slot(slot, target)
             if not valid:
-                rejected.append(
-                    {
-                        "raw": str(slot.get("raw") or ""),
-                        "reason_code": _rejection_reason_code(reason),
-                    }
-                )
+                item = {"raw": str(slot.get("raw") or ""), "reason_code": _rejection_reason_code(reason)}
+                detail = slot.get("_rejected_detail")
+                if detail:
+                    item.update(detail_field=detail["field"], detail_value=detail["value"], validation_code=detail["code"])
+                rejected.append(item)
                 continue
-            if source_chunk is not None:
-                slot["_source_chunk_id"] = source_chunk.get("chunk_id")
-                slot["_source_blocks"] = list(source_chunk.get("source_blocks") or [])
+            if chunk is not None:
+                slot["_source_chunk_id"] = chunk.get("chunk_id")
+                slot["_source_blocks"] = list(chunk.get("source_blocks") or [])
             accepted.append(slot)
-
         if rejected:
             last_rejected = rejected
-
         if accepted or not requirements:
-            reported_rejections = rejected or (last_rejected if not requirements else [])
+            reported = rejected or (last_rejected if not requirements else [])
             truncated = len(full_body) > len(body)
-            notes = ([f"검증 탈락 {len(reported_rejections)}건"] if reported_rejections else [])
+            notes = [f"검증 탈락 {len(reported)}건"] if reported else []
             if truncated:
                 notes.append("입력 길이 제한으로 선택된 원문 일부를 분석하지 못했습니다.")
-            return {"slots": accepted, "dropped_requirements": reported_rejections, "status": "partial" if reported_rejections or truncated else "ok", "notes": " ".join(notes), "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
-
+            return {"slots": accepted, "dropped_requirements": reported, "status": "partial" if reported or truncated else "ok",
+                "notes": " ".join(notes), "target_chunk_ids": target_ids}
         last_notes = f"전 슬롯 검증 탈락(시도 {attempt + 1})"
-
-    return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": last_notes, "target_chunk_ids": [chunk.get("chunk_id") for chunk in target]}
+    return {"slots": [], "dropped_requirements": last_rejected, "status": "failed", "notes": last_notes, "target_chunk_ids": target_ids}

@@ -15,6 +15,7 @@ from ...contracts import QualificationRequirement, RequirementOperator, Requirem
 from ....qualification.rules.clause_safety import unsafe_clause_reason
 from .deduplicate import _INDUSTRY_NAME_VALUE_RE, _REGISTRATION_ACT_VALUE_RE
 
+_MIN_PLAUSIBLE_AMOUNT_KRW = 10_000
 _COUNT_RE = re.compile(r"(\d+)\s*(?:건|회)\s*(이상|초과|이하|미만)?")
 _INDUSTRY_CODE_RE = re.compile(r"업종\s*코드\s*[:：]?\s*([0-9]{4}(?:\s*[,/·]\s*[0-9]{4})*)(?![0-9])")
 _SIZE_EXCLUSION_RE = re.compile(
@@ -196,6 +197,18 @@ def adapt_legacy_slot(
             return [], [{"code": "UNMAPPED_PERFORMANCE", "raw": raw, "reason": "기간을 안전하게 정규화하지 못했습니다."}]
         aggregation = "SUM" if re.search(r"합계|합산|누적|총액", raw) else "UNSPECIFIED"
 
+        # [재현 2026-09-15] 급식 실적 조항("1일 평균 800식 이상")에서 정규화기가 0.0333원을
+        # 금액으로 만들어 냈다. "실적 금액 >= 0.03원" 은 실적이 하나라도 있으면 무조건
+        # 충족이라 틀린 확정 방향이다. 공고의 실적 금액이 만 원 아래일 리 없다 — 그 아래면
+        # 금액이 아니라 다른 숫자(식수·인원·비율)를 잘못 읽은 것이므로 판정에 넣지 않는다.
+        parsed_amount = amount.get("value") if amount.get("parse_status") == "success" else None
+        if parsed_amount is not None and parsed_amount < _MIN_PLAUSIBLE_AMOUNT_KRW:
+            diagnostics.append({
+                "code": "UNMAPPED_PERFORMANCE",
+                "raw": raw,
+                "reason": f"금액 {parsed_amount} 은 실적 금액으로 보기 어렵습니다(하한 {_MIN_PLAUSIBLE_AMOUNT_KRW}원).",
+            })
+            amount = {}
         if amount.get("parse_status") == "success":
             if amount.get("value") is not None:
                 add(

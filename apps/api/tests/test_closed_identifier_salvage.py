@@ -94,3 +94,34 @@ def test_the_helper_reports_nothing_when_context_is_missing() -> None:
     """업종코드가 등록·신고 맥락 없이 나오면 살리지 않는다."""
     assert salvage_closed_identifier("업종코드 : 1450 참고") is None
     assert salvage_closed_identifier("영업신고(업종코드 : 1450)") == ("INDUSTRY", "1450")
+
+
+def test_an_implausibly_small_amount_is_not_a_performance_requirement() -> None:
+    """[재현 2026-09-15] 급식 실적 조항에서 정규화기가 0.0333원을 금액으로 냈다.
+    "실적 금액 >= 0.03원" 은 무조건 충족이라 틀린 확정 방향이다. 판정에 넣지 않는다."""
+    requirements, diagnostics = adapt_legacy_slot(
+        {
+            "유형": "실적요건",
+            "raw": "다. 입찰 공고일 기준 2년 내에 2개 이상 각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적이 있는 업체",
+            "금액_raw": "1일 평균 800식",
+            "금액_norm": {"raw": "1일 평균 800식", "value": 0.0333, "unit": "KRW", "op": ">=", "parse_status": "success"},
+        },
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    assert not any(item.type == "PERFORMANCE_AMOUNT" for item in requirements)
+    assert any(d["code"] == "UNMAPPED_PERFORMANCE" and "하한" in d.get("reason", "") for d in diagnostics)
+
+
+def test_a_normal_amount_still_maps() -> None:
+    requirements, _ = adapt_legacy_slot(
+        {
+            "유형": "실적요건",
+            "raw": "최근 3년 실적 5천만원 이상",
+            "금액_raw": "5천만원 이상",
+            "금액_norm": {"raw": "5천만원 이상", "value": 50000000, "unit": "KRW", "op": ">=", "parse_status": "success"},
+        },
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    assert [(i.type, i.value) for i in requirements] == [("PERFORMANCE_AMOUNT", 50000000)]

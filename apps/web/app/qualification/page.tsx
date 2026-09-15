@@ -121,6 +121,11 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const [reviewStep, setReviewStep] = useState<ReviewStep>('idle');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  /**
+   * 결과 배너의 색. 분석이 온전히 끝나지 않았는데 초록으로 「완료했습니다」를 띄우면
+   * 바로 아래 「일부만 읽었습니다」 경고와 모순된다. 같은 배너 안에서 톤을 바꾼다.
+   */
+  const [messageTone, setMessageTone] = useState<'ok' | 'warn'>('ok');
   // 판정 밖 조건은 10건 넘게 나오는 게 보통이라, 다 펼쳐두면 판정 2건보다 블록이 다섯 배 커진다.
   // 기본은 접어두고 필요할 때 편다. 건수는 접혀 있어도 제목에 그대로 보인다.
   const [showAllUnjudged, setShowAllUnjudged] = useState(false);
@@ -199,6 +204,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setSourceJudgment(null);
     setQuestions([]);
     setMessage('');
+    setMessageTone('ok');
     setBusy('load');
     setError('');
     try {
@@ -247,6 +253,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       const refreshed = await listPreflightCases();
       setCases(refreshed.items);
       router.push(`/qualification?caseId=${created.id}`);
+      setMessageTone('ok');
       setMessage('검토 건을 만들었습니다. 이제 참가자격 검토를 시작할 수 있습니다.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '검토 건 생성에 실패했습니다.');
@@ -266,6 +273,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     setBusy('review');
     setError('');
     setMessage('');
+    setMessageTone('ok');
     const request = generation.current;
     setDisplayJudgment(null);
     setSourceJudgment(null);
@@ -311,7 +319,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       if (request !== generation.current) return;
       setQuestions(nextQuestions);
       setReviewStep('done');
-      setMessage(`참가자격 검토를 완료했습니다. 자격조건 ${'requirements' in current && Array.isArray(current.requirements) ? current.requirements.length : current.requirement_count}건을 분석하고 회사 프로필 기준 판정을 반영했습니다.`);
+      const analyzedCount = 'requirements' in current && Array.isArray(current.requirements) ? current.requirements.length : current.requirement_count;
+      const analysisIncomplete = current.status !== 'SUCCEEDED';
+      setMessageTone(analysisIncomplete ? 'warn' : 'ok');
+      setMessage(analysisIncomplete
+        ? `자격조건 ${analyzedCount}건을 판정했습니다. 첨부 일부를 읽지 못해 빠진 조건이 있을 수 있습니다.`
+        : `자격조건 ${analyzedCount}건을 분석하고 판정했습니다.`);
     } catch (cause) {
       if (request !== generation.current) return;
       setReviewStep('idle');
@@ -349,13 +362,16 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const askableQuestionKeys = new Set(questions.filter((item) => item.askable).map((item) => item.requirement_key));
   const analysisNeedsRetry = Boolean(analysisDetail && (analysisDetail.status !== 'SUCCEEDED' || analysisDetail.requirements.length === 0));
 
+  /**
+   * 진행 중일 때만 띄운다. 완료 문구는 위 결과 배너가 이미 말한다.
+   * 여기서 또 쓰면 「완료했습니다」가 두 번 나오고 그 사이에 「일부만 읽었습니다」가 껴서
+   * 완료인지 아닌지 알 수 없는 화면이 된다.
+   */
   const reviewProgress = reviewStep === 'analysis'
     ? '1/2 공고 원문에서 자격조건과 근거를 분석하고 있습니다.'
     : reviewStep === 'judgment'
       ? '2/2 회사 프로필과 자격조건을 비교해 판정하고 있습니다.'
-      : reviewStep === 'done'
-        ? '분석과 판정이 완료되었습니다.'
-        : null;
+      : null;
 
   // P0-5 · 판정에 들어가지 못한 조건은 두 갈래로 들어온다. 성격이 달라서 한 자리에 섞어 그리면 안 된다.
   //  · NOTICE_FACT 진단 — 공고에서 확인했지만 회사 프로필과 대조할 수 없는 사실. 근거(evidence_keys)가 있다.
@@ -431,7 +447,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   return (
     <main className="bg-white text-[var(--product-body)]">
       <div className="app-shell-container py-10">
-        {(error || message) && <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[15px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}<span>{error || message}</span></div>}
+        {(error || message) && <div className={`mb-6 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[15px] ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : messageTone === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error || messageTone === 'warn' ? <AlertCircle className="mt-0.5 size-4" /> : <CheckCircle2 className="mt-0.5 size-4" />}<span>{error || message}</span></div>}
 
         {!activeCase ? (
           <section className="rounded-[22px] border border-[var(--product-line)] bg-white p-7 shadow-sm">
@@ -480,7 +496,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
-                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? '판정 완료' : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
+                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
                 }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
@@ -609,6 +625,10 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">자격요건 · 근거</span>
                   <strong className="mt-0.5 block text-[15px]">{countedAnalysis ? `${countedAnalysis.requirements.length}건` : '-'} · 근거 {countedAnalysis ? `${countedAnalysis.evidence.length}건` : '-'}</strong>
+                  {/* 요건 0건인데 근거만 여러 건이면 숫자만 보고는 뭐가 잘못됐는지 알 수 없다. */}
+                  {countedAnalysis && countedAnalysis.requirements.length === 0 && countedAnalysis.evidence.length > 0 && (
+                    <p className="mt-1 text-[13px] leading-[1.7] text-[var(--product-muted)]">근거 문장은 찾았지만 구조화된 자격요건으로 옮기지 못했습니다.</p>
+                  )}
                   <p className="text-[13px] text-[var(--product-muted)]">공고 원문에서 구조화한 수</p>
                 </div>
                 <div>

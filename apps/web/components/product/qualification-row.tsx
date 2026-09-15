@@ -12,7 +12,12 @@ type QualificationRowProps = {
   condition: string;
   companyValue: string;
   evidenceLabel: string;
-  actionLabel: string;
+  /**
+   * 「조치」 열에 쓸 말. 할 일이 없는 행(판정이 끝난 행)은 null을 준다.
+   * 예전에는 판정이 끝나면 「판정 완료」를 넣었는데, 조치 열은 무엇을 하라는 자리라
+   * 미달 행 아래에 「판정 완료」가 붙으면 뭘 하라는 건지 알 수 없었다. 판정 배지는 이미 왼쪽에 있다.
+   */
+  actionLabel?: string | null;
   onEvidence?: () => void;
   onAction?: () => void;
 };
@@ -58,17 +63,17 @@ export function QualificationRow({
     <div className="grid min-h-[64px] grid-cols-1 border-t border-[var(--product-line-2)] lg:grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px]">
       <div className="flex items-center px-3 py-3">
         <span
-          className={`rounded-full border ${borderStyle} px-2.5 py-1 text-[13px] font-semibold ${statusMeta.className}`}
+          className={`rounded-full border ${borderStyle} px-2.5 py-1 text-[12px] font-semibold ${statusMeta.className}`}
         >
           {statusLabel}
         </span>
       </div>
-      <div className="flex items-center px-3 py-3 text-[15px] font-medium leading-6 text-[var(--product-body)]">{condition}</div>
-      <div className="flex items-center px-3 py-3 text-[15px] leading-5 text-[var(--product-muted)]">
+      <div className="flex items-center px-3 py-3 text-[14px] font-medium leading-6 text-[var(--product-body)]">{condition}</div>
+      <div className="flex items-center px-3 py-3 text-[13px] leading-5 text-[var(--product-muted)]">
         {isUserAnswer ? (
           <div>
             <p className="font-medium text-[var(--product-body)]">귀사가 답한 값으로 판정했습니다</p>
-            <p className="text-[12px]">회사 프로필에는 저장하지 않았습니다</p>
+            <p className="text-[11.5px]">회사 프로필에는 저장하지 않았습니다</p>
           </div>
         ) : (
           companyValue
@@ -79,7 +84,7 @@ export function QualificationRow({
           type="button"
           onClick={onEvidence}
           disabled={!onEvidence}
-          className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-[var(--product-accent-deep)] disabled:cursor-default disabled:text-[var(--product-faint)]"
+          className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--product-accent-deep)] disabled:cursor-default disabled:text-[var(--product-faint)]"
         >
           <Eye className="size-4" /> {evidenceLabel}
         </button>
@@ -89,9 +94,9 @@ export function QualificationRow({
           <Button size="sm" variant={status === 'UNKNOWN' ? 'default' : 'outline'} onClick={onAction} className="rounded-full">
             {actionLabel}
           </Button>
-        ) : (
-          <span className="text-[13px] text-[var(--product-faint)]">{actionLabel}</span>
-        )}
+        ) : actionLabel ? (
+          <span className="text-[12px] text-[var(--product-faint)]">{actionLabel}</span>
+        ) : null}
       </div>
     </div>
   );

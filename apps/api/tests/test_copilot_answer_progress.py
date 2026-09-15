@@ -110,4 +110,44 @@ def test_partial_resume_keeps_new_read_alongside_pending_work():
                     tasks=[Task(kind='READ_CHECKS',question='새로 요청한 확인사항')])
     bind_plan(state, plan)
     assert plan.tasks[0].kind=='READ_CHECKS' and plan.tasks[0].question=='새로 요청한 확인사항'
-    assert {'READ_JUDGMENT','READ_DOCUMENT'} <= {t.kind for t in plan.tasks}
+    assert [t.kind for t in plan.tasks] == ['READ_CHECKS']
+    assert {'READ_JUDGMENT','READ_DOCUMENT'} <= {r.tool for r in state.job.requirements}
+
+
+def test_resume_preserves_new_deliverable_even_with_same_tool_and_requirement():
+    state, bundle, original = setup()
+    bind_plan(state, original)
+    state.answer_review = {'key': 'previous'}
+    rid = state.job.requirements[1].requirement_id
+    plan = TaskPlan(goal='지난 일정을 구분한 체크리스트를 만들어줘', resume_unresolved=True,
+                    tasks=[Task(kind='READ_DOCUMENT', question='필수와 협조사항을 구분한 실행 체크리스트', requirement_id=rid)])
+    bind_plan(state, plan)
+    assert plan.goal == '지난 일정을 구분한 체크리스트를 만들어줘'
+    assert plan.tasks[0].question == '필수와 협조사항을 구분한 실행 체크리스트'
+    assert plan.tasks[0].requirement_id == rid
+
+
+def test_generation_budget_failure_is_not_reported_as_missing_source():
+    from apps.api.app.copilot.model_gateway import BudgetExceeded
+    class Limited(Gateway):
+        def call(self, *args, **kwargs):
+            raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
+    state, bundle, plan = setup()
+    claims, partial, events = _compose_basic(bundle, plan, state, Limited())
+    assert partial
+    assert any('모델 처리 한도' in text for text in bundle.limitations)
+    assert any(e.get('reason') == 'LOCAL_EVALUATION_BUDGET_EXHAUSTED' for e in events)
+
+
+def test_validation_budget_failure_is_visible_without_accepting_unverified_prose():
+    from apps.api.app.copilot.model_gateway import BudgetExceeded
+    class Limited(Gateway):
+        def call(self, stage, *args, **kwargs):
+            if stage == 'validate':
+                raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
+            return super().call(stage, *args, **kwargs)
+    state, bundle, plan = setup()
+    claims, partial, events = _compose_basic(bundle, plan, state, Limited())
+    assert partial
+    assert any('설명 검증을 완료하지 못했습니다' in text for text in bundle.limitations)
+    assert not any(c.method == 'semantic' for c in claims)

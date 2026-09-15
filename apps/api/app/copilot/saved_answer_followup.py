@@ -10,6 +10,8 @@ from . import product_tools
 
 def followup_kind(message):
     text = re.sub(r'[\s.!?。？]', '', message)
+    if re.fullmatch(r'방금저장한답변때문에어떤요건이바뀌었어전체판정이그대로라면그이유도짧게설명해줘', text):
+        return 'receipt'
     if re.fullmatch(r'(?:방금|최근)(?:반영|저장)한(?:내용|답변)(?:과현재판정)?(?:을)?(?:설명해줘|알려줘|요약해줘)', text):
         return 'receipt'
     if re.fullmatch(r'(?:현장방문)?확인(?:서|증)(?:를|을)?제출했다고가정하면(?:어떻게돼|어떻게되나요)', text):

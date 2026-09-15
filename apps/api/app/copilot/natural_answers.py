@@ -9,6 +9,8 @@ def visit_values(message):
     # Full-string grammar deliberately rejects assumptions, questions, partial
     # answers, conflicting clauses and additional instructions.
     compact = re.sub(r'\s+', '', message).rstrip('.!。')
+    # An exact preview suffix authorizes a proposal, never persistence.
+    compact = re.sub(r'[.!。]이답변을반영하면무엇이바뀌는지먼저보여줘[.!。]아직저장하지마$', '', compact)
     match = re.fullmatch(
         r'현장방문(?:은|을)?(완료했(?:지만|고)|하지않았(?:지만|고))[,]?'
         r'(?:현장방문)?확인(?:서|증)(?:는|를)?(?:아직)?'

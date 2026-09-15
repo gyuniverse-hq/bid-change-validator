@@ -9,6 +9,7 @@ from apps.api.app.qualification.rules.source_contracts import VERSION
 
 @pytest.mark.parametrize('message,expected', [
     ('방금 반영한 내용과 현재 판정을 설명해줘','receipt'),
+    ('방금 저장한 답변 때문에 어떤 요건이 바뀌었어? 전체 판정이 그대로라면 그 이유도 짧게 설명해줘.', 'receipt'),
     ('확인서를 제출했다고 가정하면 어떻게 돼?','assumption'),
     ('아까 답변을 잘못했어. 수정하려면 어떻게 해야 해?','correction'),
     ('공고 변경 내용을 설명해줘',None),

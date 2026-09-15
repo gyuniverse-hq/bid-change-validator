@@ -75,27 +75,10 @@ def bind_plan(state, plan):
         plan.resume_unresolved = False
     # Resume reads only. A pending action is never replayed by job resumption.
     if plan.resume_unresolved:
-        if state.answer_review and all(t.kind in READS for t in plan.tasks):
-            # Re-read cheap product/source snapshots for freshness. Model work is
-            # narrowed by the retained, independently verified criteria afterwards.
-            previous = [r for r in state.job.requirements if r.tool in READS]
-            previous_kinds = {r.tool for r in previous}
-            if len(previous) <= 6 and previous and all(t.kind in previous_kinds for t in plan.tasks):
-                plan.tasks = [Task(kind=r.tool, question=r.request, requirement_id=r.requirement_id)
-                              for r in previous]
         for task in plan.tasks:
             candidates = [r for r in state.job.requirements if r.tool == task.kind and r.status not in FINISHED]
             if task.requirement_id is None and len(candidates) == 1 and task.kind in READS:
                 task.requirement_id = candidates[0].requirement_id
-            if task.requirement_id in by_id and task.kind in READS:
-                task.question = by_id[task.requirement_id].request
-        planned_ids = {t.requirement_id for t in plan.tasks}
-        for requirement in state.job.requirements:
-            if len(plan.tasks) >= 6:
-                break
-            if requirement.tool in READS and requirement.status != 'ANSWERED' and requirement.requirement_id not in planned_ids:
-                plan.tasks.append(Task(kind=requirement.tool, question=requirement.request,
-                                       requirement_id=requirement.requirement_id))
     bindings = []
     for task in plan.tasks:
         # Acknowledgement is a procedure, not completion of a pending action.

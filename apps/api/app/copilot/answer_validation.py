@@ -1,5 +1,7 @@
 """Validate every generated factual sentence; keep supported siblings on failure."""
 from collections import Counter
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from .v31_contracts import CandidateClaim, Claim, Draft, Verdicts
 from .evidence_payload import evidence_payload, prepare_evidence, ranked_facts
 from .acceptance import freeze_acceptance, assess_acceptance
@@ -16,6 +18,7 @@ server_context가 있으면 질문이 확인사항/원문에 관한 것이어도
 뒷받침되면 SUPPORTED, 반대면 CONTRADICTED, 근거 부족이면 INSUFFICIENT.
 모든 claim_id에 정확히 한 결과를 반환한다. 조건부 설명을 무조건 참가 가능 단정과 혼동하지 않는다.'''
 VERIFY += '''
+명시적으로 제안한 준비 순서·체크리스트는 원문에 같은 문장이 있는지가 아니라 인용된 제출기한·선행 조건·의무와 일치하는지 검증한다. 원문이 정한 순서라고 주장하거나 근거와 충돌하는 순서는 거절한다.
 저장 분석의 발췌 문구 차이는 공고 원문 전체 조항의 실제 삭제/추가를 증명하지 않는다. 실제 원문 변화로 단정하려면 별도 원문 비교 근거가 필요하다.
 서버 근거가 업종군 결합 관계를 미확정으로 표시하면, 개별 업종 요건의 충족과 별개로 그 결합 관계를 보류해야 한다. 두 업종군을 동시에 요구하거나 하나로 대체 가능하다고 확정한 문장은 거절한다.
 reason은 판정의 핵심 근거만 한 문장으로 짧게 쓴다. 검증 대상 본문을 그대로 반복하지 않는다.
@@ -79,7 +82,7 @@ def verify(draft, bundle, gateway, *, stage='validate', plan=None, supported_sib
     if pending:
         # Only referenced evidence is sent to the verifier, including server status context.
         referenced = {fid for c in [*pending, *(supported_siblings or [])] for fid in c.fact_ids}
-        body = {'claims': [c.model_dump() for c in pending],
+        body = {'current_date': datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat(), 'claims': [c.model_dump() for c in pending],
                 'evidence': evidence_payload(bundle, [f for f in bundle.facts if f.fact_id in referenced])}
         if plan:
             acceptance = acceptance if acceptance is not None else freeze_acceptance(plan, bundle)
@@ -113,7 +116,10 @@ def verify(draft, bundle, gateway, *, stage='validate', plan=None, supported_sib
                 assessment = assess_acceptance(acceptance, result, [*claims, *(supported_siblings or [])])
                 events.append({'stage': stage, **assessment, 'missing_topics': result.missing_topics})
         except Exception as error:
-            events.append({'stage': stage, 'reason': type(error).__name__})
+            from .model_gateway import BudgetExceeded
+            if isinstance(error, BudgetExceeded):
+                bundle.limitations.append('모델 처리 한도에 도달해 설명 검증을 완료하지 못했습니다. 자료 부족이나 회사 자격 미달을 뜻하지 않습니다.')
+            events.append({'stage': stage, 'reason': str(error) if isinstance(error, BudgetExceeded) else type(error).__name__})
     return claims, events
 
 
@@ -275,7 +281,7 @@ def _compose_basic(bundle, plan, state, gateway):
     if omitted:
         events.append({'stage': 'selection', 'reason': 'EVIDENCE_BUDGET', 'omitted_fact_ids': omitted})
         bundle.limitations.append('근거 입력 한도로 일부 자료를 자동 설명에서 제외했습니다. 전체 조건을 확인한 답변이 아닙니다. 항목별로 확인해 주세요.')
-    body = {'goal': plan.goal, 'tasks': [t.model_dump() for t in plan.tasks],
+    body = {'current_date': datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat(), 'goal': plan.goal, 'tasks': [t.model_dump() for t in plan.tasks],
             'history': conversation_hints(state, bundle.scope) if state else [],
             'evidence': evidence, 'acceptance': [c.model_dump(mode='json') for c in pending_acceptance],
             'supported_siblings': [c.model_dump() for c in retained],
@@ -287,6 +293,7 @@ def _compose_basic(bundle, plan, state, gateway):
 숫자·기준일·단위·AND/OR·제외 기관 등 예외를 보존한다. 없는 사실이나 완료된 쓰기를 만들지 않는다.
 상태 카드 자체는 서버가 작성한다. 질문에 필요한 설명/비교를 제공한다. 전체 조건을 세 개로 제한하지 않는다.
 각 claim은 독립적으로 읽혀야 하며 다른 생성 문장에 의존하는 결론/다음 행동을 만들지 않는다.'''
+    prompt += '\n서로 다른 READ_CHECKS 항목은 한 claim에 합치지 않는다. 항목별 claim으로 나누고 해당 항목 근거만 인용한다. 준비 순서는 원문이 정한 순서와 구분해 제안임을 명시하고, 공고 기한과 선행 조건에 근거한다.'
     prompt += '\n같은 사실을 결론·본문에서 반복하지 않는다. 필요한 조건과 예외를 보존하되 질문에 직접 답하는 간결한 산문으로 쓴다.'
     prompt += '\n변경 영향은 연결된 전후 판정과 같은 회사정보·규칙·기준일의 서버 근거로 설명한다. '
     prompt += '종합 판정이 유지됐는지 바뀌었는지를 먼저 답하고, 변경 요건의 전후 상태와 기존 미달을 묶어 설명한다. '
@@ -298,6 +305,7 @@ def _compose_basic(bundle, plan, state, gateway):
     prompt += '\nsupported_siblings는 이전에 이미 전달하고 검증한 설명이다. 다시 작성하거나 요약하지 않는다. '
     prompt += '남은 acceptance만 보충한다. remaining_review의 누락 사유를 해결하되 이미 설명한 서류 목록 등을 반복하지 않는다. '
     prompt += '서류·일정은 단계별로 묶고 요청하지 않은 평가 배점·계약 조문·빈 서식은 나열하지 않는다.'
+    prompt += '\n현재 요청이 체크리스트나 남은 일 정리이면 그 산출물을 실제 본문으로 작성한다. 이전 업무 목적은 문맥이며 현재 요청을 덮어쓰지 않는다. current_date보다 지난 일정은 과거 이행 확인으로 표시하고 지금 제출하라고 지시하지 않는다. 회사 판정 조회 실패를 회사정보 부재로 단정하지 않는다. 입찰 마감은 제출 대상별로 구분한 뒤 충돌 여부를 판단한다.'
     prompt += '\n참여 준비 안내는 핵심 상태, 확인할 일, 서류 묶음, 단계별 일정·방법, 준비 순서로 정돈한다. '
     prompt += '문서의 모든 작성 목차·재무 지표·발표 장비까지 풀어 쓰지 않는다. 각 제출 의무와 예외는 보존하되 세부 작성 내용은 사용자가 요청할 때 설명한다. '
     prompt += '준비 순서는 하나의 독립 문단으로 작성한다. 앞 문장이 검증에서 제외돼도 의미가 통하도록 그 다음/위 내용 같은 참조로 문장을 시작하지 않는다.'
@@ -380,7 +388,10 @@ def _compose_basic(bundle, plan, state, gateway):
         coverage = [e['task_coverage'] for e in events if 'task_coverage' in e]
         partial = len(supported) != len(claims) or not supported or not coverage or coverage[-1] != 'COMPLETE' or bool(omitted)
     except Exception as error:
-        events.append({'stage': 'generate', 'reason': type(error).__name__})
+        from .model_gateway import BudgetExceeded
+        if isinstance(error, BudgetExceeded):
+            bundle.limitations.append('모델 처리 한도에 도달해 답변 생성을 완료하지 못했습니다. 자료 부족이나 회사 자격 미달을 뜻하지 않습니다. 한도 확인 후 다시 요청해 주세요.')
+        events.append({'stage': 'generate', 'reason': str(error) if isinstance(error, BudgetExceeded) else type(error).__name__})
         supported, partial = list(retained), True
     save_review(state, key, supported, latest_assessment(events) or prior_assessment)
     # Preserve valid prose. Only uncovered facts are returned extractively on partial failure.

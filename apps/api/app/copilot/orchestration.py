@@ -224,12 +224,6 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     job_checkpoint = state.job.model_copy(deep=True) if state.job else None
     try:
         bindings = [] if clarification else bind_plan(state, plan)
-        if plan.resume_unresolved and state.job:
-            # No part of the original compound goal has passed yet. Keep that
-            # goal, including anything omitted by the prior planner, in coverage.
-            previous_ids = {r.requirement_id for r in job_checkpoint.requirements} if job_checkpoint else set()
-            added = any(r.requirement_id not in previous_ids for _, r in bindings)
-            plan.goal = state.job.goal + ('\n이번 추가 요청: ' + request.message if added else '')
     except ValueError:
         state.job = job_checkpoint
         bindings = []

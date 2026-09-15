@@ -59,3 +59,9 @@ def test_server_proposal_confirmation_does_not_call_explanation_model(monkeypatc
     answer = '\n'.join(c.text for c in result.claims)
     assert '확인서 미제출' in answer and '아직 저장하지 않았습니다' in answer
     assert gateway.calls == []
+
+
+def test_preview_suffix_is_proposal_only_and_rejects_extra_execution():
+    text = '현장 방문은 완료했지만 확인서는 아직 제출하지 않았어. 이 답변을 반영하면 무엇이 바뀌는지 먼저 보여줘. 아직 저장하지 마.'
+    assert visit_values(text) == {'site_visited': True, 'visit_certificate': False}
+    assert visit_values(text + ' 지금 실행해.') is None

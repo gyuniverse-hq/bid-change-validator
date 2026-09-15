@@ -16,17 +16,17 @@ export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelo
       <small>공고 v{envelope.status_card.provenance.version_number} · 저장된 판정 기준</small>
     </output>}
     {envelope.clarification && <p>{envelope.clarification}</p>}
-    {envelope.job && <details className="copilot-job-progress" open={envelope.job.status !== 'COMPLETE'}>
+    {envelope.job && <details className="copilot-job-progress">
       <summary>검토 목적과 남은 항목 · {envelope.job.status === 'COMPLETE' ? '요청 처리 완료' : '진행 중'}</summary>
       <p>{envelope.job.goal}</p>
       <p>설명 확인 {envelope.job.requirements.filter(item => item.status === 'ANSWERED').length}개 · 남은 요청 {envelope.job.requirements.filter(item => item.status !== 'ANSWERED' && item.status !== 'EXECUTED').length}개</p>
-      {!!envelope.job.remaining?.length && <ul>{envelope.job.remaining.map((text, index) => <li key={index}>{displayText(text)}</li>)}</ul>}
       <details><summary>요청별 처리 내역</summary><ul>{envelope.job.requirements.map(item => <li key={item.requirement_id}>
-        <strong>{progressLabels[item.status]}</strong> · {item.request}
+        <strong>{progressLabels[item.status]}</strong> · {toolLabels[item.tool ?? ''] ?? '요청 검토'}
         <small style={{ display: 'block' }}>{item.reason}</small>
       </li>)}</ul></details>
       <small>대화의 요청 처리 상태입니다. 참가자격 판정과는 별개이며 서버를 재시작하면 대화 기록이 초기화됩니다.</small>
     </details>}
+    {!envelope.clarification && !envelope.claims.some(claim => claim.reason !== 'EXACT_SOURCE') && <p role="status">요청하신 답변을 완성하지 못했습니다. 아래 원문은 참고 자료이며, 답변이나 검토 완료를 뜻하지 않습니다.</p>}
     {envelope.claims.filter(claim => claim.reason !== 'EXACT_SOURCE').map(claim => <div className="copilot-claim" key={claim.claim_id}>
       <p style={{ whiteSpace: 'pre-wrap' }}>{displayText(claim.text)}</p>
       <details className="copilot-evidence-chips"><summary>근거 {claim.source_ids.length}건 보기</summary>{claim.source_ids.map(id => {

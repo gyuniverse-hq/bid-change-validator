@@ -14,7 +14,7 @@ export type CopilotEnvelope = {
   capabilities: Record<string, number>; actions: ActionProposal[];
   limitations: string[]; clarification: string | null;
   job?: { goal: string; status: 'OPEN' | 'COMPLETE'; remaining?: string[]; requirements: {
-    requirement_id: string; request: string; reason: string; remaining?: string[];
+    requirement_id: string; tool?: string; request: string; reason: string; remaining?: string[];
     status: 'OPEN' | 'ANSWERED' | 'AWAITING_CONFIRMATION' | 'EXECUTED' | 'UNAVAILABLE' | 'STALE';
   }[] } | null;
   processing: { path: 'v3.1'; model: string | null; fallback: boolean; task_status: 'PASS' | 'PARTIAL' | 'FAIL'; elapsed_ms: number };

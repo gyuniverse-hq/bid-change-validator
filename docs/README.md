@@ -43,10 +43,12 @@
 12. [Frontend Screen · Component · API Contract](05_ui_ux/frontend-screen-contract.md)
 13. [현재 Ownership / Handoff](07_handoff/current-ownership.md)
 14. [Local Run / Operations Runbook](07_handoff/runbook.md)
-15. [QA / E2E 기준](08_qa_reports/README.md)
-16. [Requirement ↔ Test ↔ Golden/E2E Traceability](08_qa_reports/requirement-test-traceability.md)
-17. [Post-Baseline Roadmap](09_roadmap/README.md)
-18. [Product Integration Baseline Snapshot](mvp-baseline/README.md)
+15. [Oracle 미리보기 배포·복구 절차](07_handoff/oci-preview-operations.md)
+16. [QA / E2E 기준](08_qa_reports/README.md)
+17. [발표 데모 1건·Golden 3건 Human Click QA](08_qa_reports/presentation-human-qa.md)
+18. [Requirement ↔ Test ↔ Golden/E2E Traceability](08_qa_reports/requirement-test-traceability.md)
+19. [Post-Baseline Roadmap](09_roadmap/README.md)
+20. [Product Integration Baseline Snapshot](mvp-baseline/README.md)
 
 ## 현재 문서 체계
 

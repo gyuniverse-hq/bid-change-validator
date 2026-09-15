@@ -5,6 +5,8 @@
 
 이 문서는 기능 구현이 실제 제품 흐름에서 안전하게 동작하는지 검증하기 위한 공통 기준입니다. 실제 Requirement/Test 연결은 [Requirement ↔ Test ↔ Golden / E2E Traceability](requirement-test-traceability.md)를 함께 봅니다.
 
+발표 직전 직접 클릭 검증은 [발표 데모 1건·Golden 3건 Human Click QA](presentation-human-qa.md)에 별도로 기록합니다. 해당 문서는 실행 전 계획이며, CI 통과를 화면 QA 완료로 간주하지 않습니다.
+
 ## 검증 레이어
 
 ```text
@@ -97,7 +99,7 @@ Ask-back/Revalidation은 Product 기능/API가 존재하지만 **전용 테스�
 
 ## MVP Demo 인증 / 데이터
 
-- 데모는 **관리자 로그인** 기준으로 진행합니다.
+- 발표 Human Click QA는 소속 회사가 연결된 Golden 테스트 계정으로 진행합니다. 관리자 계정만으로 회사별 권한 격리를 검증했다고 보지 않습니다.
 - Golden Set의 회사 Profile은 **복수 합성 Profile**을 사용합니다.
 - 실제/합성 여부와 Dataset/Version을 기록합니다.
 - 사용한 notice/company/version/analysis/judgment run 식별자를 데모 문서에 남깁니다.

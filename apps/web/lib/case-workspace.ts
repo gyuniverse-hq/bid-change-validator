@@ -53,10 +53,6 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
 
   const currentAnalysis = currentAnalyses[0] ?? null;
   const baselineAnalysis = baselineAnalyses[0] ?? null;
-  const currentAnalysisDetail = currentAnalysis
-    ? await getQualificationAnalysis(currentAnalysis.id)
-    : null;
-
   const baselineVersionId = versions.find(
     (item) => item.version_number === caseItem.baseline_version_number,
   )?.id;
@@ -73,16 +69,18 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     judgmentSummaries.find((item) => judgmentMatchesAnalysis(item, currentAnalysis, caseItem.company_id));
   const sourceSummary = baselineVersionId ? baselineSummary : displaySummary;
 
-  const [source, display] = await Promise.all([
+  const [currentAnalysisDetail, source, display, questions] = await Promise.all([
+    currentAnalysis
+      ? getQualificationAnalysis(currentAnalysis.id)
+      : Promise.resolve(null),
     sourceSummary && sourceSummary.id !== displaySummary?.id ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
     displaySummary ? getQualificationJudgment(displaySummary.id) : Promise.resolve(null),
+    displaySummary
+      ? listQualificationQuestions(caseItem.id, displaySummary.id)
+      : Promise.resolve([]),
   ]);
   const displayJudgment = display?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? display : null;
   const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? source : null;
-
-  const questions = displayJudgment
-    ? await listQualificationQuestions(caseItem.id, displayJudgment.id)
-    : [];
 
   return {
     caseItem,
@@ -94,7 +92,7 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     currentAnalysisDetail,
     sourceJudgment,
     displayJudgment,
-    questions,
+    questions: displayJudgment ? questions : [],
   };
 }
 

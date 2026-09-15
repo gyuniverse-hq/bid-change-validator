@@ -220,12 +220,18 @@ def test_a_code_at_the_start_of_a_wrapped_line_is_not_a_new_item() -> None:
     result = analyze_qualification_documents(_input(real), structured_extract=lambda *a: {"requirements": []})
 
     by_value = {item.value: item for item in result.requirements if item.type == "INDUSTRY"}
-    assert set(by_value) == {"1257", "6770", "6786"}
+    assert set(by_value) == {"1257", "6770", "6786", "1227"}
     assert {by_value[c].group_operator for c in ("1257", "6770", "6786")} == {"ANY_OF"}
+    # 1227 은 지워지지 않고 구조에 새겨진다 — composite(확인 필요) + 사유. 판정기는 이 행을
+    # UNKNOWN 으로 둔다. 분석 상태는 PARTIAL 로 안 내린다(불확실성은 행이 들고 있다).
+    assert by_value["1227"].condition_complexity == "composite"
+    assert by_value["1227"].scope.get("guard_reason") == "EXCEPTION_UNRESOLVED"
+    assert {by_value[c].condition_complexity for c in ("1257", "6770", "6786")} == {"simple"}
     assert any(
         d.code == "INDUSTRY_CODE_EXCEPTION_UNRESOLVED" and d.details.get("value") == "1227"
         for d in result.diagnostics
     )
+    assert result.status == "SUCCEEDED"
 
 
 def test_the_exception_hint_is_caught_regardless_of_what_the_model_raw_contains() -> None:
@@ -250,5 +256,6 @@ def test_the_exception_hint_is_caught_regardless_of_what_the_model_raw_contains(
 
     result = analyze_qualification_documents(_input(real), structured_extract=model_emits_plain_1227)
 
-    assert not any(item.value == "1227" for item in result.requirements if item.type == "INDUSTRY")
+    row = next(item for item in result.requirements if item.type == "INDUSTRY" and item.value == "1227")
+    assert row.condition_complexity == "composite"
     assert any(d.code == "INDUSTRY_CODE_EXCEPTION_UNRESOLVED" for d in result.diagnostics)

@@ -170,3 +170,70 @@ def unsafe_clause_reason(raw: str) -> str | None:
         if re.search(pattern, text):
             return code
     return None
+
+
+# ---------------------------------------------------------------------------
+# 구조를 보는 가드
+#
+# [2026-09-15] 이번 주 흔들림의 뿌리 하나는 가드가 **문장 단위 이분법**이었다는 것이다.
+# 실제 공고는 절차 문구·예외·진짜 요건을 한 문장에 섞어 쓰는데, 문장째 막거나 통과시키니
+# 진짜 요건(9901·1468)을 잃거나 유령을 들여보내거나 둘 중 하나였다. 그리고 같은 가드가
+# 판정기에서 raw 를 **두 번째로** 읽어, 추출이 ANY_OF 로 담아 둔 대안 묶음을 "또는이 있네"
+# 하고 다시 막았다(J14 — 1257 보유 회사가 적합이 아니라 확인 필요).
+#
+# 원칙: 가드는 raw 문장에 묻지 않고 **추출이 이미 만든 구조**에 묻는다 — 닫힌 식별자가
+# 있는가, 대안이 ANY_OF 로 담겼는가, 예외 단서는 원문에서 코드가 판단했는가. raw 는 사람이
+# 읽을 근거이지 판단의 입력이 아니다.
+#
+# 우선순위(코드로 박는다):
+#   1. 예외 단서가 원문 청크에서 확인된 원자        → ABSTAIN (composite)
+#   2. 닫힌 식별자가 있으면 절차 문구는 무시           (unsafe_clause_reason 가 이미 그렇게 한다)
+#   3. ANY_OF 로 담긴 원자의 '또는' 은 이미 소화된 것 → 대안 사유는 무시
+#   4. 남은 논리어(다만·제외·부정·공동수급·미해결 표) → ABSTAIN (composite)
+#   5. 코드 없는 절차 문구                            → PROCEDURAL
+#   6. 그 외                                          → KEEP (simple)
+#
+# 결과는 요건에 새긴다(condition_complexity, scope.guard). 판정기·askability 는 그 표시가
+# 있는 요건에 대해 raw 를 다시 읽지 않는다. 표시가 없는 요건(예전 저장 행, 골든 고정본)은
+# 예전처럼 raw 를 본다 — 그래서 골든 회귀는 이 변경으로 움직이지 않는다.
+# ---------------------------------------------------------------------------
+
+GUARD_ASSESSED = "assessed"
+GUARD_REASON_EXCEPTION = "EXCEPTION_UNRESOLVED"
+
+
+class ClauseAssessment:
+    __slots__ = ("verdict", "reason", "complexity")
+
+    def __init__(self, verdict: str, reason: str | None, complexity: str) -> None:
+        self.verdict = verdict          # KEEP | ABSTAIN | PROCEDURAL
+        self.reason = reason
+        self.complexity = complexity    # simple | composite
+
+    def __repr__(self) -> str:  # pragma: no cover - 디버그용
+        return f"ClauseAssessment({self.verdict}, {self.reason}, {self.complexity})"
+
+
+def assess_clause(
+    raw: str,
+    *,
+    group_operator: str | None = "ALL_OF",
+    exception_unresolved: bool = False,
+) -> ClauseAssessment:
+    """원자 하나를 구조 기준으로 평가한다. 위 우선순위 그대로."""
+    if exception_unresolved:
+        return ClauseAssessment("ABSTAIN", GUARD_REASON_EXCEPTION, "composite")
+    reason = unsafe_clause_reason(raw)
+    if reason is None:
+        return ClauseAssessment("KEEP", None, "simple")
+    if reason == "ALTERNATIVE_OR_EXCEPTION_RULE" and group_operator == "ANY_OF":
+        # '또는' 은 ANY_OF 로 이미 구조가 됐다. 대안을 열 때(industry_code_alternation) 예외
+        # 낱말이 있으면 열지 않으므로, 여기 도달한 ANY_OF 원자의 사유는 소화된 '또는' 뿐이다.
+        return ClauseAssessment("KEEP", None, "simple")
+    if reason == "LEGAL_PROCEDURAL_RULE":
+        return ClauseAssessment("PROCEDURAL", reason, "simple")
+    return ClauseAssessment("ABSTAIN", reason, "composite")
+
+
+def is_guard_assessed(scope: dict | None) -> bool:
+    return bool(scope) and scope.get("guard") == GUARD_ASSESSED

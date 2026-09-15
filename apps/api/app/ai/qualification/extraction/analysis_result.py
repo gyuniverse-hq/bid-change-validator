@@ -132,6 +132,9 @@ _NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
 # 내리지 않는다. 그래도 남기는 이유는 모델 분류가 틀렸다는 신호이기 때문이다.
 _INFORMATIONAL_PIPELINE_CODES = {
     "COMPANY_SIZE_FROM_CERTIFICATE",
+    # 예외 단서가 붙은 코드는 요건 행 자체가 composite(확인 필요)로 남는다 — 불확실성은
+    # 구조가 들고 있으므로 분석을 PARTIAL 로 내릴 이유가 없다.
+    "INDUSTRY_CODE_EXCEPTION_UNRESOLVED",
     "SALVAGED_CLOSED_IDENTIFIER",
     "INDUSTRY_ALTERNATION",
     "INDUSTRY_CODE_SALVAGED_FROM_SOURCE",

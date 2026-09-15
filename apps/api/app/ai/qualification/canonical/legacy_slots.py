@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 from ...contracts import QualificationRequirement, RequirementOperator, RequirementType
-from ....qualification.rules.clause_safety import strip_decorations, unsafe_clause_reason
+from ....qualification.rules.clause_safety import GUARD_ASSESSED, assess_clause, strip_decorations, unsafe_clause_reason
 from ....qualification.rules.judgment import _COMPANY_SIZE_ALIASES
 from .deduplicate import _INDUSTRY_NAME_VALUE_RE, _REGISTRATION_ACT_VALUE_RE
 
@@ -235,6 +235,9 @@ def adapt_legacy_slot(
         scope: dict[str, Any] | None = None,
         group_operator: RequirementOperator | str = "ALL_OF",
     ) -> None:
+        # 가드 평가를 구조에 새긴다. 판정기·askability 는 이 표시가 있는 요건의 raw 를 다시
+        # 읽지 않는다 — ANY_OF 로 담은 '또는' 을 판정기가 또 막던 문제(J14)가 여기서 끝난다.
+        assessment = assess_clause(raw, group_operator=str(group_operator))
         requirements.append(
             QualificationRequirement(
                 requirement_key=f"{key_prefix}-{suffix}",
@@ -246,7 +249,8 @@ def adapt_legacy_slot(
                 value=value,
                 unit=unit,
                 period_months=period_months,
-                scope=scope or {},
+                scope={**(scope or {}), "guard": GUARD_ASSESSED},
+                condition_complexity=assessment.complexity,
                 raw=raw,
             )
         )

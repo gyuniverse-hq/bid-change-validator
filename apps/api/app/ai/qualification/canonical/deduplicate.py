@@ -87,7 +87,8 @@ def _identity(requirement: QualificationRequirement) -> tuple:
         _norm(requirement.period_months),
         # industry_name·kind 는 어느 슬롯에서 왔는지의 흔적이지 요건의 뜻이 아니다. 같은 코드
         # 1450 이 업종요건 슬롯과 인증요건 슬롯에서 각각 나오면 kind 만 다르고 같은 요건이다.
-        tuple(sorted((k, _norm(v)) for k, v in scope.items() if k not in ("industry_name", "kind"))),
+        # guard·guard_reason 은 가드 평가의 흔적이지 요건의 뜻이 아니다.
+        tuple(sorted((k, _norm(v)) for k, v in scope.items() if k not in ("industry_name", "kind", "guard", "guard_reason"))),
     )
 
 

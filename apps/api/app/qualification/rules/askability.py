@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 
 from ...ai.contracts import QualificationRequirement
-from .clause_safety import unsafe_clause_reason
+from .clause_safety import is_guard_assessed, unsafe_clause_reason
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,10 @@ def classify_askability(requirement: QualificationRequirement) -> AskabilityDeci
     if requirement.type not in _SIMPLE_TYPES:
         return AskabilityDecision(False, "UNSUPPORTED_TYPE", "사용자 답변으로 해결하도록 허용하지 않은 조건 유형입니다.")
 
-    code = unsafe_clause_reason(raw)
+    # 추출이 가드 평가를 마친 요건은 raw 를 다시 읽지 않는다(judgment.py 와 같은 이유).
+    if requirement.condition_complexity == "composite":
+        return AskabilityDecision(False, str(requirement.scope.get("guard_reason") or "COMPOSITE_CONDITION"), "복합·예외·법적 절차 조건은 단순 사용자 답변으로 판정하지 않습니다.")
+    code = None if is_guard_assessed(requirement.scope) else unsafe_clause_reason(raw)
     if code:
         return AskabilityDecision(False, code, "복합·예외·법적 절차 조건은 단순 사용자 답변으로 판정하지 않습니다.")
 

@@ -69,6 +69,11 @@ class ProductTools:
     def judgment(self):
         summary = self._summary()
         self.card = StatusCard(status=summary.overall_status, text=STATUS_CONCLUSION[summary.overall_status], provenance=summary.provenance)
+        counts = summary.judgment_counts
+        text = (f'현재 저장 판정: {STATUS_CONCLUSION[summary.overall_status]} '
+                f"충족 {counts.get('SATISFIED', 0)}건, 미달 {counts.get('UNSATISFIED', 0)}건, 확인 필요 {counts.get('UNKNOWN', 0)}건. "
+                f'분석 상태: {summary.analysis_status}. 저장된 결과이며 현실의 모든 자격을 새로 확인했다는 뜻은 아닙니다.')
+        self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], origin='READ_JUDGMENT', entity='judgment_summary')
         evidence = product_tools.get_explanation_evidence(self.db, self.case.id, [r.requirement_key for r in summary.judgments])
         if any(e.provenance != summary.provenance for e in evidence):
             raise ValueError('PRODUCT_SCOPE_CHANGED')
@@ -117,7 +122,9 @@ class ProductTools:
                 cited = [e for e in item.evidence if e.quote.strip()]
                 ids = list(dict.fromkeys(self._source('DOCUMENT', e.quote, evidence=e) for e in cited))
                 if ids:
-                    self._fact('NOTICE_FACT', '\n'.join(e.quote for e in cited), ids, target='MANUAL', origin='READ_CHECKS',
+                    manual = '직접 원문 검토 대상입니다. 이 항목은 저장 판정의 답변 입력 대상이 아니며 회사의 실제 충족 여부를 확정한 결과가 아닙니다.'
+                    ids.append(self._source('PRODUCT', manual))
+                    self._fact('NOTICE_FACT', manual + '\n' + '\n'.join(e.quote for e in cited), ids, target='MANUAL', origin='READ_CHECKS',
                                entity='manual-' + digest([item.code, ids])[:20])
             for item in scope.dropped_requirements:
                 # Raw dropped requirement alone has no original locator; never invent a citation.
@@ -184,9 +191,23 @@ class ProductTools:
                     continue
                 scope = self.scope.model_copy(update={'notice_version_id': version.notice_version_id,
                                                       'analysis_run_id': version.analysis_run_id, 'judgment_run_id': version.judgment_run_id})
-                text = f'{label} 버전 {version.version_number}: {requirement.raw} ({change.change_type})'
+                text = f'저장 분석 요건의 차이 — {label} 버전 {version.version_number}: {requirement.raw} ({change.change_type}). 원문 변경 여부와 회사 판정 변화는 별도 확인해야 합니다.'
                 self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text, scope=scope)], target='CHANGE', scope=scope,
                            origin='READ_CHANGES', entity=str(version.notice_version_id) + ':' + requirement.raw)
+        if self.allow_documents:
+            from .source_changes import compare_sources
+            before = load_notice_version_for_rag(self.db, self.case.baseline_version_id)
+            after = load_notice_version_for_rag(self.db, self.case.current_version_id)
+            if before.notice_id != self.scope.notice_id or after.notice_id != self.scope.notice_id:
+                raise ValueError('CHANGE_DOCUMENT_SCOPE_MISMATCH')
+            fingerprint, observations, limitations = compare_sources(before, after)
+            self.bundle.fingerprints['change_sources'] = fingerprint
+            self.bundle.limitations.extend(limitations)
+            for index, text in enumerate(observations):
+                self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='CHANGE',
+                           origin='READ_CHANGES', entity='literal-source-comparison-' + str(index))
+            if limitations:
+                self.bundle.coverage['READ_CHANGES'] = 'PARTIAL'
 
     def execute(self, task):
         if task.kind == 'READ_JUDGMENT': self.judgment()
@@ -214,3 +235,10 @@ class ProductTools:
             current = get_changed_notice(self.db, self.case.id)
             if digest(current.model_dump(mode='json')) != self.bundle.fingerprints['changes']:
                 raise ValueError('CHANGE_SCOPE_CHANGED')
+        if 'change_sources' in self.bundle.fingerprints:
+            from .source_changes import compare_sources
+            fingerprint, _, _ = compare_sources(
+                load_notice_version_for_rag(self.db, self.case.baseline_version_id),
+                load_notice_version_for_rag(self.db, self.case.current_version_id))
+            if fingerprint != self.bundle.fingerprints['change_sources']:
+                raise ValueError('CHANGE_DOCUMENT_SCOPE_CHANGED')

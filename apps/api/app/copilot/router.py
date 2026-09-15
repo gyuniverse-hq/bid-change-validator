@@ -144,7 +144,11 @@ def copilot_confirm(
 ):
     authorize_case_access(db, user, payload.action.expected.case_id)
     try:
-        return confirm_action(db, payload)
+        result = confirm_action(db, payload)
+        if user is not None:
+            from .conversation_state import conversations
+            conversations.record_execution(str(user.id), payload.action, result)
+        return result
     except QualificationJudgmentError as error:
         db.rollback()
         raise ApiError(error.status_code, error.code, error.message) from error

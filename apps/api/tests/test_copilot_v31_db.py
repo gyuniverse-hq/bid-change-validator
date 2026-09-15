@@ -128,6 +128,19 @@ def test_structured_proposal_and_ack_use_server_procedure_without_writes(state, 
     assert not ack['actions'] and counts() == before
     assert '명시적으로 실행을 확인' in ack['claims'][0]['text']
     assert [t['tool'] for t in ack['processing']['tools']] == ['ACKNOWLEDGE_ACTION']
+    assert any(r['status'] == 'AWAITING_CONFIRMATION' for r in ack['job']['requirements'])
+    confirmed = authenticated_api.post('/api/v1/copilot/actions/confirm',
+        json={'confirmed': True, 'action': envelope['actions'][0]})
+    assert confirmed.status_code == 200
+    result_id = confirmed.json()['result_judgment_run_id']
+    response = authenticated_api.post('/api/v1/copilot/chat', json={
+        'case_id': str(case.id), 'message': '현재 판정', 'response_version': '3.1',
+        'conversation_id': ack['conversation_id'], 'context_revision': ack['context_revision']})
+    assert response.status_code == 200
+    current = response.json()['envelope']
+    executed = [r for r in current['job']['requirements'] if r['status'] == 'EXECUTED']
+    assert len(executed) == 1 and executed[0]['execution_result_ids'] == [result_id]
+    assert counts() == (before[0] + 1, before[1] + 1)
 
 
 def test_natural_ordinal_reference_keeps_subject_and_company_comparison(state):

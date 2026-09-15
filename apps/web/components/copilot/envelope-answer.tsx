@@ -4,6 +4,9 @@ import Link from 'next/link';
 import type { CopilotEnvelope } from '@/lib/copilot-v31';
 
 const labels: Record<string, string> = { REQUIREMENT: '판정 요건', MANUAL: '직접 확인할 공고 항목', DOCUMENT: '공고문 근거', CHANGE: '변경 항목', ASSUMPTION: '검토용 가정' };
+const progressLabels = { OPEN: '추가 검토 필요', ANSWERED: '설명 확인', AWAITING_CONFIRMATION: '실행 확인 대기', EXECUTED: '실행 결과 확인', UNAVAILABLE: '자료 확인 필요', STALE: '기준 변경 · 재확인 필요' };
+const toolLabels: Record<string, string> = { READ_CHANGES: '변경 비교', READ_JUDGMENT: '저장 판정 조회', READ_PROFILE: '회사정보 조회', READ_CHECKS: '확인 항목 조회', READ_DOCUMENT: '공고문 조회', REVIEW_ASSUMPTION: '가정 검토', PROPOSE_ACTION: '변경 제안' };
+const displayText = (text: string) => text.replace(/\b(?:READ_CHANGES|READ_JUDGMENT|READ_PROFILE|READ_CHECKS|READ_DOCUMENT|REVIEW_ASSUMPTION|PROPOSE_ACTION)\b/g, name => toolLabels[name]);
 
 export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelope; onTarget: (id: string) => void }) {
   const sources = new Map(envelope.sources.map(source => [source.source_id, source]));
@@ -13,8 +16,17 @@ export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelo
       <small>공고 v{envelope.status_card.provenance.version_number} · 저장된 판정 기준</small>
     </output>}
     {envelope.clarification && <p>{envelope.clarification}</p>}
+    {envelope.job && <details className="copilot-job-progress">
+      <summary>검토 목적과 남은 항목 · {envelope.job.status === 'COMPLETE' ? '요청 처리 완료' : '진행 중'}</summary>
+      <p>{envelope.job.goal}</p>
+      <ul>{envelope.job.requirements.map(item => <li key={item.requirement_id}>
+        <strong>{progressLabels[item.status]}</strong> · {item.request}
+        <small style={{ display: 'block' }}>{item.reason}</small>
+      </li>)}</ul>
+      <small>대화의 요청 처리 상태입니다. 참가자격 판정과는 별개이며 서버를 재시작하면 대화 기록이 초기화됩니다.</small>
+    </details>}
     {envelope.claims.map(claim => <div className="copilot-claim" key={claim.claim_id}>
-      <p style={{ whiteSpace: 'pre-wrap' }}>{claim.text}</p>
+      <p style={{ whiteSpace: 'pre-wrap' }}>{displayText(claim.text)}</p>
       <div className="copilot-evidence-chips">{claim.source_ids.map(id => {
         const source = sources.get(id);
         if (!source) return null;

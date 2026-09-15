@@ -136,6 +136,14 @@ def freeze_acceptance(plan, bundle):
                 '복합 조건이나 필요한 근거가 부족하면 조건부 결론의 한계를 설명한다.')
         else:
             add('request', 'EXPLANATION', ' / '.join(t.question for t in tasks))
+    if len(kinds) > 1:
+        # Tool selection is model-authored and can omit part of the user's goal.
+        # Completing the chosen reads alone therefore cannot finish a compound job.
+        criteria.append(AcceptanceCriterion(criterion_id='GOAL:request', task_kind='GOAL',
+            mode='EXPLANATION', requirement='원래 사용자 요청 전체에 답한다: ' + plan.goal
+            + ' 선택된 도구의 하위 질문만 답하고 원래 요청의 일부를 누락하면 MISSING이다. '
+              '요청하지 않은 실제 증빙 확보나 실행을 완료 조건으로 추가하지 않는다.',
+            fact_ids=tuple(f.fact_id for f in bundle.facts)))
     return tuple(criteria)
 
 

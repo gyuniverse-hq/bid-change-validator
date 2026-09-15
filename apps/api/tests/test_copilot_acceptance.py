@@ -7,6 +7,40 @@ from apps.api.app.copilot.acceptance import freeze_acceptance, assess_acceptance
 from apps.api.app.copilot.answer_validation import verify, compose
 
 
+def test_generated_source_edges_come_only_from_selected_server_facts():
+    from apps.api.app.copilot.answer_validation import generated_draft, mechanical
+    from apps.api.app.copilot.v31_contracts import FactCitedDraft
+    b = bundle()
+    class Gateway:
+        fact_citations = True
+        def call(self, stage, prompt, body, schema):
+            return FactCitedDraft(claims=[{'claim_id': 'c', 'text': '회사 보유 사실을 단정하지 않는 설명',
+                'fact_ids': [b.facts[0].fact_id], 'speech_act': 'ASSERTION'}])
+    result = generated_draft(Gateway(), 'generate', '', {}, b)
+    assert result.claims[0].source_ids == b.facts[0].source_ids
+    assert mechanical(result.claims[0], b) is None
+    # Correct edges do not establish semantic truth; normal verification remains required.
+    claims, _ = verify(result, b, FakeGateway({'validate': Verdicts(verdicts=[
+        {'claim_id': 'c', 'status': 'CONTRADICTED', 'reason': '실제 문장이 원문과 모순'}])}))
+    assert claims[0].validation == 'CONTRADICTED'
+
+
+def test_compound_goal_cannot_pass_when_selected_reads_omit_requested_document():
+    b = bundle()
+    p = TaskPlan(goal='저장 판정과 확인할 일, 공고 제출 서류와 마감일을 알려줘', tasks=[
+        Task(kind='READ_JUDGMENT', question='저장 판정'), Task(kind='READ_CHECKS', question='확인할 일')])
+    criteria = freeze_acceptance(p, b)
+    goal = next(c for c in criteria if c.criterion_id == 'GOAL:request')
+    assert p.goal in goal.requirement
+    rows = [{'criterion_id': c.criterion_id, 'status': 'MET', 'claim_ids': ['c'], 'reason': 'read explained'}
+            for c in criteria if c != goal]
+    claim = Claim(claim_id='c', text='저장 상태 설명', fact_ids=[f.fact_id for f in b.facts],
+                  source_ids=[s.source_id for s in b.sources], validation='SUPPORTED')
+    assert assess_acceptance(criteria, Verdicts(verdicts=[], criteria=rows), [claim])['task_coverage'] == 'PARTIAL'
+    rows.append({'criterion_id': goal.criterion_id, 'status': 'MISSING', 'claim_ids': [], 'reason': '서류·마감일 누락'})
+    assert goal.criterion_id in assess_acceptance(criteria, Verdicts(verdicts=[], criteria=rows), [claim])['missing_criterion_ids']
+
+
 def test_proposal_completion_requires_server_proposal_evidence():
     from apps.api.app.copilot.orchestration import procedure_fact
     b = bundle()

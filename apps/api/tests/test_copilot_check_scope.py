@@ -73,7 +73,10 @@ def test_manual_item_with_two_sources_keeps_one_target_entity(monkeypatch):
     tools.required_checks()
     manual = [f for f in tools.bundle.facts if f.target_kind=='MANUAL']
     assert len(manual) == tools.bundle.capabilities['manual_review_count'] == 1
-    assert len(manual[0].source_ids) == 2
+    sources = [s for s in tools.bundle.sources if s.source_id in manual[0].source_ids]
+    assert sum(s.kind == 'DOCUMENT' for s in sources) == 2
+    assert sum(s.kind == 'PRODUCT' for s in sources) == 1
+    assert '답변 입력 대상이 아니며' in next(s.quote for s in sources if s.kind == 'PRODUCT')
 
 
 def test_zero_answer_questions_is_explicit_and_not_all_conditions_satisfied(monkeypatch):

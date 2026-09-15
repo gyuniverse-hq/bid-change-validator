@@ -41,6 +41,10 @@ def test_short_document_question_reviews_oversized_source_instead_of_dropping_de
             super().__init__()
             self.seen = []
         def call(self, stage, system, body, schema):
+            if stage == 'integration_generate':
+                return schema(sections=[{'text': '조건을 확인합니다.', 'note_ids': [n['note_id'] for n in body['notes']]}])
+            if stage == 'integration_verify':
+                return schema(supported=True, complete=True, readable=True, missing_note_ids=[], reason='fixture')
             assert stage.startswith('document_')
             if stage == 'document_extract':
                 self.seen.extend(u['text'] for u in body['units'])
@@ -50,7 +54,7 @@ def test_short_document_question_reviews_oversized_source_instead_of_dropping_de
         tasks=[Task(kind='READ_DOCUMENT', question=goal)]), None, gateway)
     assert not partial
     assert any('2026. 8. 25. 10:00' in text for text in gateway.seen)
-    assert events[-1]['stage'] == 'document_ledger'
+    assert any(event['stage'] == 'document_ledger' for event in events)
     assert not any('근거 입력 한도' in note for note in evidence.limitations)
 
 
@@ -61,6 +65,28 @@ def test_units_cover_every_character_and_keep_citations():
     assert ''.join(text[u['start']:u['end']] for u in spans) == text
     assert all(len(u['text'].encode()) <= 3500 for u in units)
     assert all(u['fact_id'] == 'f' and u['source_id'] == 's' for u in units)
+
+
+@pytest.mark.parametrize('changed', ['none', 'source', 'question', 'fingerprint'])
+def test_resumption_reuses_only_current_source_and_same_completion_scope(changed):
+    from apps.api.app.copilot.v31_contracts import ConversationState
+    b = bundle('현장 방문 확인서가 필요합니다.')
+    b.fingerprints['document'] = 'verified-current-snapshot'
+    state = ConversationState(conversation_id=uuid4(), owner='test', scope=b.scope)
+    plan = TaskPlan(goal='참가자격 전체', tasks=[Task(kind='READ_DOCUMENT', question='참가자격 전체')])
+    compose_document_ledger(b, plan, Gateway(), state)
+    assert state.document_reviews
+    if changed == 'source':
+        b.sources[0].quote += ' 별도 확인도 필요합니다.'
+    elif changed == 'question':
+        plan.goal = '입찰서 제출 절차'
+    elif changed == 'fingerprint':
+        b.fingerprints['document'] = 'changed'
+    gateway = Gateway()
+    claims, partial, events = compose_document_ledger(b, plan, gateway, state)
+    assert claims and not partial
+    assert bool(gateway.contracts) is (changed != 'none')
+    assert bool(events[-1]['units'][0].get('cached')) is (changed == 'none')
 
 
 def test_reviewer_rejection_cannot_become_completed_ledger():

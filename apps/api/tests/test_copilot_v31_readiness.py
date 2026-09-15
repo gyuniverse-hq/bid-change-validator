@@ -24,6 +24,38 @@ def version():
             extracted_blocks=[{'text': '참가자격: 2년 내 2곳, 평균 800식, 1년 운영. 병원은 제외.', 'block_index': 0, 'section_index': 1, 'location': 'section 1'}])])
 
 
+def test_literal_comparison_distinguishes_metadata_and_ambiguous_attachment_identity():
+    from apps.api.app.copilot.source_changes import compare_sources
+    a = version()
+    a.bid_notice_order, a.raw_json = '000', {'indstrytyLmtYn': 'N'}
+    a.documents[0].source_field = 'ntceSpecDocUrl1'
+    b = deepcopy(a)
+    b.bid_notice_order, b.raw_json = '001', {'indstrytyLmtYn': 'Y'}
+    b.documents[0].source_field = 'ntceSpecDocUrl2'  # Attachment order alone is not identity.
+    old, rows, limitations = compare_sources(a, b)
+    assert '동일 1건, 상이 0건' in rows[0] and not limitations
+    assert any('N → Y' in row for row in rows)
+    b.documents[0].extracted_blocks[0]['text'] = '병원도 포함한다.'
+    new, rows, limitations = compare_sources(a, b)
+    assert old != new and '동일 0건, 상이 1건' in rows[0]
+    assert any('+병원도 포함한다.' in row for row in rows)
+    duplicate = deepcopy(b.documents[0]); duplicate.id = UUID('00000000-0000-4000-8000-000000000015')
+    b.documents.append(duplicate)
+    _, rows, limitations = compare_sources(a, b)
+    assert '상이 0건' in rows[0] and any('특정하지 못해' in value for value in limitations)
+
+
+def test_removed_clause_and_renumbered_existing_clause_are_not_replacement():
+    from apps.api.app.copilot.source_changes import normalized_line_delta
+    a = '다. 별도 처리 허가\n라. 수집·운반 허가 또는 장비 기준\n- 3 -'
+    b = '다. 수집·운반 허가 또는 장비 기준\n- 2 -'
+    removed, added = normalized_line_delta(a, b)
+    assert removed == ['별도 처리 허가'] and added == []
+    # Semantic negatives and numbers inside a clause must not be normalized away.
+    assert normalized_line_delta('가. 최근 2년, 병원 제외', '나. 최근 3년, 병원 포함') == (
+        ['최근 2년, 병원 제외'], ['최근 3년, 병원 포함'])
+
+
 def test_leaked_hwp_controls_are_rejected_but_ordinary_hanja_is_not():
     from apps.api.app.document_rag.readiness import corrupted_extraction
     assert corrupted_extraction([{'text':'捤獥汤捯湰灧湰灧桤灧湯湷氠瑢'}])

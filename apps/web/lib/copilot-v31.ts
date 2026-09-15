@@ -13,6 +13,10 @@ export type CopilotEnvelope = {
     origin_tool?: string | null; entity_ref?: string | null }[];
   capabilities: Record<string, number>; actions: ActionProposal[];
   limitations: string[]; clarification: string | null;
+  job?: { goal: string; status: 'OPEN' | 'COMPLETE'; requirements: {
+    requirement_id: string; request: string; reason: string;
+    status: 'OPEN' | 'ANSWERED' | 'AWAITING_CONFIRMATION' | 'EXECUTED' | 'UNAVAILABLE' | 'STALE';
+  }[] } | null;
   processing: { path: 'v3.1'; model: string | null; fallback: boolean; task_status: 'PASS' | 'PARTIAL' | 'FAIL'; elapsed_ms: number };
 };
 

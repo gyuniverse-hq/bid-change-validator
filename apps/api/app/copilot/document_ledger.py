@@ -1,5 +1,6 @@
 """Bounded full-document review. Every source span has an explicit outcome."""
 import json
+import hashlib
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, ConfigDict, Field
@@ -105,12 +106,26 @@ def omit_excluded_prose(draft):
     return draft
 
 
-def compose_document_ledger(bundle, plan, gateway):
+def compose_document_ledger(bundle, plan, gateway, state=None):
     units = source_units(bundle)
     ledger = {u['unit_id']: {k: v for k, v in u.items() if k != 'text'} | {'status': 'NOT_PROCESSED'} for u in units}
     claims, events = [], []
     acceptance = freeze_document_acceptance(plan)
     frozen = acceptance.payload()
+    # Reuse only after ProductTools has reread this exact current snapshot.
+    # Prompt/acceptance, owner scope and source text are all part of the key.
+    cache_basis = [frozen, bundle.scope.model_dump(mode='json'), bundle.fingerprints.get('document')]
+    def cache_key(unit):
+        return hashlib.sha256(json.dumps([cache_basis, unit['text']], ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    cache = state.document_reviews if state is not None and bundle.fingerprints.get('document') else {}
+    for unit in units:
+        saved = cache.get(cache_key(unit))
+        if saved and saved.get('status') in {'EXPLAINED', 'OUT_OF_SCOPE'}:
+            ledger[unit['unit_id']].update(status=saved['status'], reason='CURRENT_SOURCE_AND_ACCEPTANCE_MATCH', cached=True)
+            if saved['status'] == 'EXPLAINED':
+                claims.append(Claim(claim_id='document-' + unit['unit_id'], text=saved['explanation'],
+                    fact_ids=[unit['fact_id']], source_ids=[unit['source_id']], validation='SUPPORTED',
+                    method='semantic', reason='SPAN_REVIEWED_CURRENT_HASH'))
     def body(public, **extra):
         # Fresh serialization prevents a client/stage from mutating the contract
         # used in another batch or in repair. Identity remains request-bound.
@@ -190,7 +205,8 @@ def compose_document_ledger(bundle, plan, gateway):
     # Batches use disjoint immutable source spans. Bound concurrency as well as
     # total calls, so document length does not imply serial network round trips.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        list(pool.map(process_batch, list(batches(units))[:DOCUMENT_BATCHES]))
+        pending_units = [u for u in units if ledger[u['unit_id']]['status'] == 'NOT_PROCESSED']
+        list(pool.map(process_batch, list(batches(pending_units))[:DOCUMENT_BATCHES]))
     # One bounded repair round, for rejected spans only. Already verified spans
     # remain immutable and cannot acquire another span's verdict.
     rejected = [u for u in units if ledger[u['unit_id']]['status'] == 'NEEDS_REVIEW']
@@ -230,6 +246,13 @@ def compose_document_ledger(bundle, plan, gateway):
         list(pool.map(repair_batch, list(batches(rejected))[:DOCUMENT_REPAIR_BATCHES]))
     order = {u['unit_id']: index for index, u in enumerate(units)}
     claims.sort(key=lambda c: order[c.claim_id.removeprefix('document-')])
+    if state is not None and bundle.fingerprints.get('document'):
+        explanations = {c.claim_id.removeprefix('document-'): c.text for c in claims}
+        for unit in units:
+            status = ledger[unit['unit_id']]['status']
+            if status in {'EXPLAINED', 'OUT_OF_SCOPE'}:
+                state.document_reviews[cache_key(unit)] = {'status': status, 'explanation': explanations.get(unit['unit_id'], '')}
+        state.document_reviews = dict(list(state.document_reviews.items())[-400:])
     missing = [row for row in ledger.values() if row['status'] not in {'EXPLAINED', 'OUT_OF_SCOPE'}]
     if missing:
         bundle.limitations.append(f'전체 문서 {len(units)}개 부분 중 {len(missing)}개는 설명 검증을 마치지 못했습니다. 해당 원문을 추가 확인해야 합니다.')

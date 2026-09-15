@@ -305,6 +305,13 @@ def test_real_sdk_transport_enforces_one_attempt_usage_and_late_discard():
     result = gateway.call('generate', 'fixture', {}, Draft)
     assert result.claims and received[0]['max_completion_tokens'] == 3000
     assert gateway.calls[0]['usage']['total_tokens'] == 30
+    gateway.large_context = True
+    large = gateway.call('generate', 'fixture', {'source': 'a' * 20000}, Draft)
+    assert large.claims and received[-1]['max_completion_tokens'] == 6000
+    assert gateway.calls[-1]['reserved_cost_upper_usd'] == pytest.approx(.0552)
+    with pytest.raises(BudgetExceeded, match='INPUT_BUDGET'):
+        gateway.call('validate', 'fixture', {'source': 'a' * 240000}, Verdicts)
+    gateway.large_context = False
     def fail(request):
         received.append('failure')
         return httpx.Response(500, json={'error': {'message': 'fixture'}})

@@ -32,9 +32,22 @@ parser.add_argument('--acceptance', action='store_true', help='Repeated completi
 parser.add_argument('--dialogue', action='store_true', help='Natural reference chain and complete source scope; requires --live-model')
 parser.add_argument('--snapshot', type=Path, help='Approved local Namwon snapshot; use --namwon-bundle for profile replay or --live-model for full-source explanation')
 parser.add_argument('--snapshot-topic', choices=['qualification', 'submission'], default='qualification', help='Long-document live evaluation topic; one question per budgeted run')
+parser.add_argument('--core-snapshots', type=Path, help='Approved Core3 source directory; live job evaluation in isolated DB')
+parser.add_argument('--core-profiles', type=Path, help='Synthetic Golden fixture bundle ZIP')
+parser.add_argument('--core-notice', choices=['R26BK01634263', 'R26BK01633750', 'R26BK01687120'], help='Select one Core notice for a bounded diagnostic')
+parser.add_argument('--core-profiles-only', action='store_true', help='DB/rule observations for Core J01-J12, no model')
 parser.add_argument('--workflow', action='store_true', help='Change/assumption/proposal/explicit-confirmation flow; requires --live-model')
 parser.add_argument('--namwon-bundle', type=Path, help='Read J13-J16 from a Golden ZIP and verify product judgment in a rolled-back local DB transaction')
 args = parser.parse_args()
+if args.core_notice and not args.core_snapshots:
+    parser.error('--core-notice requires --core-snapshots')
+if args.core_profiles_only and (not args.core_snapshots or args.live_model):
+    parser.error('--core-profiles-only requires --core-snapshots and forbids live model')
+if args.core_snapshots:
+    if not (args.live_model or args.core_profiles_only) or not args.core_profiles or args.snapshot or args.browser or args.dialogue or args.workflow or args.acceptance or args.namwon_bundle:
+        parser.error('--core-snapshots requires --live-model and --core-profiles as a separate suite')
+    os.environ['COPILOT_CORE_SNAPSHOTS'] = str(args.core_snapshots.resolve(strict=True))
+    os.environ['COPILOT_CORE_PROFILES'] = str(args.core_profiles.resolve(strict=True))
 if args.dialogue and (not args.live_model or args.workflow or args.browser or args.acceptance):
     parser.error('--dialogue requires --live-model and cannot combine with another suite')
 if args.snapshot and not (args.namwon_bundle or args.live_model):
@@ -56,8 +69,8 @@ if args.namwon_bundle and (args.live_model or args.browser or args.acceptance or
     parser.error('--namwon-bundle selects a DB-only suite.')
 if args.namwon_bundle:
     os.environ['COPILOT_NAMWON_BUNDLE'] = str(args.namwon_bundle.resolve(strict=True))
-if not 0 < args.max_usd <= 1:
-    parser.error('Per-run model budget must be > 0 and <= $1, within the authorized $10 total.')
+if not 0 < args.max_usd <= (2 if args.core_snapshots else 1):
+    parser.error('Per-run model estimate cap is $2 for Core3, $1 otherwise, within the authorized total.')
 docker = shutil.which('docker')
 if not docker:
     for base in [Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs/DockerDesktop', Path('C:/Program Files/Docker/Docker')]:
@@ -185,6 +198,8 @@ with (output / 'run.log').open('w', encoding='utf-8') as logfile:
             tests = ['test_copilot_v31_browser_live_db.py' if args.live_model else 'test_copilot_v31_browser_db.py']
         if args.snapshot and args.live_model:
             tests = ['test_copilot_snapshot_live_db.py']
+        if args.core_snapshots:
+            tests = ['test_copilot_core_profiles_db.py' if args.core_profiles_only else 'test_copilot_core_jobs_db.py']
         if args.dialogue:
             tests = ['test_copilot_dialogue_live_db.py']
         if args.workflow:
@@ -192,6 +207,7 @@ with (output / 'run.log').open('w', encoding='utf-8') as logfile:
         if args.namwon_bundle:
             tests = ['test_copilot_namwon_snapshot_db.py' if args.snapshot else 'test_copilot_namwon_db.py']
         code = pytest.main(['-v', '-p', 'no:cacheprovider', '--tb=short', '--junitxml=' + str(output / 'tests.xml'),
+                            *(['-k', args.core_notice] if args.core_notice else []),
                             *['apps/api/tests/' + t for t in tests]])
     finally:
         sys.stdout, sys.stderr = old_out, old_err

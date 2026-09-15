@@ -20,10 +20,21 @@ def evidence_payload(bundle, facts=None):
     rows = []
     for fact in facts:
         row = fact.model_dump(mode='json', exclude_none=True)
+        if fact.origin_tool == 'READ_DOCUMENT':
+            row.pop('entity_ref', None)  # source IDs already identify the exact current chunk
         if any(fact.text == quotes.get(sid) for sid in fact.source_ids):
             row.pop('text')  # source_ids point to the sole authoritative text
         rows.append(compact_scope(row))
-    source_rows = [compact_scope(s.model_dump(mode='json', exclude_none=True)) for s in sources]
+    # Hashes and full UI locations are verified/retained by the server. They do
+    # not help the language model compare the actual source text.
+    source_rows = [compact_scope(s.model_dump(mode='json', exclude_none=True,
+                    include={'source_id', 'kind', 'quote', 'scope', 'document_id'})) for s in sources]
+    documents = {}
+    for row in source_rows:
+        document_id = row.pop('document_id', None)
+        if document_id:
+            documents.setdefault(document_id, 'document-' + str(len(documents)))
+            row['document_ref'] = documents[document_id]
     return {'scopes': scopes, 'current_scope': 'current', 'server_context': bundle.server_context,
             'facts': rows, 'sources': source_rows,
             'coverage': bundle.coverage, 'limitations': bundle.limitations}

@@ -6,6 +6,9 @@ from time import monotonic
 DOCUMENT_BATCHES = 12
 DOCUMENT_REPAIR_BATCHES = 3
 DOCUMENT_CALLS = 2 * (DOCUMENT_BATCHES + DOCUMENT_REPAIR_BATCHES)
+LARGE_INPUT_BYTES = 240000
+LARGE_OUTPUT_TOKENS = 6000
+QUALITY_STAGES = {'generate', 'validate', 'repair', 'revalidate'}
 
 
 class BudgetExceeded(RuntimeError):
@@ -20,6 +23,16 @@ class ModelGateway:
         self.client = client
         self.calls = []
         self.enabled = True
+        self.allow_large_context = True
+        self.large_context = False
+        self.fact_citations = True
+
+    def call_limits(self, stage):
+        return (LARGE_INPUT_BYTES, LARGE_OUTPUT_TOKENS) if self.large_context and stage in QUALITY_STAGES else (16000, 3000)
+
+    def call_cost_upper(self, stage):
+        input_bound, output_bound = self.call_limits(stage)
+        return (input_bound * .20 + output_bound * 1.20) / 1_000_000
 
     @property
     def available(self):
@@ -31,6 +44,10 @@ class ModelGateway:
     def call(self, stage, system, body, schema):
         if not self.enabled:
             raise RuntimeError('MODEL_PROCESSING_DISABLED')
+        if stage.startswith('integration_') and sum(c['stage'].startswith('integration_') for c in self.calls) >= 12:
+            raise BudgetExceeded('INTEGRATION_BUDGET')
+        if stage.startswith('group_') and sum(c['stage'].startswith('group_') for c in self.calls) >= 32:
+            raise BudgetExceeded('PRODUCT_GROUP_BUDGET')
         if stage in {'document_extract', 'document_verify', 'document_repair', 'document_revalidate'}:
             if not getattr(self, 'document_review', False) or sum(c['stage'].startswith('document_') for c in self.calls) >= DOCUMENT_CALLS:
                 raise BudgetExceeded('DOCUMENT_REVIEW_BUDGET')
@@ -44,7 +61,8 @@ class ModelGateway:
         payload = json.dumps(body, ensure_ascii=False, default=str)
         # UTF-8 bytes is a conservative token upper bound; include the response schema.
         upper = len((system + payload + json.dumps(schema.model_json_schema())).encode('utf-8')) + 512
-        if upper > 16000:
+        input_limit, output_limit = self.call_limits(stage)
+        if upper > input_limit:
             raise BudgetExceeded('INPUT_BUDGET')
         if not self.available:
             raise RuntimeError('MODEL_UNAVAILABLE')
@@ -52,13 +70,14 @@ class ModelGateway:
             from openai import OpenAI
             self.client = OpenAI(max_retries=0)
         entry = {'stage': stage, 'model': self.model, 'input_token_upper_bound': upper,
+                 'reserved_cost_upper_usd': self.call_cost_upper(stage), 'output_token_limit': output_limit,
                  'usage': None, 'status': 'started'}
         self.calls.append(entry)
         start = monotonic()
         try:
             response = self.client.with_options(max_retries=0, timeout=self.remaining()).chat.completions.parse(
                 model=self.model, messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': payload}],
-                response_format=schema, max_completion_tokens=3000,
+                response_format=schema, max_completion_tokens=output_limit,
             )
             entry['usage'] = response.usage.model_dump() if response.usage else None
             if self.remaining() <= 0:

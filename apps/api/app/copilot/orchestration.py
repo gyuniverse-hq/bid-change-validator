@@ -51,13 +51,15 @@ def fallback_plan(request):
     if any(t in text for t in ('하면', '가정', '만약')):
         kinds += ['READ_JUDGMENT', 'REVIEW_ASSUMPTION']
     # Proposal creation still goes through legacy server grammar; the planner cannot execute writes.
-    if request.user_input is not None or any(t in text for t in ('저장', '반영', '재검증', '취소')):
+    from .chat import _action_control
+    if request.user_input is not None or _action_control(request) in {'answer', 'revalidate'}:
         kinds.append('PROPOSE_ACTION')
     kinds = list(dict.fromkeys(kinds))[:6] or ['READ_DOCUMENT']
     return TaskPlan(goal=text, tasks=[Task(kind=k, question=request.public_document_question or text) for k in kinds])
 
 
 def plan_turn(request, state, gateway):
+    from .job_state import planner_context, conversation_hints
     from .chat import _action_control
     if acknowledging_proposal(request, state):
         return TaskPlan(goal=request.message, tasks=[Task(kind='ACKNOWLEDGE_ACTION', question=request.message)]), False
@@ -83,17 +85,30 @@ question에는 회사/공고 UUID 같은 내부 식별자를 넣지 않는다. a
 현재 공고·회사·판정은 authorized_scope로 선택되어 있다. READ 도구가 실제 자료를 가져오므로
 프롬프트에 원문/회사정보가 없다는 이유로 다시 제출하라고 요구하지 않는다.
 READ_JUDGMENT는 저장 판정 조회이며 새 판정 실행이 아니다.
+READ_JUDGMENT는 회사의 충족·미달 상태와 사유를 읽는다. 저장 분석 요건 자체의 기준/현재 비교는 READ_CHANGES이다.
+READ_CHANGES는 저장 분석의 요건 diff, 원문 대조, 수집 메타데이터 차이를 함께 읽는다.
+변경 비교 요청에서 '회사 판정 변화를 추측하지 마' 같은 금지는 새 판정 설명 요청이 아니다.
 capabilities.document_search=false이면 저장 요건/판정에 관한 가정 검토는 READ_JUDGMENT로 조건을 조회한다.
-사용자가 원문 검색 자체를 요청한 경우에만 READ_DOCUMENT를 계획하고, 가용성 한계를 숨기지 않는다.
+공고 내용(제출 서류·마감일·절차·원문 조건)을 답하려면 READ_DOCUMENT를 계획한다.
+사용자가 '원문 검색'이라는 말을 하지 않아도 필요하다. document_search=false이면 가용성 한계를 숨기지 않는다.
+READ_CHECKS는 저장된 확인 필요 항목과 입력 가능 여부만 조회한다. 공고의 서류·일정 조회를 대신하지 않는다.
+복합 요청은 필요한 도구마다 분리한다. 예를 들어 저장 판정+확인할 일+공고 제출 준비는
+READ_JUDGMENT, READ_CHECKS, READ_DOCUMENT 세 작업이다. 각 question에는 해당 도구가 답할 요청만 넣는다.
 ACKNOWLEDGE_ACTION은 서버 전용이므로 계획하지 않는다.
 질문에 과거/변경 비교가 없으면 READ_CHANGES를 추가하지 않는다. 같은 종류의 저장 조회는 한 번으로 합친다.
 확인할 것/다음 행동의 목록 요청은 READ_CHECKS가 중심이다. 사용자가 수행할 확인사항을 정리하는 요청을
 회사의 모든 증빙을 지금 다시 검증하거나 새 제출서류 목록을 완성하는 과업으로 확대하지 않는다.
-복합 질문을 단일 intent로 축소하지 않는다. 대상 지시가 실제로 모호할 때만 clarification을 사용하고 그 외에는 null이다.''',
+복합 질문을 단일 intent로 축소하지 않는다. 대상 지시가 실제로 모호할 때만 clarification을 사용하고 그 외에는 null이다.
+job은 앞선 목적과 미해결 요청이다. 현재 질문을 그 문맥에서 이해하되 이전 근거를 현재 사실로 재사용하지 않는다.
+기존 요청을 이어서 읽는 작업은 같은 tool의 requirement_id를 붙인다. 새 요청은 null로 두고 ID를 만들지 않는다.
+사용자가 남은 요청을 이어서 검토하라고 하면 resume_unresolved=true로 한다. 단순 새 질문은 false다.
+사용자가 묻지 않은 과거 과업을 전부 반복하지 않는다. 기존 요청을 삭제하거나 실행 완료로 판단하지 않는다.''',
                             {'question': request.message, 'authorized_scope': state.scope.model_dump(mode='json'),
                              'capabilities': {'document_search': request.allow_external_processing},
-                             'history': [m.model_dump(mode='json') for m in state.messages[-6:] if m.scope == state.scope],
-                             'targets': [t.model_dump() for t in state.targets[-20:]]}, TaskPlan)
+                             'job': planner_context(state),
+                             'history': conversation_hints(state, state.scope),
+                             'targets': [{'target_id': t.target_id, 'kind': t.kind, 'label': t.label[:120],
+                                          'ordinal': t.ordinal} for t in state.targets[-6:]]}, TaskPlan)
         # Explicit read scope cannot become a write-capable proposal through model classification.
         plan.tasks = [t for t in plan.tasks if t.kind != 'ACKNOWLEDGE_ACTION']
         # Explicit hypothetical language must retain an assumption fact even
@@ -146,6 +161,7 @@ def resolve_target(request, state):
 
 
 def coordinate(request, owner, tools, *, repository=conversations, gateway=None):
+    from .job_state import reconcile_basis, bind_plan, finish_turn, apply_execution_receipts
     gateway = gateway or ModelGateway()
     # Resolve the current product identity before loading conversation hints. Missing judgments
     # must not stop current-document reads.
@@ -159,6 +175,8 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     if changed:
         state.targets, state.facts, state.sources, state.fingerprints = [], [], [], {}
     state.scope = tools.scope
+    apply_execution_receipts(state, repository.execution_receipts(owner, tools.scope.case_id))
+    reconcile_basis(state, tools.scope)
     from .saved_answer_followup import followup_kind, read_followup
     saved_followup = followup_kind(request.message) if request.user_input is None and not request.target_id and not request.requirement_key else None
     from .natural_answers import visit_candidate
@@ -181,7 +199,8 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     plan.goal = request.message
     from ..document_rag.readiness import full_source_request
     original_document_question = request.public_document_question or request.message
-    if full_source_request(original_document_question):
+    if full_source_request(original_document_question) and (
+            request.public_document_question or all(t.kind == 'READ_DOCUMENT' for t in plan.tasks)):
         # A planner paraphrase must not narrow the user's full source scope or
         # invent extra mandatory deliverables absent from the original request.
         for task in plan.tasks:
@@ -199,6 +218,17 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         plan = TaskPlan(goal=request.message, tasks=[Task(kind=kind, question=target.label), *profile_tasks,
                                                      *assumption_tasks, *proposal_tasks])
     clarification = clarification or plan.clarification
+    job_checkpoint = state.job.model_copy(deep=True) if state.job else None
+    try:
+        bindings = [] if clarification else bind_plan(state, plan)
+        if plan.resume_unresolved and state.job and all(r.status != 'ANSWERED' for r in state.job.requirements):
+            # No part of the original compound goal has passed yet. Keep that
+            # goal, including anything omitted by the prior planner, in coverage.
+            plan.goal = state.job.goal
+    except ValueError:
+        state.job = job_checkpoint
+        bindings = []
+        clarification = '이전 과업과 이번 요청의 연결을 확인하지 못했습니다. 어떤 남은 항목을 이어서 검토할지 알려 주세요.'
     actions = []
     task_facts = {}
     pending_proposal = False
@@ -247,6 +277,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
                             'elapsed_ms': round((monotonic() - started) * 1000),
                             'coverage': tools.bundle.coverage.get(task.kind)})
     bundle = tools.bundle
+    reconcile_basis(state, tools.scope, bundle.fingerprints)
     if changed:
         bundle.limitations.append('공고·회사·분석·판정 기준이 바뀌어 이전 항목 선택을 해제했습니다.')
     if any(key in state.fingerprints and value != state.fingerprints[key] for key, value in bundle.fingerprints.items()):
@@ -334,7 +365,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
             if fid in seen: continue
             seen.add(fid)
             fact = facts[fid]
-            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'} or fact.entity_ref in {'checks_empty', 'saved_answer_followup'}:
+            if fact.origin_tool in {'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION'} or fact.entity_ref in {'checks_empty', 'saved_answer_followup', 'judgment_summary'}:
                 continue
             counters[fact.target_kind] = counters.get(fact.target_kind, 0) + 1
             targets.append(Target(target_id=str(uuid4()), kind=fact.target_kind, label=claim.text[:200],
@@ -353,10 +384,12 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     complete = (bool(claims) and not fallback and not planner_fallback and not clarification
                 and all(bundle.coverage.get(t.kind) == 'FOUND' for t in plan.tasks)
                 and not missing_tasks and not any(e.get('reason') == 'EVIDENCE_BUDGET' for e in events))
+    finish_turn(state, bindings, bundle, claims, events, complete=complete, turn_id=mid, actions=actions)
     envelope = AnswerEnvelope(conversation_id=state.conversation_id, context_revision=revision + 1, message_id=mid,
                               status_card=tools.card, claims=claims, sources=[s for s in bundle.sources if s.source_id in used],
                               limitations=list(dict.fromkeys(bundle.limitations)), follow_up_targets=targets,
                               actions=actions, capabilities=bundle.capabilities, clarification=clarification,
+                              job=state.job.model_copy(deep=True) if state.job else None,
                               processing=Processing(model=gateway.model, fallback=fallback or planner_fallback,
                                                     task_status='PASS' if complete else 'PARTIAL' if claims or tools.card else 'FAIL',
                                                     elapsed_ms=round((monotonic() - gateway.started) * 1000),

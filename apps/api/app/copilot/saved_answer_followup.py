@@ -71,7 +71,14 @@ def read_followup(kind, tools):
         if len(details) != 1 or details[0].provenance != p:
             raise ValueError('ANSWER_EVIDENCE_SCOPE_MISMATCH')
         text = receipt_text(kind, summary, answer, source, details[0].requirement)
-        proof = json.dumps({'saved_answer':answer.normalized_value,'source_status':[(j.requirement_key,j.status) for j in source.judgments if j.requirement_key == answer.requirement_key],
-                           'current_counts':summary.judgment_counts,'current_status':summary.overall_status,
-                           'requirements':[(j.raw,j.status) for j in summary.judgments]},ensure_ascii=False)
+        labels = {'SATISFIED': '충족', 'UNSATISFIED': '미달', 'UNKNOWN': '확인 필요'}
+        values = json.loads(answer.normalized_value).get('answers', {}) if answer.normalized_value else {}
+        inputs = ' / '.join(label + ': ' + ('예' if values[key] else '아니요')
+                            for key, label in [('site_visited', '현장 방문 완료'),
+                                               ('visit_certificate', '확인서 제출')]
+                            if isinstance(values.get(key), bool))
+        proof = ('저장된 사용자 답변: ' + (inputs or '입력 내용의 별도 확인 필요')
+                 + '\n사용자 입력이며 실제 증빙 검증을 뜻하지 않습니다.'
+                 + '\n현재 판정에 연결된 요건별 결과:\n'
+                 + '\n'.join(labels.get(j.status, j.status) + ' — ' + j.raw for j in summary.judgments))
         return text, proof

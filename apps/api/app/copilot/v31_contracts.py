@@ -47,12 +47,37 @@ class Task(Contract):
     kind: Literal['READ_JUDGMENT', 'READ_PROFILE', 'READ_CHECKS', 'READ_DOCUMENT', 'READ_CHANGES', 'REVIEW_ASSUMPTION', 'PROPOSE_ACTION', 'ACKNOWLEDGE_ACTION']
     question: str = Field(max_length=4000)
     scope_ref: Literal['current_case'] = 'current_case'
+    requirement_id: str | None = None
 
 
 class TaskPlan(Contract):
     goal: str = Field(max_length=4000)
     tasks: list[Task] = Field(min_length=1, max_length=6)
     clarification: str | None = None
+    resume_unresolved: bool = False
+
+
+class JobRequirement(Contract):
+    requirement_id: str
+    request: str
+    tool: str
+    status: Literal['OPEN', 'ANSWERED', 'AWAITING_CONFIRMATION', 'EXECUTED', 'UNAVAILABLE', 'STALE'] = 'OPEN'
+    basis: Scope
+    fingerprints: dict[str, str] = Field(default_factory=dict)
+    claim_ids: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    last_turn_id: str | None = None
+    reason: str = ''
+    action_keys: list[str] = Field(default_factory=list)
+    execution_result_ids: list[str] = Field(default_factory=list)
+
+
+class JobState(Contract):
+    job_id: UUID
+    goal: str
+    requirements: list[JobRequirement] = Field(default_factory=list)
+    status: Literal['OPEN', 'COMPLETE'] = 'OPEN'
+    revision: int = 0
 
 
 class EvidenceBundle(Contract):
@@ -88,6 +113,17 @@ class DraftClaim(Contract):
 
 class Draft(Contract):
     claims: list[DraftClaim] = Field(max_length=60)
+
+
+class FactCitedClaim(Contract):
+    claim_id: str
+    text: str = Field(min_length=1, max_length=3000)
+    fact_ids: list[str]
+    speech_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
+
+
+class FactCitedDraft(Contract):
+    claims: list[FactCitedClaim] = Field(max_length=60)
 
 
 class CandidateClaim(DraftClaim):
@@ -174,6 +210,7 @@ class AnswerEnvelope(Contract):
     capabilities: dict[str, int] = Field(default_factory=dict)
     clarification: str | None = None
     processing: Processing = Field(default_factory=Processing)
+    job: JobState | None = None
 
     @field_validator('claims')
     @classmethod
@@ -201,3 +238,5 @@ class ConversationState(Contract):
     facts: list[Fact] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
     fingerprints: dict[str, str] = Field(default_factory=dict)
+    job: JobState | None = None
+    document_reviews: dict[str, dict[str, Any]] = Field(default_factory=dict)

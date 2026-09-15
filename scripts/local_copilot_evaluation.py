@@ -206,13 +206,14 @@ def install_budgeted_model(key):
         def call(self, stage, system, body, schema):
             with lock:
                 ledger = json.loads(path.read_text(encoding='utf-8'))
-                amount = .0068  # 16k input * $0.20/M + 3k output * $1.20/M.
-                if ledger['reserved_estimate_usd'] + amount > min(1.0, ledger['cap_estimate_usd']) or self.reserved + amount > .25:
+                amount = self.call_cost_upper(stage)
+                if ledger['reserved_estimate_usd'] + amount > min(3.0, ledger['cap_estimate_usd']) or self.reserved + amount > .25:
                     raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
                 self.reserved += amount
                 ledger['reserved_estimate_usd'] += amount
                 index = len(ledger['calls'])
-                ledger['calls'].append({'stage':stage,'status':'reserved','time':datetime.now(timezone.utc).isoformat()})
+                ledger['calls'].append({'stage':stage,'status':'reserved','reserved_estimate_usd':amount,
+                                        'time':datetime.now(timezone.utc).isoformat()})
                 save(path, ledger)
             try:
                 result = super().call(stage, system, body, schema)

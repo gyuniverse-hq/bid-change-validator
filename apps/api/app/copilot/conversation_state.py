@@ -12,7 +12,29 @@ class ConversationRepository:
     def __init__(self, capacity=256, ttl=3600):
         self.capacity, self.ttl = capacity, ttl
         self._states = OrderedDict()
+        self._receipts = OrderedDict()
         self._lock = RLock()
+
+    def record_execution(self, owner, action, result):
+        """Called only after the business API succeeds; no conversation revision race."""
+        from .job_state import action_key
+        if str(result.preflight_case_id) != str(action.expected.case_id):
+            return
+        with self._lock:
+            key = (owner, str(action.expected.case_id), action_key(action))
+            self._receipts[key] = (str(result.result_judgment_run_id), monotonic())
+            self._receipts.move_to_end(key)
+            while len(self._receipts) > self.capacity * 6:
+                self._receipts.popitem(last=False)
+
+    def execution_receipts(self, owner, case_id):
+        with self._lock:
+            now = monotonic()
+            for key, (_, touched) in list(self._receipts.items()):
+                if now - touched > self.ttl:
+                    del self._receipts[key]
+            return {key[2]: value[0] for key, value in self._receipts.items()
+                    if key[:2] == (owner, str(case_id))}
 
     def load(self, owner, scope, conversation_id=None, revision=None):
         with self._lock:

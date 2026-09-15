@@ -62,15 +62,18 @@ def _clauses(chunk_text: str) -> list[str]:
 
 
 def salvage_missing_industry_slots(
-    slots: list[dict[str, Any]],
+    covered_codes: set[str],
     chunks: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """모델 슬롯이 담지 못한 업종코드를 원문 조항으로 채운 슬롯 목록을 낸다."""
-    covered: set[str] = set()
-    for slot in slots:
-        covered |= industry_codes_in(str(slot.get("raw") or ""))
-        covered |= industry_codes_in(str(slot.get("업종_raw") or ""))
+    """`covered_codes` 에 없는 업종코드를 원문 조항으로 채운 슬롯 목록을 낸다.
 
+    덮임의 기준은 **요건으로 도달했는가**이지 모델이 냈는가가 아니다. 실측(2026-09-15)에서
+    모델이 "○ … 1) A(1257) 또는 B(6770) 또는 C(6786) 등록업체 2) D(1227) 등록업체" 문단을
+    통째로 한 슬롯에 담았고, 마지막 조각에 코드가 둘이라 ANY_OF 로 못 풀려 UNMAPPED 가 됐다.
+    모델 슬롯의 raw 만 보고 "덮였다" 고 하면 그 네 코드는 영영 안 채워진다. 그래서
+    canonical 을 거친 뒤 실제로 요건이 된 코드를 받아 나머지를 채운다.
+    """
+    covered = set(covered_codes)
     salvaged: list[dict[str, Any]] = []
     seen_raw: set[str] = set()
     for chunk in chunks:

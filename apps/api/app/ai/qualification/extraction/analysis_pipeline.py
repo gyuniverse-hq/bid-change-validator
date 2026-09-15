@@ -131,17 +131,8 @@ def analyze_qualification_documents(
         max_retry=max_retry,
     )
 
-    slots = list(extraction.get("slots") or [])
-    if extraction.get("status") != "failed":
-        # 모델이 빠뜨린 업종코드 조항을 원문에서 채운다. 같은 공고를 반복해 돌리면 어떤
-        # 실행에서는 업종 조항이 통째로 안 올라온다 — 원문의 숫자는 그대로인데. 코드가
-        # 확신할 수 있는 것은 코드가 채운다. LLM 호출은 없다.
-        target_ids = set(extraction.get("target_chunk_ids") or [])
-        target_chunks = [chunk for chunk in chunks if chunk.get("chunk_id") in target_ids]
-        slots.extend(salvage_missing_industry_slots(slots, target_chunks))
-
     normalized_slots = _normalize_extracted_slots(
-        slots,
+        list(extraction.get("slots") or []),
         normalize_value=normalize_value,
     )
 
@@ -150,6 +141,33 @@ def analyze_qualification_documents(
         notice_version_id=analysis_input.notice_version_id,
         source_type="NOTICE_DOCUMENT",
     )
+
+    if chunks:
+        # 모델이 빠뜨린 업종코드 조항을 원문에서 채운다. 같은 공고를 반복해 돌리면 어떤
+        # 실행에서는 업종 조항이 안 올라오거나, 올라와도 매핑이 못 푼다 — 원문의 숫자는
+        # 그대로인데. 기준은 **요건으로 도달한 코드**다. 코드가 확신할 수 있는 것은 코드가
+        # 채운다. LLM 호출은 없다.
+        #
+        # 추출이 통째로 실패해도(호출 오류·전 슬롯 검증 탈락) 돌린다. 원문은 모델과 무관하게
+        # 거기 있다. 그 경우 결과는 PARTIAL 로 남아 "모델 없이 채운 것" 임이 드러난다.
+        reached = {
+            str(item.value)
+            for item in canonicalized["requirements"]
+            if item.type == "INDUSTRY" and str(item.value).isdigit()
+        }
+        target_ids = set(extraction.get("target_chunk_ids") or [])
+        target_chunks = [chunk for chunk in chunks if chunk.get("chunk_id") in target_ids]
+        salvaged = salvage_missing_industry_slots(reached, target_chunks)
+        if salvaged:
+            extra = canonicalize_validated_slots(
+                _normalize_extracted_slots(salvaged, normalize_value=normalize_value),
+                notice_version_id=analysis_input.notice_version_id,
+                source_type="NOTICE_DOCUMENT",
+                key_prefix="REQ-S",
+            )
+            canonicalized["requirements"].extend(extra["requirements"])
+            canonicalized["evidence"].extend(extra["evidence"])
+            canonicalized["diagnostics"].extend(extra["diagnostics"])
 
     return build_requirement_analysis_result(
         notice_id=analysis_input.notice_id,

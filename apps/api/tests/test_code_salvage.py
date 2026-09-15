@@ -107,7 +107,30 @@ def test_a_duplicated_clause_across_documents_is_salvaged_once() -> None:
         {"chunk_id": "B", "text": "나. 영업신고(업종코드 : 1450)를 한 업체", "source_blocks": [], "clause_label": "나"},
     ]
 
-    salvaged = salvage_missing_industry_slots([], chunks)
+    salvaged = salvage_missing_industry_slots(set(), chunks)
 
     assert len(salvaged) == 1
     assert salvaged[0]["_salvaged_codes"] == ["1450"]
+
+
+def test_a_clause_the_model_emitted_but_mapping_could_not_use_is_still_filled() -> None:
+    """[재현 2026-09-15 J14 run0] 모델이 "○ … 1) A(1257) 또는 B(6770) 또는 C(6786) 등록업체
+    2) D(1227) 등록업체" 문단을 통째로 한 슬롯에 담았다. 마지막 조각에 코드가 둘이라 ANY_OF 로
+    못 풀려 UNMAPPED. 모델이 냈다는 이유로 건너뛰면 네 코드가 영영 안 채워진다."""
+    def model_emits_whole_paragraph(system, body, schema):
+        return {"requirements": [{
+            "유형": "등록요건",
+            "raw": ("○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n"
+                    "1) 「폐기물관리법」 제25조에 따른 폐기물중간처분업(1257) 또는 폐기물중간재활용업(6770) 또는 폐기물종합재활용업(6786) 등록업체\n"
+                    "2) 폐기물수집·운반업(1227) 등록업체"),
+            "등록인증_raw": None,
+            "근거조항": None,
+        }]}
+
+    result = analyze_qualification_documents(_input(WASTE), structured_extract=model_emits_whole_paragraph)
+
+    by_value = {item.value: item for item in result.requirements if item.type == "INDUSTRY"}
+    assert set(by_value) == {"1257", "6770", "6786", "1227"}
+    # 모델 슬롯은 못 썼고 코드가 채웠다. 그 사실이 상태와 진단에 남는다.
+    assert result.status == "PARTIAL"
+    assert any(d.code == "INDUSTRY_CODE_SALVAGED_FROM_SOURCE" for d in result.diagnostics)

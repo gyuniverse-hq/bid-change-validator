@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut } from 'lucide-react';
 
 import { PageContainer } from '@/components/product/page-container';
 import type { AuthUser } from '@/lib/auth';
@@ -94,15 +93,6 @@ export function AppHeader({
               </a>
             ))}
           </nav>
-
-          {user && (
-            <div className="app-header-actions">
-              <button type="button" className="app-header-action" onClick={onLogout} aria-label="로그아웃">
-                <LogOut className="size-[15px]" strokeWidth={1.7} />
-                <span>로그아웃</span>
-              </button>
-            </div>
-          )}
         </PageContainer>
       </div>
     </header>

@@ -128,6 +128,20 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
 
   const baseline = baselineVersion(workspace);
   const canRevalidate = Boolean(workspace.sourceJudgment && workspace.baselineAnalysis && workspace.currentAnalysis && baseline);
+  /*
+    조건은 넷인데 안내 문구가 하나면, 버튼이 회색일 때 무엇이 없는지 알 수 없다.
+    실제로 원인을 찾으려고 코드를 열어야 했다. 빠진 것만 짚어서 말한다.
+
+    기준 판정은 없을 때뿐 아니라 rule_version이 현재 판정 규칙과 다를 때도 버려진다
+    (lib/case-workspace.ts의 judgmentMatchesAnalysis). 그래서 「없어서」가 아니라
+    「현재 판정 규칙으로 다시」라고 쓴다 — 판정을 다시 돌리면 둘 다 풀린다.
+  */
+  const missingForRevalidation = [
+    !baseline && '기준 차수',
+    !workspace.baselineAnalysis && '기준 차수 분석',
+    !workspace.currentAnalysis && '현재 차수 분석',
+    !workspace.sourceJudgment && '기준 차수 판정',
+  ].filter((item): item is string => typeof item === 'string');
   const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
   /*
     「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
@@ -177,7 +191,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
 
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
-              {!canRevalidate && <p className="mt-4 text-[13px] text-[var(--product-muted)]">기준/현재 분석과 기준 판정이 모두 준비되어야 실행할 수 있습니다.</p>}
+              {!canRevalidate && <p className="mt-4 text-[13px] leading-[1.75] text-[var(--product-muted)]"><strong className="text-[var(--product-body)]">{missingForRevalidation.join(' · ')}</strong>이 준비되지 않아 실행할 수 없습니다. 참가자격 검토 화면에서 다시 검토하면 기준 차수까지 현재 판정 규칙으로 함께 분석·판정합니다.</p>}
               {result && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
                 // 재검증 결과가 양쪽 차수의 요건을 그대로 담아 온다. 따로 조회해 이어붙이지 않는다.
                 const before = item.baseline;

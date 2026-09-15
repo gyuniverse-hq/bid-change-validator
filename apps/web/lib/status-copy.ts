@@ -257,3 +257,12 @@ export function evidenceLocationText(location?: EvidenceLocation | null): string
   if (typeof location.page === 'number') parts.push(`p.${location.page}`);
   return parts.length ? parts.join(' · ') : null;
 }
+
+/**
+ * 분석 파이프라인 진단 코드. 화면에는 코드(EXTRACTION_PARTIAL 등)가 아니라 이 문장이 나간다.
+ * 파일 맨 위 규칙 — 영어 enum은 사용자 화면에 그대로 나가지 않는다 — 을 진단에도 적용한다.
+ * 매핑에 없는 코드는 호출한 쪽이 기존 message로 폴백하므로 목록이 비어도 화면은 깨지지 않는다.
+ */
+export const DIAGNOSTIC_CODE_LABEL: Record<string, string> = {
+  EXTRACTION_PARTIAL: '공고 원문에서 자격요건을 일부만 구조화했습니다.',
+};

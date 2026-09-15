@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import type { CaseWorkspace } from '@/lib/case-workspace';
 import { workspaceHref } from '@/lib/case-workspace';
 
@@ -24,7 +24,7 @@ export function CaseHeader({ workspace }: { workspace: CaseWorkspace }) {
       </div>
       <div className="flex flex-wrap gap-2">
         {notice.latest.detail_url && <Button variant="outline" size="sm" render={<a href={notice.latest.detail_url} target="_blank" rel="noreferrer" aria-label="공고문 원본" />}>공고문 원본</Button>}
-        <Button variant="outline" size="sm" render={<Link href={workspaceHref('/qualification', caseItem.id)} />}>검토로 돌아가기</Button>
+        <Link href={workspaceHref('/qualification', caseItem.id)} className={buttonVariants({ variant: 'outline', size: 'sm' })}>검토로 돌아가기</Link>
       </div>
     </section>
   );

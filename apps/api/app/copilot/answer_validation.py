@@ -18,6 +18,7 @@ server_context가 있으면 질문이 확인사항/원문에 관한 것이어도
 뒷받침되면 SUPPORTED, 반대면 CONTRADICTED, 근거 부족이면 INSUFFICIENT.
 모든 claim_id에 정확히 한 결과를 반환한다. 조건부 설명을 무조건 참가 가능 단정과 혼동하지 않는다.'''
 VERIFY += '''
+상대 일정(평가 종료 후·선정 후·개별 통보)은 기준 사건의 실제 발생일 근거가 없으면 현재보다 지났다고 확정할 수 없다. 예정일이 지났다는 것과 실제 행사 완료는 다르다. 날짜가 특정되지 않았다는 한계 안내와 일정을 이미 경과했다고 하는 단정이 함께 있으면 후자를 거절한다.
 필수·협조·선정 후 등 분류 제목도 주장에 포함해 검증한다. 공동수급/하도급 금지와 참석자 필수 제출자료를 참고·협조로 낮추면 거절한다. 재직증명서와 신분증 제출에서 신분증 종류 간 택일을 서류 간 택일로 바꾸면 거절한다. 이전에 확인된 기한이 retained_document_facts에 남아 있으면 이를 확인 불가라고 설명하지 않는다.
 명시적으로 제안한 준비 순서·체크리스트는 원문에 같은 문장이 있는지가 아니라 인용된 제출기한·선행 조건·의무와 일치하는지 검증한다. 원문이 정한 순서라고 주장하거나 근거와 충돌하는 순서는 거절한다.
 저장 분석의 발췌 문구 차이는 공고 원문 전체 조항의 실제 삭제/추가를 증명하지 않는다. 실제 원문 변화로 단정하려면 별도 원문 비교 근거가 필요하다.
@@ -307,6 +308,7 @@ def _compose_basic(bundle, plan, state, gateway):
     prompt += '남은 acceptance만 보충한다. remaining_review의 누락 사유를 해결하되 이미 설명한 서류 목록 등을 반복하지 않는다. '
     prompt += '서류·일정은 단계별로 묶고 요청하지 않은 평가 배점·계약 조문·빈 서식은 나열하지 않는다.'
     prompt += '\nretained_document_facts는 같은 원문 fingerprint를 다시 확인한 이전 근거이다. 현재 선택된 자료와 함께 활용하고 이미 있는 기한을 없다고 말하지 않는다. 필수 참가조건·제출의무와 협조 요청, 선정 후 의무를 구분한다. 공동수급/하도급 금지와 발표 참석자 필수 서류는 협조사항이 아니다. 서류의 AND와 신분증 종류의 택일을 구분한다.'
+    prompt += '\n평가 종료 후·선정 후·개별 통보처럼 날짜 없는 상대 일정은 시점 미확정으로 구분한다. 다른 행사의 예정일이 지났어도 그 행사의 실제 완료나 후속 일정의 경과를 추론하지 않는다.'
     prompt += '\n현재 요청이 체크리스트나 남은 일 정리이면 그 산출물을 실제 본문으로 작성한다. 이전 업무 목적은 문맥이며 현재 요청을 덮어쓰지 않는다. current_date보다 지난 일정은 과거 이행 확인으로 표시하고 지금 제출하라고 지시하지 않는다. 회사 판정 조회 실패를 회사정보 부재로 단정하지 않는다. 입찰 마감은 제출 대상별로 구분한 뒤 충돌 여부를 판단한다.'
     prompt += '\n참여 준비 안내는 핵심 상태, 확인할 일, 서류 묶음, 단계별 일정·방법, 준비 순서로 정돈한다. '
     prompt += '문서의 모든 작성 목차·재무 지표·발표 장비까지 풀어 쓰지 않는다. 각 제출 의무와 예외는 보존하되 세부 작성 내용은 사용자가 요청할 때 설명한다. '
@@ -388,7 +390,14 @@ def _compose_basic(bundle, plan, state, gateway):
         events.extend({'claim_id': c.claim_id, 'validation': c.validation, 'reason': c.reason} for c in claims)
         supported = [c for c in claims if c.validation == 'SUPPORTED']
         coverage = [e['task_coverage'] for e in events if 'task_coverage' in e]
-        partial = len(supported) != len(claims) or not supported or not coverage or coverage[-1] != 'COMPLETE' or bool(omitted)
+        # Discard rejected surplus prose; completeness depends only on independently
+        # supported claims covering every frozen criterion, never the draft length.
+        unsafe = any(c.validation == 'CONTRADICTED' or c.reason in {
+            'INVALID_REFERENCE', 'UNRELATED_SOURCE', 'UNCITED_FACT', 'CROSS_SCOPE',
+            'SOURCE_SCOPE_MISMATCH', 'EMPTY_QUOTE', 'DUPLICATE_CLAIM', 'SPEECH_ACT_MISMATCH'
+        } for c in claims if c.validation != 'SUPPORTED')
+        repair_failed = any(e.get('stage') == 'repair' and e.get('reason') not in {None, 'DEFERRED_TARGETED_CONTINUATION', 'REPAIR_DISCARDED_IDS'} for e in events)
+        partial = unsafe or repair_failed or not supported or not coverage or coverage[-1] != 'COMPLETE' or bool(omitted)
     except Exception as error:
         from .model_gateway import BudgetExceeded
         if isinstance(error, BudgetExceeded):

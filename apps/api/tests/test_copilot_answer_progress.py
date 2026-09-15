@@ -151,3 +151,19 @@ def test_validation_budget_failure_is_visible_without_accepting_unverified_prose
     assert partial
     assert any('설명 검증을 완료하지 못했습니다' in text for text in bundle.limitations)
     assert not any(c.method == 'semantic' for c in claims)
+
+
+@pytest.mark.parametrize('cite_rejected', [False, True])
+def test_rejected_surplus_is_dropped_but_cannot_complete_any_criterion(cite_rejected):
+    class Extra(Gateway):
+        def call(self, stage, prompt, body, schema):
+            if stage == 'generate':
+                return Draft(claims=[dict(claim_id='good', text='저장 판정과 제출 기한 설명', fact_ids=['judgment','document'], source_ids=['judgment','document']),
+                                     dict(claim_id='bad', text='근거 없는 추가 설명', fact_ids=['document'], source_ids=['document'])])
+            return Verdicts(verdicts=[dict(claim_id='good', status='SUPPORTED', reason='supported'),
+                                     dict(claim_id='bad', status='INSUFFICIENT', reason='unsupported')],
+                criteria=[dict(criterion_id=c['criterion_id'], status='MET', claim_ids=['bad' if cite_rejected else 'good'], reason='coverage') for c in body['acceptance']])
+    state, bundle, plan = setup()
+    claims, partial, events = _compose_basic(bundle, plan, state, Extra())
+    assert partial is cite_rejected
+    assert all(c.claim_id != 'bad' for c in claims)

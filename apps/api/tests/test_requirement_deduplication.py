@@ -279,3 +279,58 @@ def test_a_real_certification_in_a_coded_clause_is_not_turned_into_industry() ->
         notice_version_id="NV-1", key_prefix="R",
     )
     assert [(i.type, i.value) for i in turned] == [("INDUSTRY", "1450")]
+
+
+def test_a_decoration_mark_does_not_split_one_requirement_into_two() -> None:
+    """[재현 2026-09-15] 공고문은 ※ 로, 제안요청서는 * 로 같은 조항을 적었다. 값이 한 글자
+    달라 완전 중복으로 안 잡혔고 경험분야 요건이 둘로 나왔다."""
+    def req(key: str, mark: str) -> QualificationRequirement:
+        value = f"2개 이상 각 단체급식소{mark}(1일 평균 800식 이상)를 1년 이상 운영"
+        return QualificationRequirement(
+            requirement_key=key, notice_version_id="NV-1", type="EXPERIENCE_FIELD",
+            operator="MATCH", value=value, raw=value,
+            requirement_group_key="G", group_operator="ALL_OF",
+            scope={"experience_field": value},
+        )
+
+    kept, diagnostics = deduplicate_requirements([req("A", "※"), req("B", "*")])
+
+    assert len(kept) == 1
+    assert [item["code"] for item in diagnostics] == ["DUPLICATE_REQUIREMENT"]
+
+
+def test_split_sentences_of_one_clause_fold_when_they_share_a_chunk() -> None:
+    """[재현 2026-09-15] 모델이 "나." 조항의 앞 문장(단체급식업 등록업체)과 뒷 문장
+    (영업신고(업종코드 : 1450))을 따로 인용했다. 두 원문이 서로를 안 담는다. 같은 청크에서
+    나왔다는 사실로 같은 조항임을 안다."""
+    from apps.api.app.ai.qualification.canonical.canonicalize import canonicalize_validated_slots
+
+    blocks = [{"document_id": "doc", "block_index": 0, "page": 1, "location": "p.1"}]
+    first = "나. 식품위생법에 의거 단체급식업 등록업체로서 식당허가 등에 결격사유가 없는 업체"
+    second = "식품위생법에 따른 인·허가를 득하고 동법 시행령에 따라 영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자"
+    result = canonicalize_validated_slots([
+        {"유형": "업종요건", "raw": first, "업종_raw": "단체급식업",
+         "_source_blocks": blocks, "_source_chunk_id": "CHUNK-0007"},
+        {"유형": "인증요건", "raw": second, "등록인증_raw": "인·허가",
+         "_source_blocks": blocks, "_source_chunk_id": "CHUNK-0007"},
+        {"유형": "업종요건", "raw": second, "업종_raw": "집단급식소",
+         "_source_blocks": blocks, "_source_chunk_id": "CHUNK-0007"},
+    ], notice_version_id="NV-1")
+
+    assert [(i.type, i.value) for i in result["requirements"]] == [("INDUSTRY", "1450")]
+
+
+def test_named_industries_in_different_chunks_are_not_folded() -> None:
+    """청크가 다르면 다른 조항이다. "가. 컴퓨터관련서비스사업" 과 "나. …(업종코드 1468)" 은
+    별개 요건이고, 앞엣것을 뒤엣것으로 접으면 요건 하나가 사라진다."""
+    from apps.api.app.ai.qualification.canonical.canonicalize import canonicalize_validated_slots
+
+    blocks = [{"document_id": "doc", "block_index": 0, "page": 1, "location": "p.1"}]
+    result = canonicalize_validated_slots([
+        {"유형": "업종요건", "raw": "가. 컴퓨터관련서비스사업", "업종_raw": "컴퓨터관련서비스사업",
+         "_source_blocks": blocks, "_source_chunk_id": "CHUNK-0010"},
+        {"유형": "업종요건", "raw": "나. 디지털콘텐츠개발서비스사업(업종코드 : 1468)", "업종_raw": "디지털콘텐츠개발서비스사업",
+         "_source_blocks": blocks, "_source_chunk_id": "CHUNK-0011"},
+    ], notice_version_id="NV-1")
+
+    assert len(result["requirements"]) == 2

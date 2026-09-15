@@ -72,6 +72,7 @@ def canonicalize_validated_slots(
     requirements: list[QualificationRequirement] = []
     evidence: list[Evidence] = []
     diagnostics: list[dict[str, Any]] = []
+    source_chunk_by_key: dict[str, str | None] = {}
 
     for index, slot in enumerate(slots, start=1):
         slot_prefix = f"{key_prefix}-{index:03d}"
@@ -85,10 +86,14 @@ def canonicalize_validated_slots(
         requirements.extend(slot_requirements)
         evidence.extend(slot_evidence)
         diagnostics.extend(slot_diagnostics)
+        for requirement in slot_requirements:
+            source_chunk_by_key[requirement.requirement_key] = slot.get("_source_chunk_id")
 
     # 슬롯 하나만 봐서는 겹침을 알 수 없다. 모델이 같은 조항을 두 슬롯으로 나눠 서로
     # 다른 유형을 붙이면, 둘은 ALL_OF 묶음이 되어 자격 있는 회사를 떨어뜨린다.
-    requirements, overlap_diagnostics = deduplicate_requirements(requirements)
+    requirements, overlap_diagnostics = deduplicate_requirements(
+        requirements, source_chunk_by_key=source_chunk_by_key
+    )
     kept_evidence_keys = {
         key for requirement in requirements for key in requirement.evidence_keys
     }

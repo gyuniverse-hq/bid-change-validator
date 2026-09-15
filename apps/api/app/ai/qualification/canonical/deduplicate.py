@@ -54,10 +54,17 @@ _INDUSTRY_NAME_VALUE_RE = re.compile(r"[가-힣·ㆍ]+업(?:등록|신고|허가
 _REGISTRATION_ACT_VALUE_RE = re.compile(r"(?:인[·ㆍ]?허가|허가|영업신고|신고|등록)(?:필|완료)?")
 
 
+# 공고문이 눈에 띄라고 찍는 기호. 공고문과 제안요청서에 같은 조항이 두 벌 있을 때 한쪽은
+# ※ 로, 한쪽은 * 로 적혀 있어서 값이 한 글자 달라졌고, 그 한 글자로 완전 중복이 안 잡혔다.
+# 비교할 때만 지운다 — 근거 검증(_DECORATION_MARKS_RE)과 같은 이유, 같은 목록이다.
+_DECORATION_MARKS_RE = re.compile(r"[※▶▷◆◇■□●○◦☞‣✓✔★☆＊*]")
+
+
 def _norm(value: object | None) -> str:
     if value is None:
         return ""
-    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value)))
+    text = unicodedata.normalize("NFKC", str(value))
+    return re.sub(r"\s+", "", _DECORATION_MARKS_RE.sub("", text))
 
 
 def _loose(value: str) -> str:
@@ -78,7 +85,9 @@ def _identity(requirement: QualificationRequirement) -> tuple:
         _norm(requirement.value),
         _norm(requirement.operator),
         _norm(requirement.period_months),
-        tuple(sorted((k, _norm(v)) for k, v in scope.items() if k != "industry_name")),
+        # industry_name·kind 는 어느 슬롯에서 왔는지의 흔적이지 요건의 뜻이 아니다. 같은 코드
+        # 1450 이 업종요건 슬롯과 인증요건 슬롯에서 각각 나오면 kind 만 다르고 같은 요건이다.
+        tuple(sorted((k, _norm(v)) for k, v in scope.items() if k not in ("industry_name", "kind"))),
     )
 
 
@@ -87,7 +96,10 @@ def _has_closed_identifier(requirement: QualificationRequirement) -> bool:
 
 
 def _folds_into(
-    candidate: QualificationRequirement, keeper: QualificationRequirement
+    candidate: QualificationRequirement,
+    keeper: QualificationRequirement,
+    *,
+    same_clause: bool = False,
 ) -> bool:
     """candidate 가 keeper 와 같은 사실을 다른 이름으로 부른 것인가.
 
@@ -107,13 +119,20 @@ def _folds_into(
         or _REGISTRATION_ACT_VALUE_RE.fullmatch(value)
     ):
         return False
-    # 같은 조항인가 — 한쪽 원문이 다른 쪽을 담고 있어야 한다. 방향은 상관없다: 모델이
-    # 코드 있는 쪽을 짧게 인용할 수도 있다.
+    # 같은 조항인가. 둘 중 하나면 된다.
+    #   (a) 한쪽 원문이 다른 쪽을 담고 있다 — 방향은 상관없다
+    #   (b) 같은 청크(같은 항목)에서 나왔다 — 모델이 "나." 조항의 앞 문장과 뒷 문장을 따로
+    #       인용하면 두 원문이 서로를 안 담는다. 실측(2026-09-15)에서 "단체급식업 등록업체"
+    #       와 "영업신고(업종코드 : 1450)" 가 그렇게 갈렸다. 청크는 항목 단위로 잘려 있어
+    #       같은 청크면 같은 조항이다.
     candidate_raw, keeper_raw = _norm(candidate.raw), _norm(keeper.raw)
     if not candidate_raw or not keeper_raw:
         return False
-    if candidate_raw not in keeper_raw and keeper_raw not in candidate_raw:
+    contained = candidate_raw in keeper_raw or keeper_raw in candidate_raw
+    if not contained and not same_clause:
         return False
+    if same_clause and not contained:
+        return True
     # "인허가" 와 "인·허가" 는 같은 말이다. 가운뎃점만 다른 것으로 대조가 어긋나지 않게 한다.
     loose = _loose(value)
     return loose in _loose(keeper_raw) or loose in _loose(candidate_raw)
@@ -121,8 +140,19 @@ def _folds_into(
 
 def deduplicate_requirements(
     requirements: list[QualificationRequirement],
+    *,
+    source_chunk_by_key: dict[str, str | None] | None = None,
 ) -> tuple[list[QualificationRequirement], list[dict[str, object]]]:
-    """겹친 요건을 정리하고, 접은 것은 진단으로 남긴다."""
+    """겹친 요건을 정리하고, 접은 것은 진단으로 남긴다.
+
+    `source_chunk_by_key` 는 requirement_key -> 그 요건이 나온 청크 id. 같은 청크에서 나온
+    이름 업종과 코드 업종을 같은 조항으로 본다. 없으면 원문 포함 관계로만 판단한다.
+    """
+    chunk_of = source_chunk_by_key or {}
+
+    def same_clause(a: QualificationRequirement, b: QualificationRequirement) -> bool:
+        left, right = chunk_of.get(a.requirement_key), chunk_of.get(b.requirement_key)
+        return bool(left) and left == right
     kept: list[QualificationRequirement] = []
     diagnostics: list[dict[str, object]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -147,7 +177,8 @@ def deduplicate_requirements(
             (
                 other
                 for other in kept
-                if other is not requirement and _folds_into(requirement, other)
+                if other is not requirement
+                and _folds_into(requirement, other, same_clause=same_clause(requirement, other))
             ),
             None,
         )

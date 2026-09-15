@@ -248,7 +248,11 @@ export default function CompanyPage() {
   }, []);
 
   // 다른 회사로 바꾸면 저장 안 한 편집은 버린다. 다른 회사에 잘못 저장되는 것보다 낫다.
+  // react-compiler는 effect 안의 setState를 경고하지만, 여기서는 매 렌더가 아니라
+  // company.id가 바뀔 때만 한 번 돈다. 초안을 회사 id로 들고 다니게 바꾸면 규칙을
+  // 끄지 않아도 되는데, 그건 저장 경로 전체를 건드려야 해서 발표 뒤로 미룬다.
   useEffect(() => {
+    // eslint-disable-next-line react/react-compiler
     setIndustryDraft(null);
     setBasicsDraft(null);
   }, [company?.id]);

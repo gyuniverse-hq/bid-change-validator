@@ -130,3 +130,21 @@ def test_a_document_alternative_in_parentheses_is_not_mistaken_for_address_evide
 
     assert "사업자등록증 또는 허가 서류 제출" in strip_decorations(raw)
     assert unsafe_clause_reason(raw) == "ALTERNATIVE_OR_EXCEPTION_RULE"
+
+
+def test_nara_market_registration_is_a_procedure_not_a_qualification() -> None:
+    """[재현 2026-09-15] 모델이 나라장터 입찰참가자격등록을 등록 요건으로 냈다 안 냈다 해서
+    실행마다 요건 수가 오락가락했다(J14 6·5·6). 모든 입찰자가 거치는 절차이지 회사 프로필과
+    대조할 자격이 아니다 — 골든셋도 그렇게 본다. 절차 규칙으로 고정한다."""
+    from apps.api.app.qualification.rules.clause_safety import unsafe_clause_reason
+
+    for raw in (
+        "「국가종합전자조달시스템 입찰참가자격등록규정」에 의하여 반드시 나라장터(G2B시스템)에 등록한 업체",
+        "국가종합전자조달시스템 입찰참가자격등록을 마친 업체이어야 한다.",
+        "나라장터시스템 전자입찰 이용자 등록을 한 자이어야 합니다.",
+    ):
+        assert unsafe_clause_reason(raw) == "LEGAL_PROCEDURAL_RULE", raw
+
+    # 업종 등록은 절차가 아니라 자격이다 — 그대로 통과해야 한다.
+    assert unsafe_clause_reason("폐기물수집·운반업(1227) 등록업체") is None
+    assert unsafe_clause_reason("영업신고(업종코드 : 1450)를 하여 집단급식소 영업이 가능한 법인사업자") is None

@@ -465,7 +465,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
               <div className="flex flex-wrap items-center gap-2">
                 <NativeSelect aria-label="다른 검토 건으로 이동" className="w-full sm:w-[300px]" value={activeCase.id} onChange={(event) => router.push(`/qualification?caseId=${encodeURIComponent(event.target.value)}`)}>{cases.map((item) => <NativeSelectOption key={item.id} value={item.id}>{item.bid_notice_no} · {item.title}</NativeSelectOption>)}</NativeSelect>
                 <Button variant="outline" onClick={() => void initialize()} disabled={busy !== null}><RefreshCw /> 새로고침</Button>
-                <Link href="/notices"><Button variant="outline">공고 목록</Button></Link>
+                <Button variant="outline" render={<Link href="/notices" />}>공고 목록</Button>
               </div>
             </section>
 

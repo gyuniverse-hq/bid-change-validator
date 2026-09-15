@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from apps.api.app.ai.qualification.canonical.legacy_slots import adapt_legacy_slot
+from apps.api.app.ai.qualification.canonical.legacy_slots import industry_code_alternation
 from apps.api.app.ai.qualification.canonical.legacy_slots import salvage_closed_identifier
 
 
@@ -145,3 +146,38 @@ def test_nara_market_registration_is_still_caught_when_the_model_splits_the_fiel
     assert requirements == []
     assert [d["code"] for d in diagnostics] == ["UNMAPPED_REQUIREMENT"]
     assert diagnostics[0]["reason"] == "LEGAL_PROCEDURAL_RULE"
+
+
+def test_a_condition_riding_along_with_one_alternative_is_not_silently_dropped() -> None:
+    """[재현 2026-09-15, 코덱스 검수] "가공업(1257)을 등록하고 ISO 9001을 보유한 업체 또는
+    운반업(1227)을 등록한 업체" 는 (1257 AND ISO 9001) OR 1227 인데, 조각마다 코드가
+    "하나 있는지"만 보면 ["1257","1227"] 로 줄어 ISO 9001 조건이 조용히 사라진다.
+    코드 문구를 뺀 나머지에 "보유"가 남아 있으니 ANY_OF 로 열지 않아야 한다."""
+    raw = "가공업(1257)을 등록하고 ISO 9001을 보유한 업체 또는 운반업(1227)을 등록한 업체"
+
+    assert industry_code_alternation(raw) is None
+
+    requirements, diagnostics = adapt_legacy_slot(
+        {"유형": "등록요건", "raw": raw},
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    # 코드 두 개로 조용히 줄지 않는다 — 관계를 모르니 안전하게 보류한다.
+    assert requirements == []
+    assert diagnostics[0]["reason"] == "ALTERNATIVE_OR_EXCEPTION_RULE"
+
+
+def test_a_plain_code_alternative_without_extra_conditions_still_opens() -> None:
+    """추가 조건이 안 붙은 원래 모양은 그대로 ANY_OF 로 열려야 한다 — 위 가드가 정상
+    사례까지 막으면 안 된다."""
+    raw = "가공업(1257)을 등록한 업체 또는 운반업(1227)을 등록한 업체"
+
+    assert industry_code_alternation(raw) == ["1257", "1227"]
+
+    requirements, _ = adapt_legacy_slot(
+        {"유형": "등록요건", "raw": raw},
+        notice_version_id="NV-1", key_prefix="R",
+    )
+
+    assert {item.value for item in requirements} == {"1257", "1227"}
+    assert {item.group_operator for item in requirements} == {"ANY_OF"}

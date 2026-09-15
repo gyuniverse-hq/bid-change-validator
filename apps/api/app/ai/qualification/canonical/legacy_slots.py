@@ -47,6 +47,15 @@ _EXCEPTION_WORDS_RE = re.compile(
     r"다만|단서|예외|제외|불구하고|각\s*호|아니(?:어야|하여야|한)|해당되지|경우에\s*한"
 )
 _NAMED_INDUSTRY_CODE_RE = re.compile(r"[가-힣A-Za-z·ㆍ\s]{2,}?업\s*\(\s*([0-9]{4})\s*\)")
+# [재현 2026-09-15, 검수] "가공업(1257)을 등록하고 ISO 9001을 보유한 업체 또는 운반업(1227)을
+# 등록한 업체" 를 실제로 돌리면 ["1257","1227"] 를 돌려줬다. 조각마다 코드가 "하나 있는지"만
+# 보고 "그것 말고 다른 게 있는지"는 안 봤다 — "AND ISO 9001" 이 조용히 사라진 채
+# (1257 AND ISO 9001) OR 1227 이 1257 OR 1227 로 줄었다. 코드 문구를 걷어낸 나머지에 이런
+# 낱말이 남으면 코드 하나로 안 줄어드는 추가 조건이 있다는 뜻이라 ANY_OF 를 접지 않는다.
+_EXTRA_CONDITION_RE = re.compile(
+    r"보유|겸비|겸한|충족|이상|미만|이내|해당|자격증|인증서?|증명서|면허증"
+    r"|ISO\s*[0-9]|KS\s*[A-Za-z0-9]|동시에|함께|모두|각각"
+)
 
 
 def industry_code_alternation(raw: str) -> list[str] | None:
@@ -60,6 +69,12 @@ def industry_code_alternation(raw: str) -> list[str] | None:
     for part in parts:
         found = _NAMED_INDUSTRY_CODE_RE.findall(part)
         if len(found) != 1:
+            return None
+        # 코드 문구를 뺀 나머지에 "보유·충족·ISO…" 같은 낱말이 남으면, 이 조각은 코드
+        # 하나로 안 줄어드는 다른 조건과 AND 로 묶여 있다는 뜻이다. 그 조건은 우리가 못
+        # 줄이므로 전체를 ANY_OF 로 열지 않는다 — 위 가드가 UNMAPPED 로 안전하게 받는다.
+        remainder = _NAMED_INDUSTRY_CODE_RE.sub("", part, count=1)
+        if _EXTRA_CONDITION_RE.search(remainder):
             return None
         codes.append(found[0])
     if len(set(codes)) != len(codes):

@@ -32,6 +32,11 @@ try{
   const body=await response.json();const entry={question,http:response.status(),elapsed_ms:Date.now()-started,body};report.steps.push(entry);
   console.log(JSON.stringify({http:entry.http,elapsed_ms:entry.elapsed_ms,status:body.envelope?.processing?.task_status,claims:body.envelope?.claims?.map(c=>c.text)}));
   assert.equal(response.status(),200);assert.equal(body.envelope?.actions?.length,0);
+  assert(body.envelope?.claims?.length > 0, 'EMPTY_ANSWER_CANNOT_COMPLETE_A_NEW_QUESTION');
+  if (report.steps.length === 2) {
+    assert(body.envelope.processing.tools.some(t=>t.tool==='READ_CHECKS'), 'FOLLOWUP_CHECK_REQUEST_WAS_DROPPED');
+    assert(body.envelope.claims.some(c=>c.speech_act==='CHECK_REQUEST'), 'FOLLOWUP_HAS_NO_CHECK_GUIDANCE');
+  }
   await page.locator('#copilot-question').waitFor();
  }
  const after=await (await page.request.get(endpoint)).json();report.judgments_unchanged=JSON.stringify(before)===JSON.stringify(after);

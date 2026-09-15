@@ -60,7 +60,7 @@ class ProductTools:
         self.scope = self.scope.model_copy(update={'analysis_run_id': p.analysis_run_id, 'judgment_run_id': p.judgment_run_id})
         self.bundle.scope = self.scope
         self.summary = summary
-        self.bundle.server_context = {'overall_status': summary.overall_status,
+        self.bundle.server_context = {**self.bundle.server_context, 'overall_status': summary.overall_status,
                                       'judgment_counts': summary.judgment_counts,
                                       'provenance': p.model_dump(mode='json')}
         self.bundle.fingerprints['product'] = digest(summary.model_dump(mode='json'))
@@ -185,6 +185,16 @@ class ProductTools:
                 or p.notice_id != self.scope.notice_id or p.current.notice_version_id != self.scope.notice_version_id):
             raise ValueError('CHANGE_SCOPE_MISMATCH')
         self.bundle.fingerprints['changes'] = digest(result.model_dump(mode='json'))
+        from .change_impact import read_change_impact, impact_text
+        impact = read_change_impact(self.db, result)
+        self.bundle.fingerprints['change_impact'] = digest(impact)
+        self.bundle.server_context['change_impact'] = impact
+        text = impact_text(impact)
+        self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text,
+            location={'revalidation_id': impact.get('lineage_id'),
+                      'source_judgment_id': impact.get('source_judgment_id'),
+                      'result_judgment_id': impact.get('result_judgment_id')})],
+            target='CHANGE', origin='READ_CHANGES', entity='saved_change_impact')
         for change in result.changes:
             for label, version, requirement in [('이전', result.provenance.baseline, change.baseline), ('현재', result.provenance.current, change.current)]:
                 if requirement is None:
@@ -235,6 +245,10 @@ class ProductTools:
             current = get_changed_notice(self.db, self.case.id)
             if digest(current.model_dump(mode='json')) != self.bundle.fingerprints['changes']:
                 raise ValueError('CHANGE_SCOPE_CHANGED')
+            if 'change_impact' in self.bundle.fingerprints:
+                from .change_impact import read_change_impact
+                if digest(read_change_impact(self.db, current)) != self.bundle.fingerprints['change_impact']:
+                    raise ValueError('CHANGE_IMPACT_CHANGED')
         if 'change_sources' in self.bundle.fingerprints:
             from .source_changes import compare_sources
             fingerprint, _, _ = compare_sources(

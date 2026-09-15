@@ -87,6 +87,9 @@ question에는 회사/공고 UUID 같은 내부 식별자를 넣지 않는다. a
 READ_JUDGMENT는 저장 판정 조회이며 새 판정 실행이 아니다.
 READ_JUDGMENT는 회사의 충족·미달 상태와 사유를 읽는다. 저장 분석 요건 자체의 기준/현재 비교는 READ_CHANGES이다.
 READ_CHANGES는 저장 분석의 요건 diff, 원문 대조, 수집 메타데이터 차이를 함께 읽는다.
+READ_CHANGES는 저장된 재검증에 연결된 기준/현재 판정과 동일 회사정보·규칙·기준일 여부도 함께 읽는다.
+도구가 제공할 수 있는 모든 정보를 하위 질문의 필수 조건으로 늘리지 않는다. 각 하위 질문은 실제 사용자 요청 범위만 다룬다.
+공고 변경 때문에 회사 판정이 바뀌었는지 묻는 질문에는 READ_CHANGES를 포함한다. 현재 판정만으로 과거 상태를 추측하지 않는다.
 변경 비교 요청에서 '회사 판정 변화를 추측하지 마' 같은 금지는 새 판정 설명 요청이 아니다.
 capabilities.document_search=false이면 저장 요건/판정에 관한 가정 검토는 READ_JUDGMENT로 조건을 조회한다.
 공고 내용(제출 서류·마감일·절차·원문 조건)을 답하려면 READ_DOCUMENT를 계획한다.
@@ -224,7 +227,9 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         if plan.resume_unresolved and state.job:
             # No part of the original compound goal has passed yet. Keep that
             # goal, including anything omitted by the prior planner, in coverage.
-            plan.goal = state.job.goal
+            previous_ids = {r.requirement_id for r in job_checkpoint.requirements} if job_checkpoint else set()
+            added = any(r.requirement_id not in previous_ids for _, r in bindings)
+            plan.goal = state.job.goal + ('\n이번 추가 요청: ' + request.message if added else '')
     except ValueError:
         state.job = job_checkpoint
         bindings = []

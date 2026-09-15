@@ -125,6 +125,22 @@ def freeze_acceptance(plan, bundle):
                 specific = []
             for name, _, requirement in specific or PROFILE_TOPICS:
                 add(name, 'PROFILE_SUMMARY', requirement)
+        elif kind == 'READ_CHANGES':
+            from .change_impact import change_impact_request
+            add('request', 'EXPLANATION',
+                '사용자가 요청한 기준/현재 변경을 설명한다: ' + plan.goal
+                + ' 저장 분석의 구조화 값 변화와 저장 원문 발췌의 표현 차이를 구분한다. '
+                '저장 분석 발췌 차이만으로 실제 공고 원문 조항이 추가/삭제됐다고 단정하지 않는다. '
+                '도구에 수집 메타데이터나 원문 전체 비교 근거가 없으면 그 범위 한계만 설명한다. '
+                '요청하지 않은 메타데이터 확보를 완료 조건으로 추가하지 않는다.')
+            if change_impact_request(plan.goal):
+                impact_ids = tuple(f.fact_id for f in facts if f.entity_ref == 'saved_change_impact')
+                add('impact', 'EXPLANATION',
+                    '저장된 재검증에 연결된 기준/현재 종합 판정과 변경 요건의 전후 상태를 함께 비교한다. '
+                    '같은 회사정보·규칙·기준일인지와 기존부터 남은 미달을 설명해 판정 반전 여부를 답한다. '
+                    '현재 미달만으로 과거 참가 가능을 추정하지 않는다. 비교 기록이 없거나 기준이 다르면 '
+                    '그 구체적 한계를 설명하면 이 설명 요청은 완료다. 새 판정 실행·실제 증빙 확보를 요구하지 않는다. '
+                    '분석 부분 완료와 법적 해석 보류는 유지한다.', impact_ids)
         elif kind == 'PROPOSE_ACTION':
             add('request', 'EXPLANATION',
                 '서버가 생성한 제안의 대상·입력 내용과 명시 확인 전 저장되지 않는다는 점을 설명한다. '

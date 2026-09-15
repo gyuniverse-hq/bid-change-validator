@@ -447,6 +447,8 @@ def test_change_adapter_keeps_version_scopes_and_detects_baseline_change(monkeyp
     new = old.model_copy(update={'notice_version_id': str(s.notice_version_id), 'raw': '현재 지역 요건'})
     result = ChangedNoticeResult(provenance=p, changes=[RequirementChange(identity='key:R1', baseline_key='R1', current_key='R1', change_type='MODIFIED', baseline=old, current=new)])
     monkeypatch.setattr('apps.api.app.copilot.tool_adapters.get_changed_notice', lambda *a: result)
+    monkeypatch.setattr('apps.api.app.copilot.change_impact.read_change_impact',
+                        lambda *a: {'available': False, 'reason': '격리 fixture에는 재검증 기록 없음'})
     case = SimpleNamespace(id=s.case_id, company_id=s.company_id, notice_id=s.notice_id, current_version_id=s.notice_version_id)
     tools = ProductTools(SimpleNamespace(refresh=lambda _: None), case)
     tools.changes()

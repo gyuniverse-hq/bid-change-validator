@@ -69,13 +69,18 @@ def bind_plan(state, plan):
     if state.job is None:
         state.job = JobState(job_id=uuid4(), goal=plan.goal)
     by_id = {r.requirement_id: r for r in state.job.requirements}
+    # A completed job has nothing unresolved to resume. A model's resume flag
+    # must not replace a new follow-up request with the old completed goal.
+    if state.job.status == 'COMPLETE':
+        plan.resume_unresolved = False
     # Resume reads only. A pending action is never replayed by job resumption.
     if plan.resume_unresolved:
         if state.answer_review and all(t.kind in READS for t in plan.tasks):
             # Re-read cheap product/source snapshots for freshness. Model work is
             # narrowed by the retained, independently verified criteria afterwards.
             previous = [r for r in state.job.requirements if r.tool in READS]
-            if len(previous) <= 6 and previous:
+            previous_kinds = {r.tool for r in previous}
+            if len(previous) <= 6 and previous and all(t.kind in previous_kinds for t in plan.tasks):
                 plan.tasks = [Task(kind=r.tool, question=r.request, requirement_id=r.requirement_id)
                               for r in previous]
         for task in plan.tasks:

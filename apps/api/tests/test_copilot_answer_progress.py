@@ -85,3 +85,29 @@ def test_claim_reference_without_validated_criterion_never_completes_task():
     assessment['reason'] = 'CRITERION_SET_MISMATCH'
     finish_turn(state, bindings, bundle, claims, events, complete=False, turn_id='first', actions=[])
     assert all(r.status == 'OPEN' for r in state.job.requirements)
+
+
+def test_completed_job_cannot_replace_new_followup_with_old_cached_reads():
+    state, bundle, original = setup()
+    bind_plan(state, original)
+    state.job.status = 'COMPLETE'
+    for r in state.job.requirements:r.status = 'ANSWERED'
+    state.answer_review = {'key': 'previous'}
+    plan = TaskPlan(goal='판정 변화와 아직 확인할 사항', resume_unresolved=True, tasks=[
+        Task(kind='READ_JUDGMENT', question='전후 판정을 설명'),
+        Task(kind='READ_CHECKS', question='아직 확인할 사항')])
+    bind_plan(state, plan)
+    assert not plan.resume_unresolved
+    assert [t.kind for t in plan.tasks] == ['READ_JUDGMENT', 'READ_CHECKS']
+    assert plan.tasks[1].question == '아직 확인할 사항'
+
+
+def test_partial_resume_keeps_new_read_alongside_pending_work():
+    state, bundle, original = setup()
+    bind_plan(state, original)
+    state.answer_review = {'key': 'previous'}
+    plan = TaskPlan(goal='이어서 보고 추가 확인사항도 알려줘', resume_unresolved=True,
+                    tasks=[Task(kind='READ_CHECKS',question='새로 요청한 확인사항')])
+    bind_plan(state, plan)
+    assert plan.tasks[0].kind=='READ_CHECKS' and plan.tasks[0].question=='새로 요청한 확인사항'
+    assert {'READ_JUDGMENT','READ_DOCUMENT'} <= {t.kind for t in plan.tasks}

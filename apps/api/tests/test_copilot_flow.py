@@ -341,6 +341,32 @@ def test_changed_notice_golden_and_revalidation_replay():
             assert result.result.notice_version_id == current_id
             assert result.source_judgment_run_id == source.id
             assert get_changed_notice(db, case.id).provenance.current.judgment_run_id == result.result_judgment_run_id
+            from apps.api.app.copilot.tool_adapters import ProductTools
+            tools = ProductTools(db, case)
+            writes = []
+            def capture_writes(conn, cursor, statement, parameters, context, executemany):
+                if statement.lstrip().split()[0].upper() in {'INSERT', 'UPDATE', 'DELETE'}:
+                    writes.append(statement)
+            connection = db.connection()
+            event.listen(connection, 'before_cursor_execute', capture_writes)
+            try:
+                tools.changes()
+                tools.judgment()  # Reading summary after changes must retain the impact context.
+                tools.assert_fresh()
+            finally:
+                event.remove(connection, 'before_cursor_execute', capture_writes)
+            assert writes == []
+            impact = tools.bundle.server_context['change_impact']
+            assert impact['available'] and impact['profile_equal']
+            assert impact['source_judgment_id'] == str(source.id)
+            assert impact['result_judgment_id'] == str(result.result_judgment_run_id)
+            assert any(f.entity_ref == 'saved_change_impact' for f in tools.bundle.facts)
+            saved_run = db.get(QualificationJudgmentRun, result.result_judgment_run_id)
+            saved_run.profile_snapshot = {**saved_run.profile_snapshot, 'region_name':'changed profile'}
+            db.flush()
+            with pytest.raises(ValueError, match='CHANGE_IMPACT_CHANGED'):
+                tools.assert_fresh()
+            db.rollback()
             with pytest.raises(QualificationJudgmentError, match='제안 이후') as error:
                 confirm_action(db, confirmed)
             assert error.value.code == 'STALE_ACTION_CONTEXT'

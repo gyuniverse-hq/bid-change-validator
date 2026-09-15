@@ -44,6 +44,7 @@ tests = ['test_copilot_answer_progress.py', 'test_copilot_answer_integration.py'
          'test_copilot_intent_resolver.py', 'test_copilot_semantic_optin.py', 'test_copilot_v31_consent.py']
 tests.append('test_copilot_change_impact.py')
 tests.append('test_copilot_document_memory.py')
+tests.append('test_copilot_submission_obligations.py')
 code = pytest.main(['-v', '--noconftest', '-p', 'no:cacheprovider', '--tb=short',
                     '--junitxml=' + str(output / 'tests.xml'),
                     *['apps/api/tests/' + t for t in tests]])

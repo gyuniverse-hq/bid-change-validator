@@ -246,6 +246,11 @@ def generated_draft(gateway, stage, prompt, body, bundle):
     if stage == 'repair':
         allowed = [c['claim_id'] for c in body['failed']] + body['allowed_fill_ids']
         fields['claim_id'] = (Literal[tuple(allowed)], ...)
+    structured_submissions = any(t.get('kind') == 'READ_DOCUMENT' for t in body.get('tasks', [])) and stage == 'generate'
+    if structured_submissions:
+        from .submission_obligations import SubmissionObligation, INSTRUCTIONS
+        fields['submission'] = (SubmissionObligation | None, None)
+        prompt += INSTRUCTIONS
     claim_schema = create_model('SelectedFactClaim', __base__=FactCitedClaim, **fields)
     schema = create_model('SelectedFactDraft', claims=(list[claim_schema], Field(max_length=60)),
                           __config__={'extra': 'forbid'})
@@ -254,7 +259,11 @@ def generated_draft(gateway, stage, prompt, body, bundle):
     result = []
     for c in raw.claims:
         ids = [reverse.get(fid, fid) for fid in c.fact_ids]
-        result.append(DraftClaim(**c.model_dump(exclude={'fact_ids'}), fact_ids=ids,
+        data = c.model_dump(exclude={'fact_ids', 'submission'})
+        if structured_submissions and c.submission is not None:
+            from .submission_obligations import render_obligation
+            data['text'] = render_obligation(c.submission)
+        result.append(DraftClaim(**data, fact_ids=ids,
             source_ids=list(dict.fromkeys(sid for fid in ids if fid in facts for sid in facts[fid].source_ids))))
     return Draft(claims=result)
 

@@ -243,3 +243,4 @@ class ConversationState(Contract):
     job: JobState | None = None
     document_reviews: dict[str, dict[str, Any]] = Field(default_factory=dict)
     answer_review: dict[str, Any] = Field(default_factory=dict)
+    document_memory: dict[str, Any] = Field(default_factory=dict)

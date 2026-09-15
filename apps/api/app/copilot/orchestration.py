@@ -336,6 +336,8 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
             bundle.limitations.append(f'변경 제안을 확인하지 못했습니다 ({error.code}).')
     if saved_followup and not any(f.entity_ref == 'saved_answer_followup' for f in bundle.facts):
         clarification = '현재 판정에 연결된 답변 근거를 검증하지 못했습니다. 저장 내용을 변경하지 않았습니다. 현재 판정과 답변 대상을 다시 확인해 주세요.'
+    from .document_memory import restore_documents, remember_documents
+    restore_documents(state, bundle)
     if clarification:
         claims, fallback, events = [], True, []
     elif saved_followup and any(f.entity_ref == 'saved_answer_followup' for f in bundle.facts):
@@ -403,6 +405,7 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
                                                     calls=gateway.calls, validation_events=events, tools=tools.trace,
                                                     deadline_seconds=150 if getattr(gateway, 'document_review', False) else 45,
                                                     plan=plan.model_dump(mode='json')))
+    remember_documents(state, bundle, claims)
     state.scope = bundle.scope
     state.targets = (state.targets + targets)[-100:]
     state.facts, state.sources, state.fingerprints = bundle.facts, envelope.sources, bundle.fingerprints

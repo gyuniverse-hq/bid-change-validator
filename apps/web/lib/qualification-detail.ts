@@ -4,7 +4,7 @@
  */
 import type { BidNoticeVersion, PreflightCase } from './api';
 import type {
-  QualificationAnalysisRun, QualificationAnalysisSummary, QualificationJudgmentRun,
+  ExtractionStrategy, QualificationAnalysisRun, QualificationAnalysisSummary, QualificationJudgmentRun,
   QualificationJudgmentSummary, QualificationQuestion,
 } from './qualification-api';
 import { parseQualificationState, type QualificationState } from './qualification-state';
@@ -62,6 +62,11 @@ export function validateAnalysis(analysis: QualificationAnalysisRun, id: string,
       || !Array.isArray(analysis.diagnostics) || !Array.isArray(analysis.dropped_requirements)
       || (analysis.requirement_count !== undefined && analysis.requirement_count !== analysis.requirements.length)
       || (analysis.evidence_count !== undefined && analysis.evidence_count !== analysis.evidence.length)) invalid();
+  if (analysis.extraction_strategy != null && !['legacy', 'review_v1'].includes(analysis.extraction_strategy)) invalid();
+  if (analysis.execution_basis != null && (analysis.execution_basis.version !== 'qualification-extraction-basis-v1'
+      || analysis.execution_basis.strategy !== analysis.extraction_strategy
+      || !/^[a-f0-9]{64}$/.test(analysis.execution_basis.input_sha256)
+      || !/^[a-f0-9]{64}$/.test(analysis.execution_basis.source_sha256))) invalid();
   if (!unique(analysis.requirements.map(x => x.requirement_key)) || !unique(analysis.evidence.map(x => x.evidence_key))) invalid();
   const evidence = new Set(analysis.evidence.map(x => x.evidence_key));
   const documents = new Set(version.documents.map(x => x.id));
@@ -210,7 +215,7 @@ export type ReviewStage = 'checking' | 'analysis' | 'judgment' | 'refresh';
 export type WriteReceipt = { kind: 'analysis' | 'judgment'; id: string; version_number: number };
 export interface QualificationDetailWrites {
   load(caseId: string, signal?: AbortSignal): Promise<QualificationDetail>;
-  analyze(noticeId: string, version: number): Promise<QualificationAnalysisRun>;
+  analyze(noticeId: string, version: number, strategy?: ExtractionStrategy): Promise<QualificationAnalysisRun>;
   judge(caseId: string, analysisId: string): Promise<QualificationJudgmentRun>;
 }
 export type ReviewOutcome = {
@@ -221,8 +226,10 @@ export type ReviewOutcome = {
 };
 /** 명시적인 사용자 동작만 POST를 시작한다. 저장 후 GET 실패를 POST 재시도로 바꾸지 않는다. */
 export async function executeQualificationReview(detail: QualificationDetail, mode: ReviewMode,
-  writes: QualificationDetailWrites, onStage: (stage: ReviewStage) => void = () => {}, signal?: AbortSignal): Promise<ReviewOutcome> {
+  writes: QualificationDetailWrites, onStage: (stage: ReviewStage) => void = () => {}, signal?: AbortSignal,
+  requestedStrategy?: ExtractionStrategy): Promise<ReviewOutcome> {
   if (!['start', 'reanalyze', 'rejudge', 'baseline'].includes(mode)) invalid();
+  if (requestedStrategy !== undefined && !['legacy', 'review_v1'].includes(requestedStrategy)) invalid();
   const receipts: WriteReceipt[] = [];
   checkActive(signal);
   onStage('checking');
@@ -234,14 +241,19 @@ export async function executeQualificationReview(detail: QualificationDetail, mo
   if (!version) invalid();
   if (mode === 'rejudge' && (!canRejudge(before) || detail.state.analysis_run_id !== before.state.analysis_run_id)) changed();
   let analysis = mode === 'baseline' ? before.baseline.analysis : before.analysis;
-  const reuse = analysis && analysis.status === 'SUCCEEDED' && analysis.requirements.length > 0;
+  // 명시적으로 선택한 새 경로를 이전 경로/출처 미확인 분석으로 대체하지 않는다.
+  const reuse = analysis && analysis.status === 'SUCCEEDED' && analysis.requirements.length > 0
+    && (requestedStrategy === undefined || analysis.extraction_strategy === requestedStrategy);
   let posted = false;
   try {
     if (mode === 'reanalyze' || (mode !== 'rejudge' && !reuse)) {
       checkActive(signal);
       onStage('analysis'); posted = true;
-      analysis = await writes.analyze(before.caseItem.notice_id, version.version_number);
+      analysis = await writes.analyze(before.caseItem.notice_id, version.version_number, requestedStrategy);
       validateAnalysis(analysis, analysis?.id, before.caseItem.notice_id, version);
+      if (requestedStrategy !== undefined && analysis.extraction_strategy !== requestedStrategy) {
+        throw new QualificationDetailError('EXTRACTION_STRATEGY_MISMATCH', '요청한 분석 경로와 저장 응답이 다릅니다. 판정을 실행하지 않았습니다.');
+      }
       receipts.push({ kind: 'analysis', id: analysis.id, version_number: version.version_number });
       checkActive(signal);
     }

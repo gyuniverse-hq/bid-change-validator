@@ -1,6 +1,6 @@
 /** 상세 조회는 cache:no-store와 하나의 취소 신호를 사용한다. POST를 자동 재시도하지 않는다. */
 import { apiFetch, ApiError } from '@/lib/api';
-import { runQualificationAnalysis, runQualificationJudgment } from '@/lib/qualification-api';
+import { runQualificationAnalysis, runQualificationJudgment, type ExtractionStrategy } from '@/lib/qualification-api';
 import { getQualificationState } from '@/lib/qualification-state-api';
 import {
   loadQualificationDetail, executeQualificationReview,
@@ -39,8 +39,24 @@ export function loadCurrentQualificationDetail(caseId: string, signal?: AbortSig
   return loadQualificationDetail(caseId, detailReadPorts(signal), signal);
 }
 export function runCurrentQualificationReview(detail: QualificationDetail, mode: ReviewMode,
-  onStage: (stage: ReviewStage) => void, signal?: AbortSignal) {
+  onStage: (stage: ReviewStage) => void, signal?: AbortSignal, strategy?: ExtractionStrategy) {
   return executeQualificationReview(detail, mode, {
     load: loadCurrentQualificationDetail, analyze: runQualificationAnalysis, judge: runQualificationJudgment,
-  }, onStage, signal);
+  }, onStage, signal, strategy);
+}
+
+export type AnalysisOptions = {
+  contract_version: 'qualification-analysis-options-v1'; default_strategy: 'legacy';
+  strategies: { id: ExtractionStrategy; enabled: boolean }[]; graph_product_enabled: false;
+};
+export async function getAnalysisOptions(signal?: AbortSignal): Promise<AnalysisOptions> {
+  const data = await read<AnalysisOptions>('/api/v1/qualification-analysis-options', signal);
+  if (data.contract_version !== 'qualification-analysis-options-v1' || data.default_strategy !== 'legacy'
+      || data.graph_product_enabled !== false || !Array.isArray(data.strategies)
+      || data.strategies.length !== 2 || new Set(data.strategies.map(x => x.id)).size !== 2
+      || data.strategies.some(x => !['legacy', 'review_v1'].includes(x.id) || typeof x.enabled !== 'boolean')
+      || !data.strategies.some(x => x.id === 'legacy' && x.enabled)) {
+    throw new ApiError('사용 가능한 분석 경로를 확인하지 못했습니다.', 0, 'INVALID_ANALYSIS_OPTIONS');
+  }
+  return data;
 }

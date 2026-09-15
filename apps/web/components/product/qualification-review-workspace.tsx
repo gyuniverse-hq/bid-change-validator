@@ -16,14 +16,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { getNotice, listNotices, listPreflightCases, type BidNoticeDetail, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
-import { listCompanies, type CompanyProfile } from '@/lib/qualification-api';
+import { listCompanies, type CompanyProfile, type ExtractionStrategy } from '@/lib/qualification-api';
 import { openReviewTarget } from '@/lib/notice-review-target';
 import { ANALYSIS_STATUS_COPY, DROPPED_REASON_LABEL, REQUIREMENT_TYPE_LABEL, analysisStatusLabel, labelOf } from '@/lib/status-copy';
 import {
   canRejudge, canRevalidateDetail, createDetailRequestGate,
   type QualificationDetail, type ReviewMode, type ReviewOutcome, type ReviewStage,
 } from '@/lib/qualification-detail';
-import { loadCurrentQualificationDetail, runCurrentQualificationReview } from '@/lib/qualification-detail-api';
+import { loadCurrentQualificationDetail, runCurrentQualificationReview, getAnalysisOptions } from '@/lib/qualification-detail-api';
 import { qualificationDetailView, recordedComparison } from '@/lib/qualification-detail-view';
 
 const STAGE_COPY: Record<ReviewStage, string> = {
@@ -54,6 +54,11 @@ function ExistingQualification({ caseId }: { caseId: string }) {
   const gate = useRef(createDetailRequestGate());
   const operation = useRef(false);
   const lastAction = useRef('');
+  const [strategy, setStrategy] = useState<ExtractionStrategy | undefined>();
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+  const [optionsWarning, setOptionsWarning] = useState('');
+  const selectedStrategy = strategy ?? detail?.analysis?.extraction_strategy ?? 'legacy';
+  const analysisDisabled = selectedStrategy === 'review_v1' && !reviewEnabled;
 
   const load = useCallback(async () => {
     // 읽기가 쓰기 작업의 후속 처리를 취소하지 않도록 한다. 쓰기 종료 후에는 반드시 읽는다.
@@ -83,6 +88,16 @@ function ExistingQualification({ caseId }: { caseId: string }) {
   }, [caseId]);
 
   useEffect(() => {
+    const abort = new AbortController();
+    void getAnalysisOptions(abort.signal).then(options => {
+      if (!abort.signal.aborted) setReviewEnabled(options.strategies.some(x => x.id === 'review_v1' && x.enabled));
+    }).catch(() => {
+      if (!abort.signal.aborted) setOptionsWarning('새 분석 경로의 활성화 상태를 확인하지 못했습니다. 기존 조회와 회사 재판정은 사용할 수 있습니다.');
+    });
+    return () => abort.abort();
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => { window.clearTimeout(timer); gate.current.cancel(); };
   }, [load]);
@@ -103,6 +118,7 @@ function ExistingQualification({ caseId }: { caseId: string }) {
 
   async function run(mode: ReviewMode) {
     if (!detail || busy !== null || mustRefresh || operation.current || isLocked(controller.get(caseId))) return;
+    if (mode !== 'rejudge' && analysisDisabled) return;
     if (!controller.acquireReview(caseId)) return;
     operation.current = true;
     const ticket = gate.current.begin();
@@ -111,7 +127,7 @@ function ExistingQualification({ caseId }: { caseId: string }) {
     try {
       const outcome = await runCurrentQualificationReview(previous, mode, step => {
         if (ticket.isCurrent()) setStage(step);
-      }, ticket.signal);
+      }, ticket.signal, mode === 'rejudge' ? undefined : selectedStrategy);
       if (!ticket.isCurrent() || outcome.status === 'ABANDONED') return;
       setFeedback(outcome); setDetail(outcome.detail);
       setMustRefresh(outcome.status !== 'COMPLETE');
@@ -166,10 +182,21 @@ function ExistingQualification({ caseId }: { caseId: string }) {
         </div>
       </section>
       <CaseTabs caseId={caseId} active="qualification" />
+      <section aria-label="분석 경로 선택" className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <label htmlFor="qualification-extraction-strategy" className="text-sm font-semibold">새 분석에 사용할 방식</label>
+        <NativeSelect id="qualification-extraction-strategy" value={selectedStrategy} disabled={locked}
+          onChange={event => setStrategy(event.target.value as ExtractionStrategy)} className="mt-2 w-full sm:w-[340px]">
+          <NativeSelectOption value="legacy">기존 분석 (legacy)</NativeSelectOption>
+          <NativeSelectOption value="review_v1" disabled={!reviewEnabled}>조항별 누락 검토 (review_v1){!reviewEnabled ? ' · 서버 비활성' : ''}</NativeSelectOption>
+        </NativeSelect>
+        <p className="mt-2 text-sm">저장된 분석 방식: {analysis?.extraction_strategy ?? '과거 기록 · 미확인'}. 회사 재판정은 이 선택과 무관하게 현재 분석을 사용합니다.</p>
+        <p className="mt-1 text-sm text-amber-800">새 분석은 API 비용이 발생하고 해당 차수의 최신 분석 기준을 바꿉니다. 조항별 검토는 복합조건 그래프 모드가 아니며, 정확도 향상이 아직 실측으로 확인되지는 않았습니다.</p>
+        {optionsWarning && <p role="status" className="mt-2 text-sm text-amber-800">{optionsWarning}</p>}
+      </section>
       <div className="mt-6"><QualificationStateSummary detail={detail} action={<div className="flex flex-wrap gap-2">
         {canRejudge(detail) ? <Button disabled={locked} onClick={() => void run('rejudge')}><Play />현재 분석으로 회사 재판정</Button>
-          : <Button disabled={locked || !detail.caseItem.company_id || detail.state.execution_state === 'RUNNING'} onClick={() => void run('start')}><Play />분석하고 판정</Button>}
-        <Button variant="outline" disabled={locked || !detail.caseItem.company_id || detail.state.execution_state === 'RUNNING'} onClick={() => void run('reanalyze')}><RefreshCw />현재 차수 다시 분석</Button>
+          : <Button disabled={locked || analysisDisabled || !detail.caseItem.company_id || detail.state.execution_state === 'RUNNING'} onClick={() => void run('start')}><Play />분석하고 판정</Button>}
+        <Button variant="outline" disabled={locked || analysisDisabled || !detail.caseItem.company_id || detail.state.execution_state === 'RUNNING'} onClick={() => void run('reanalyze')}><RefreshCw />현재 차수 다시 분석</Button>
       </div>} /></div>
       <p className="mt-2 text-xs text-[var(--product-muted)]">회사 재판정은 공고 추출을 다시 실행하지 않습니다. 다시 분석은 실제 추출을 새로 실행합니다.</p>
       {[...detail.warnings, contextWarning].filter(Boolean).map((text, i) => <p key={i} role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">{text}</p>)}
@@ -203,7 +230,7 @@ function ExistingQualification({ caseId }: { caseId: string }) {
         <p className="mt-2 text-sm">기준 분석: {detail.baseline.analysis ? analysisStatusLabel(detail.baseline.analysis.status) : '미확보'} · 기준 판정: {source ? '저장 결과 있음' : '미확보'}</p>
         {revalidation && <p className="mt-2 text-sm">다시 판정한 자격요건 {revalidation.revalidated_keys.length}건</p>}
         <div className="mt-4 flex flex-wrap gap-2">
-          {detail.baseline.version && <Button variant="outline" disabled={locked || !detail.caseItem.company_id} onClick={() => void run('baseline')}>기준 차수 검토 준비</Button>}
+          {detail.baseline.version && <Button variant="outline" disabled={locked || analysisDisabled || !detail.caseItem.company_id} onClick={() => void run('baseline')}>기준 차수 검토 준비</Button>}
           <Button variant="outline" disabled={locked || !canRevalidateDetail(detail)} onClick={() => void controller.propose(caseId, true)}><GitCompareArrows />전체 변경 요건 재검증 제안</Button>
         </div>
       </section>

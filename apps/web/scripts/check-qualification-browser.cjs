@@ -27,7 +27,7 @@ const analysis = {id:'qa-a', notice_id:nid, notice_version_id:version.id, versio
   contract_version:'ai-analysis-v0.2',analysis_kind:'QUALIFICATION_REQUIREMENTS',status:'SUCCEEDED',created_at:now,
   target_chunk_ids:[],diagnostics:[],dropped_requirements:[],requirements:[requirement],
   evidence:[{evidence_key:'qa-e',document_id:'qa-doc',notice_version_id:version.id,quote:requirement.raw,location:{block_start:0,block_end:0}}]};
-let judgmentId = 'qa-j', stale = false, readError = false, failAfterWrite = false;
+let judgmentId = 'qa-j', stale = false, readError = false, failAfterWrite = false, reviewEnabled = false;
 let judgmentPosts = 0, analysisPosts = 0;
 const catalogCalls = [], unexpected = [], pageErrors = [], checks = [];
 function judgment() {
@@ -75,6 +75,7 @@ function catalog(url) {
       if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
       if(p==='/api/v1/auth/me')return reply(null);
       if(p==='/api/v1/companies')return reply([company]);
+      if(p==='/api/v1/qualification-analysis-options')return reply({contract_version:'qualification-analysis-options-v1',default_strategy:'legacy',strategies:[{id:'legacy',enabled:true},{id:'review_v1',enabled:reviewEnabled}],graph_product_enabled:false});
       if(p.endsWith('/notice-matches'))return reply({company_id:coid,analyzed_notice_count:0,returned_count:0,items:[],note:'합성 검증'});
       if(p==='/api/v1/qualification-notice-catalog')return reply(catalog(url));
       if(p===`/api/v1/preflight-cases/${cid}`)return reply(caseItem);
@@ -89,7 +90,12 @@ function catalog(url) {
         assert.equal(req.postDataJSON().analysis_run_id,analysis.id);judgmentPosts++;judgmentId=`qa-j-${judgmentPosts}`;
         stale=false;if(failAfterWrite)readError=true;return reply(judgment());
       }
-      if(p.endsWith('/qualification-analysis')&&req.method()==='POST'){analysisPosts++;return reply(analysis);}
+      if(p.endsWith('/qualification-analysis')&&req.method()==='POST'){
+        assert.equal(req.postDataJSON().extraction_strategy,'review_v1');analysisPosts++;
+        analysis.id='qa-a-review';analysis.extraction_strategy='review_v1';
+        analysis.execution_basis={version:'qualification-extraction-basis-v1',strategy:'review_v1',input_sha256:'a'.repeat(64),source_sha256:'b'.repeat(64)};
+        return reply(analysis);
+      }
       unexpected.push(`${req.method()} ${p}`);return reply({error:{code:'UNEXPECTED_TEST_ROUTE',message:p}},404);
     });
     await page.goto(`${origin}/notices`);
@@ -130,6 +136,16 @@ function catalog(url) {
     checks.push('503 never becomes unreviewed/zero');
     readError=false;await page.getByRole('button',{name:'화면 상태만 다시 조회',exact:true}).click();
     await page.locator('#qualification-conclusion').waitFor();
+    assert.equal(await page.locator('#qualification-extraction-strategy option[value="review_v1"]').isDisabled(),true);
+    reviewEnabled=true;
+    await page.reload();
+    await page.waitForFunction(()=>{const option=document.querySelector('#qualification-extraction-strategy option[value="review_v1"]');return option && !option.disabled;});
+    await page.getByLabel('새 분석에 사용할 방식',{exact:true}).selectOption('review_v1');
+    await page.getByRole('button',{name:'현재 차수 다시 분석',exact:true}).click();
+    await page.getByText('판정 저장 후 상태와 근거를 다시 조회했습니다. 분석 완전성과 판정 기준은 아래에서 별도로 확인해 주세요.',{exact:true}).waitFor();
+    await page.getByText(/저장된 분석 방식: review_v1/).waitFor();
+    assert.equal(analysisPosts,1);assert.equal(judgmentPosts,3);
+    checks.push('explicit review_v1 selection posts selected strategy and displays persisted basis');
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:path.join(out,'04-mobile.png'),fullPage:true});
     assert.equal(pageErrors.length,0,pageErrors.join('\n'));assert.deepEqual(unexpected,[]);

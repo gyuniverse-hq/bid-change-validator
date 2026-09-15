@@ -14,7 +14,10 @@ from ..ai.qualification.extraction.analysis_pipeline import (
     StructuredExtractor,
     analyze_qualification_documents,
 )
-from ..ai.qualification.extraction.analysis_result import RequirementAnalysisResult
+from ..ai.qualification.extraction.analysis_result import AnalysisDiagnostic, RequirementAnalysisResult
+from ..config import get_settings
+from .analysis_execution import (EXECUTION_CODE, EXECUTION_VERSION, SUPPORTED_STRATEGIES,
+                                 execution_metadata, product_review_options, source_basis)
 from ..ai.contracts import Evidence, EvidenceLocation, QualificationRequirement
 from ..analysis_models import (
     QualificationAnalysisRun,
@@ -37,6 +40,7 @@ def _load_notice_version(
     *,
     notice_id: UUID,
     version_number: int,
+    refresh: bool = False,
 ) -> BidNoticeVersion:
     version = db.scalar(
         select(BidNoticeVersion)
@@ -45,6 +49,7 @@ def _load_notice_version(
             BidNoticeVersion.version_number == version_number,
         )
         .options(selectinload(BidNoticeVersion.documents))
+        .execution_options(populate_existing=refresh)
     )
     if version is None:
         raise QualificationAnalysisError(
@@ -148,15 +153,42 @@ def run_qualification_analysis(
     notice_id: UUID,
     version_number: int,
     structured_extract: StructuredExtractor,
+    extraction_strategy: str = "legacy",
 ) -> QualificationAnalysisRun:
-    version = _load_notice_version(
-        db, notice_id=notice_id, version_number=version_number
-    )
-    analysis_input = build_qualification_analysis_input(version)
-    result = analyze_qualification_documents(
-        analysis_input,
-        structured_extract=structured_extract,
-    )
+    # HTTP 우회한 내부 호출에서도 알려지지 않은 경로/비활성 경로를 실행하지 않는다.
+    if extraction_strategy not in SUPPORTED_STRATEGIES:
+        raise QualificationAnalysisError("UNSUPPORTED_EXTRACTION_STRATEGY", "지원하지 않는 분석 경로입니다.")
+    if extraction_strategy == "review_v1" and not get_settings().qualification_review_v1_enabled:
+        raise QualificationAnalysisError("EXTRACTION_STRATEGY_DISABLED", "조항별 검토 경로가 이 서버에서 활성화되지 않았습니다.")
+    version = _load_notice_version(db, notice_id=notice_id, version_number=version_number)
+    analysis_input = build_qualification_analysis_input(version).model_copy(deep=True)
+    basis = source_basis(version, analysis_input)
+    # 첨부 행 순서에 따라 동일 원문 요청이 달라지지 않게 한다.
+    analysis_input.documents.sort(key=lambda item: item.document_id)
+    options = product_review_options() if extraction_strategy == "review_v1" else None
+    kwargs = {"extraction_strategy": extraction_strategy, "review_options": options} if options else {}
+    result = analyze_qualification_documents(analysis_input, structured_extract=structured_extract, **kwargs)
+    diagnostics = list(result.diagnostics)
+    status = result.status
+    if extraction_strategy == "review_v1" and basis["omitted_document_ids"]:
+        diagnostics.append(AnalysisDiagnostic(code="DOCUMENT_INPUT_INCOMPLETE", severity="WARNING",
+            message="분석 입력에 포함되지 못한 첨부가 있습니다. 해당 문서의 조건까지 검토했다고 볼 수 없습니다.",
+            details={"document_ids": basis["omitted_document_ids"]}))
+        if status == "SUCCEEDED":
+            status = "PARTIAL"
+    # 모델 대기 중 원문/추출 상태가 바뀌면 옛 입력의 결과를 새 기준으로 저장하지 않는다.
+    # 비교 직후 변경까지 잠그는 CAS/격리 수준 보증은 아니며, 동시 실행 기록은 모두 보존한다.
+    version = _load_notice_version(db, notice_id=notice_id, version_number=version_number, refresh=True)
+    latest_basis = source_basis(version, build_qualification_analysis_input(version))
+    if basis["source_sha256"] != latest_basis["source_sha256"]:
+        raise QualificationAnalysisError("ANALYSIS_SOURCE_CHANGED", "분석 중 원문 기준이 바뀌어 결과를 저장하지 않았습니다. 원문 상태를 다시 확인해 주세요.")
+    diagnostics.append(AnalysisDiagnostic(code=EXECUTION_CODE, severity="INFO",
+        message="분석 경로와 입력 기준 기록입니다. 추출 정확성이나 참가 가능을 보증하지 않습니다.",
+        details={"version": EXECUTION_VERSION, "strategy": extraction_strategy, **basis,
+                 "model": getattr(structured_extract, "model", None),
+                 "max_calls": options.max_calls if options else None,
+                 "max_retries": options.max_retries if options else None}))
+    result = result.model_copy(update={"diagnostics": diagnostics, "status": status})
     return _persist_result(db, version=version, result=result)
 
 
@@ -217,6 +249,7 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
         )
         for item in sorted(run.evidence, key=lambda value: value.evidence_key)
     ]
+    metadata = execution_metadata(run.diagnostics)
     return QualificationAnalysisRunRead(
         id=run.id,
         notice_id=version.notice_id,
@@ -231,6 +264,8 @@ def analysis_run_response(run: QualificationAnalysisRun) -> QualificationAnalysi
         requirements=requirements,
         evidence=evidence,
         created_at=run.created_at,
+        extraction_strategy=metadata["strategy"] if metadata else None,
+        execution_basis=metadata,
     )
 
 

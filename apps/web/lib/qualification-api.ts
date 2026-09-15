@@ -135,7 +135,11 @@ export type AnalysisDiagnostic = {
   evidence_keys: string[];
 };
 
+export type ExtractionStrategy = 'legacy' | 'review_v1';
+
 export type QualificationAnalysisRun = QualificationAnalysisSummary & {
+  extraction_strategy?: ExtractionStrategy | null;
+  execution_basis?: { version: string; strategy: ExtractionStrategy; input_sha256: string; source_sha256: string; [key: string]: unknown } | null;
   notice_id: string;
   analysis_kind: string;
   target_chunk_ids: string[];
@@ -316,10 +320,10 @@ export function listQualificationAnalyses(noticeId: string, versionNumber: numbe
   );
 }
 
-export function runQualificationAnalysis(noticeId: string, versionNumber: number) {
+export function runQualificationAnalysis(noticeId: string, versionNumber: number, strategy?: ExtractionStrategy) {
   return request<QualificationAnalysisRun>(
     `/api/v1/notices/${noticeId}/versions/${versionNumber}/qualification-analysis`,
-    { method: 'POST' },
+    { method: 'POST', ...(strategy ? { body: JSON.stringify({ extraction_strategy: strategy }) } : {}) },
   );
 }
 

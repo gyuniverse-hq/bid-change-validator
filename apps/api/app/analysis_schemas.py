@@ -1,16 +1,21 @@
 """API schemas for persisted qualification analysis runs."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .ai.qualification.extraction.analysis_result import (
     AnalysisDiagnostic,
     DroppedRequirement,
 )
 from .ai.contracts import Evidence, QualificationRequirement
+
+
+class QualificationAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    extraction_strategy: Literal["legacy", "review_v1"] = "legacy"
 
 
 class QualificationAnalysisRunRead(BaseModel):
@@ -27,6 +32,8 @@ class QualificationAnalysisRunRead(BaseModel):
     requirements: list[QualificationRequirement] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     created_at: datetime
+    extraction_strategy: Literal["legacy", "review_v1"] | None = None
+    execution_basis: dict[str, Any] | None = None
 
 
 class QualificationAnalysisRunSummary(BaseModel):

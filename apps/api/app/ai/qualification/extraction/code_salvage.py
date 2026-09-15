@@ -33,9 +33,16 @@ _CODE_IN_CONTEXT_RE = re.compile(
     r"업종\s*코드\s*[:：]?\s*(?P<labelled>[0-9]{4})(?![0-9])"
     r"|[가-힣·ㆍ]{2,}업\s*\(\s*(?P<named>[0-9]{4})\s*\)"
 )
+# 항목 기호. 괄호 숫자는 (1)·(2) 처럼 한두 자리만이다 — "(6770)" 은 업종코드가 줄머리에 온
+# 것이지 새 항목이 아니다. 실제 공고에서 "…폐기물중간재활용업\n(6770)또는…" 로 줄이 바뀌어
+# 있었고, 네 자리를 항목으로 보면 '또는' 조항이 두 동강 나서 ANY_OF 를 못 푼다.
 _ITEM_MARKER_RE = re.compile(
-    r"^\s*(?:제\s*\d+\s*(?:조|장)|\d+(?:\.\d+)*\s*[.)]|[가-힣]\s*[.)]|\(\s*\d+\s*\)|[○●◦▶▷□■])\s*\S"
+    r"^\s*(?:제\s*\d+\s*(?:조|장)|\d+(?:\.\d+)*\s*[.)]|[가-힣]\s*[.)]|\(\s*\d{1,2}\s*\)|[○●◦▶▷□■])\s*\S"
 )
+# 단서·부연 줄. 코드 조항의 raw 에는 넣지 않는다 — "※ 단, 처분 또는 재활용업 허가를…" 이
+# 붙으면 '단'·'또는' 때문에 안전 가드가 막아서 정작 코드 요건이 사라진다. 판정은 "회사가
+# 그 업종을 등록했는가" 이고 단서는 사람이 읽을 맥락이다. 근거(evidence)는 청크 전체를
+# 가리키므로 단서는 거기에 남는다.
 _CONTINUATION_RE = re.compile(r"^\s*(?:[※＊*·•\-–—]|☞)\s*\S")
 
 
@@ -47,17 +54,17 @@ def industry_codes_in(text: str) -> set[str]:
 
 
 def _clauses(chunk_text: str) -> list[str]:
-    """청크를 항목 줄로 나눈다. 기호 없는 줄과 단서 줄은 앞 항목에 붙인다."""
+    """청크를 항목 줄로 나눈다. 줄바꿈으로 끊긴 문장은 앞 항목에 붙이고, 단서 줄은 뺀다."""
     clauses: list[str] = []
     for line in (chunk_text or "").splitlines():
         if not line.strip():
             continue
-        opens_new = bool(_ITEM_MARKER_RE.match(line))
-        attach = clauses and (not opens_new or _CONTINUATION_RE.match(line))
-        if attach:
-            clauses[-1] += "\n" + line.strip()
-        else:
+        if _CONTINUATION_RE.match(line):
+            continue  # 단서 줄은 코드 조항에 안 붙인다 (위 주석)
+        if _ITEM_MARKER_RE.match(line) or not clauses:
             clauses.append(line.strip())
+        else:
+            clauses[-1] += "\n" + line.strip()  # 줄바꿈으로 끊긴 같은 문장
     return clauses
 
 

@@ -134,3 +134,22 @@ def test_a_clause_the_model_emitted_but_mapping_could_not_use_is_still_filled() 
     # 모델 슬롯은 못 썼고 코드가 채웠다. 그 사실이 상태와 진단에 남는다.
     assert result.status == "PARTIAL"
     assert any(d.code == "INDUSTRY_CODE_SALVAGED_FROM_SOURCE" for d in result.diagnostics)
+
+
+def test_a_code_at_the_start_of_a_wrapped_line_is_not_a_new_item() -> None:
+    """실제 J14 원문 그대로. "(6770)" 이 줄머리에 오고 "※ 단, …또는…" 단서가 따라온다.
+    네 자리를 항목 기호로 보면 '또는' 조항이 두 동강 나고, 단서를 붙이면 가드에 막힌다."""
+    real = (
+        "3 참가자격\n"
+        "○ 입찰서 제출 마감일 전일까지 나라장터에 아래 업종 중 해당 자격을 등록한 업체이어야 한다.\n"
+        "1)「폐기물관리법 」 제25조에 따른 폐기물중간처분업 (1257) 또는 폐기물중간재활용업\n"
+        "(6770)또는 폐기물종합재활용업(6786) 등록업체\n"
+        "2)「폐기물관리법」 제25조에 따른 폐기물수집·운반업(1227) 등록업체\n"
+        "※ 단, 처분 또는 재활용업 허가를 보유한 경우 수집·운반업 등록을 갈음할 수 있다"
+    )
+
+    result = analyze_qualification_documents(_input(real), structured_extract=lambda *a: {"requirements": []})
+
+    by_value = {item.value: item for item in result.requirements if item.type == "INDUSTRY"}
+    assert set(by_value) == {"1257", "6770", "6786", "1227"}
+    assert {by_value[c].group_operator for c in ("1257", "6770", "6786")} == {"ANY_OF"}

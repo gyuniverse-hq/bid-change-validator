@@ -179,6 +179,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     if (request === generation.current) setAnalysisDetail(detail);
   }
 
+  async function loadBaselineAnalysisDetail(summary: QualificationAnalysisSummary | QualificationAnalysisRun | null, request: number) {
+    if (!summary) return setBaselineAnalysisDetail(null);
+    if ('requirements' in summary) return setBaselineAnalysisDetail(summary);
+    const detail = await getQualificationAnalysis(summary.id);
+    if (request === generation.current) setBaselineAnalysisDetail(detail);
+  }
+
   const generation = useRef(0);
 
   const initialize = useCallback(async () => {
@@ -325,7 +332,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       if (request !== generation.current) return;
       setBaselineAnalysis(baseline);
       setCurrentAnalysis(current);
-      await loadAnalysisDetail(current, request);
+      // 기준 차수 본문도 같이 갱신한다. 판정만 새로 받고 분석을 그대로 두면
+      // 기준 차수 보기에서 옛 요건과 새 판정의 requirement_key가 어긋나 전부 미판정으로 나온다.
+      await Promise.all([
+        loadAnalysisDetail(current, request),
+        loadBaselineAnalysisDetail(sameVersion ? null : baseline, request),
+      ]);
       if (request !== generation.current) return;
 
       setReviewStep('judgment');
@@ -387,22 +399,25 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   */
   const versionRequirementGap = useMemo(() => {
     if (!canViewBaseline || !baselineAnalysisDetail || !analysisDetail) return null;
-    const baselineKeys = new Set(baselineAnalysisDetail.requirements.map((item) => item.requirement_key));
-    const currentKeys = new Set(analysisDetail.requirements.map((item) => item.requirement_key));
-    const typeLabels = (
-      list: typeof baselineAnalysisDetail.requirements,
-      exclude: Set<string>,
-    ) => Array.from(new Set(
-      list
-        .filter((item) => !exclude.has(item.requirement_key))
-        .map((item) => REQUIREMENT_TYPE_LABEL[item.type] ?? item.type),
-    ));
-    const droppedInCurrent = typeLabels(baselineAnalysisDetail.requirements, currentKeys);
-    const addedInCurrent = typeLabels(analysisDetail.requirements, baselineKeys);
-    if (!droppedInCurrent.length && !addedInCurrent.length) return null;
+    // requirement_key는 차수마다 새로 만들어져서 같은 요건이라도 값이 달라진다.
+    // 키로 비교하면 업종 하나가 양쪽 목록에 동시에 뜨므로 요건 종류로 비교한다.
+    const typeLabels = (list: typeof baselineAnalysisDetail.requirements) => new Set(
+      list.map((item) => REQUIREMENT_TYPE_LABEL[item.type] ?? item.type),
+    );
+    const baselineTypes = typeLabels(baselineAnalysisDetail.requirements);
+    const currentTypes = typeLabels(analysisDetail.requirements);
+    const droppedInCurrent = Array.from(baselineTypes).filter((label) => !currentTypes.has(label));
+    const addedInCurrent = Array.from(currentTypes).filter((label) => !baselineTypes.has(label));
+    const baselineCount = baselineAnalysisDetail.requirements.length;
+    const currentCount = analysisDetail.requirements.length;
+    // 종류는 같아도 건수가 달라질 수 있고(업종 2건 → 4건), 건수는 같아도 종류가 바뀔 수 있다.
+    // 둘 중 하나라도 어긋나면 두 차수의 숫자를 그대로 비교할 수 없으므로 알린다.
+    const countsDiffer = baselineCount !== currentCount;
+    if (!countsDiffer && !droppedInCurrent.length && !addedInCurrent.length) return null;
     return {
-      baselineCount: baselineAnalysisDetail.requirements.length,
-      currentCount: analysisDetail.requirements.length,
+      baselineCount,
+      currentCount,
+      countsDiffer,
       droppedInCurrent,
       addedInCurrent,
     };
@@ -579,7 +594,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
             {versionRequirementGap && (
               <section className="mt-4 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
                 <strong className="text-[15px] text-[var(--product-warn)]">
-                  두 차수의 요건 수가 다릅니다 — 기준 v{activeCase.baseline_version_number} {versionRequirementGap.baselineCount}건 · 현재 v{activeCase.current_version_number} {versionRequirementGap.currentCount}건
+                  {versionRequirementGap.countsDiffer ? '두 차수의 요건 수가 다릅니다' : '두 차수의 요건 구성이 다릅니다'} — 기준 v{activeCase.baseline_version_number} {versionRequirementGap.baselineCount}건 · 현재 v{activeCase.current_version_number} {versionRequirementGap.currentCount}건
                 </strong>
                 {versionRequirementGap.droppedInCurrent.length > 0 && (
                   <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">
@@ -592,8 +607,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   </p>
                 )}
                 <p className="mt-2 text-[13px] leading-[1.7] text-[var(--product-muted)]">
-                  빠진 요건은 판정에서 제외됩니다. 미달이 줄어도 충족된 것은 아닙니다.
-                  요건이 왜 빠졌는지는 변경 이력에서 원문으로 확인해 주세요.
+                  {versionRequirementGap.droppedInCurrent.length > 0
+                    ? '빠진 요건은 판정에서 제외됩니다. 미달이 줄어도 충족된 것은 아닙니다. 요건이 왜 빠졌는지는 변경 이력에서 원문으로 확인해 주세요.'
+                    : '요건 구성이 달라 두 차수의 건수를 그대로 비교할 수 없습니다. 무엇이 달라졌는지는 변경 이력에서 원문으로 확인해 주세요.'}
                 </p>
               </section>
             )}

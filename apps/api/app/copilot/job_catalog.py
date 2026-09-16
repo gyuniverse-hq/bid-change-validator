@@ -1,7 +1,7 @@
 """Server-owned guided Copilot jobs.
 
 The UI may render these labels, but it does not decide which product reads are
-allowed or what constitutes a complete answer.  Keeping this contract on the
+allowed or what constitutes a complete answer. Keeping this contract on the
 server also prevents a button label from silently falling back to the broad
 free-text planner.
 """
@@ -172,6 +172,24 @@ def get_question(job_id: str | None, question_id: str | None) -> QuestionDefinit
     return item
 
 
+def unavailable_reason(case, item: QuestionDefinition) -> str | None:
+    if item.needs_changed_notice and (
+        not case.company_id
+        or not case.baseline_version_id
+        or case.baseline_version_id == case.current_version_id
+    ):
+        return "기준 차수와 현재 차수가 다른 변경 공고를 먼저 선택해 주세요."
+    if not case.company_id:
+        return "검토할 회사를 먼저 선택해 주세요."
+    return None
+
+
+def ensure_question_available(case, item: QuestionDefinition) -> None:
+    reason = unavailable_reason(case, item)
+    if reason:
+        raise ApiError(409, "GUIDED_QUESTION_BLOCKED", reason)
+
+
 def guided_plan(item: QuestionDefinition) -> TaskPlan:
     return TaskPlan(
         goal=item.label,
@@ -188,15 +206,7 @@ def catalog_for_case(case) -> GuidedJobCatalog:
         first = items[0]
         questions: list[GuidedQuestionRead] = []
         for item in items:
-            reason = None
-            if item.needs_changed_notice and (
-                not case.company_id
-                or not case.baseline_version_id
-                or case.baseline_version_id == case.current_version_id
-            ):
-                reason = "기준 차수와 현재 차수가 다른 변경 공고를 먼저 선택해 주세요."
-            elif not case.company_id:
-                reason = "검토할 회사를 먼저 선택해 주세요."
+            reason = unavailable_reason(case, item)
             questions.append(GuidedQuestionRead(
                 question_id=item.question_id,
                 label=item.label,

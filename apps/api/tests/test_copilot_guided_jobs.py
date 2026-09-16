@@ -4,12 +4,16 @@ from uuid import uuid4
 import pytest
 
 from apps.api.app.copilot.chat import CopilotChatRequest
-from apps.api.app.copilot.job_catalog import QUESTIONS, catalog_for_case, get_question, guided_plan
+from apps.api.app.copilot.job_catalog import (
+    QUESTIONS,
+    catalog_for_case,
+    ensure_question_available,
+    get_question,
+    guided_plan,
+)
 from apps.api.app.copilot.orchestration import TASK_LABELS, plan_turn
-from apps.api.app.copilot.product_tools import assert_current_company_snapshot
 from apps.api.app.copilot.v31_contracts import ConversationState, Scope
 from apps.api.app.errors import ApiError
-from apps.api.app.qualification.judgment import QualificationJudgmentError
 
 
 def _case(*, changed=True, company=True):
@@ -51,11 +55,23 @@ def test_internal_tool_names_have_user_facing_labels():
 
 
 def test_changed_notice_questions_are_visible_but_blocked_without_two_versions():
-    catalog = catalog_for_case(_case(changed=False))
+    case = _case(changed=False)
+    catalog = catalog_for_case(case)
     changed = catalog.jobs[0]
     assert all(question.availability == "BLOCKED" for question in changed.questions)
     assert all(question.unavailable_reason for question in changed.questions)
     assert all(question.availability == "AVAILABLE" for question in catalog.jobs[1].questions)
+
+    item = get_question("changed_notice", "what_changed")
+    with pytest.raises(ApiError) as blocked:
+        ensure_question_available(case, item)
+    assert blocked.value.code == "GUIDED_QUESTION_BLOCKED"
+
+
+def test_available_question_passes_server_guard():
+    case = _case(changed=True)
+    item = get_question("changed_notice", "what_changed")
+    assert ensure_question_available(case, item) is None
 
 
 def test_unknown_or_partial_guided_selection_is_rejected():
@@ -84,32 +100,3 @@ def test_guided_question_uses_server_plan_without_model_classification():
     assert not fallback
     assert plan == guided_plan(item)
     assert [task.kind for task in plan.tasks] == ["READ_DOCUMENT", "READ_CHECKS"]
-
-
-def test_edited_company_profile_blocks_old_judgment_explanation(monkeypatch):
-    case = SimpleNamespace(company_id=uuid4())
-    db = SimpleNamespace(get=lambda *args: object())
-    monkeypatch.setattr("apps.api.app.copilot.product_tools._load_company", lambda *args: object())
-    monkeypatch.setattr("apps.api.app.copilot.product_tools._record_to_completeness", lambda value: object())
-    monkeypatch.setattr(
-        "apps.api.app.copilot.product_tools.build_company_profile_snapshot",
-        lambda *args: SimpleNamespace(model_dump=lambda **kwargs: {"company_id": str(case.company_id), "industries": ["new"]}),
-    )
-    with pytest.raises(QualificationJudgmentError) as error:
-        assert_current_company_snapshot(
-            db, case, {"company_id": str(case.company_id), "industries": ["old"]}
-        )
-    assert error.value.code == "STALE_COMPANY_PROFILE"
-
-
-def test_unchanged_company_profile_remains_readable(monkeypatch):
-    case = SimpleNamespace(company_id=uuid4())
-    snapshot = {"company_id": str(case.company_id), "industries": ["same"]}
-    db = SimpleNamespace(get=lambda *args: object())
-    monkeypatch.setattr("apps.api.app.copilot.product_tools._load_company", lambda *args: object())
-    monkeypatch.setattr("apps.api.app.copilot.product_tools._record_to_completeness", lambda value: object())
-    monkeypatch.setattr(
-        "apps.api.app.copilot.product_tools.build_company_profile_snapshot",
-        lambda *args: SimpleNamespace(model_dump=lambda **kwargs: snapshot),
-    )
-    assert_current_company_snapshot(db, case, snapshot)

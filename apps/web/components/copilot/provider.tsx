@@ -1,23 +1,36 @@
 'use client';
-import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ConversationStore } from '@/lib/copilot-conversation';
 import { ActionController } from '@/lib/copilot-actions';
 import { saveCopilotNavigationHandoff, takeCopilotNavigationHandoff } from '@/lib/copilot-navigation-handoff';
 import { navigateTo } from '@/lib/navigation';
 
-const Context = createContext<{ store: ConversationStore; controller: ActionController } | null>(null);
+type CopilotContextValue = {
+  store: ConversationStore;
+  controller: ActionController;
+  reopenCaseId: string | null;
+  consumeReopen: (caseId: string) => void;
+};
+
+const Context = createContext<CopilotContextValue | null>(null);
 export function CopilotProvider({ children }: { children: ReactNode }) {
   const [value] = useState(() => {
     const store = new ConversationStore();
     return { store, controller: new ActionController(undefined, undefined, (id, response) => store.publish(id, response)) };
   });
+  const [reopenCaseId, setReopenCaseId] = useState<string | null>(null);
+  const consumeReopen = useCallback((caseId: string) => {
+    setReopenCaseId((current) => current === caseId ? null : current);
+  }, []);
+
   useEffect(() => {
     const handoff = takeCopilotNavigationHandoff();
     if (!handoff) return;
     if (handoff.conversation) value.store.restore(handoff.caseId, handoff.conversation);
     if (handoff.action) value.controller.restore(handoff.caseId, handoff.action);
+    if (handoff.reopenPanel) setReopenCaseId(handoff.caseId);
   }, [value]);
-  return <Context.Provider value={value}>{children}</Context.Provider>;
+  return <Context.Provider value={{ ...value, reopenCaseId, consumeReopen }}>{children}</Context.Provider>;
 }
 function useStores() {
   const stores = useContext(Context);
@@ -34,18 +47,26 @@ export function useActions(caseId: string) {
   const action = useSyncExternalStore(controller.subscribe, () => controller.get(caseId), () => controller.get(caseId));
   return { controller, action };
 }
+export function useCopilotPanelRestore(caseId: string) {
+  const { reopenCaseId, consumeReopen } = useStores();
+  return {
+    shouldReopen: Boolean(caseId && reopenCaseId === caseId),
+    consumeReopen: () => consumeReopen(caseId),
+  };
+}
 export function useCopilotNavigation(caseId: string) {
   const { store, controller } = useStores();
-  const stage = (destination: string) => saveCopilotNavigationHandoff(
+  const stage = (destination: string, reopenPanel = false) => saveCopilotNavigationHandoff(
     destination,
     caseId,
     store.snapshot(caseId),
     controller.snapshot(caseId),
+    reopenPanel,
   );
   return {
     stage,
-    navigate: (destination: string) => {
-      stage(destination);
+    navigate: (destination: string, reopenPanel = true) => {
+      stage(destination, reopenPanel);
       navigateTo(destination);
     },
   };

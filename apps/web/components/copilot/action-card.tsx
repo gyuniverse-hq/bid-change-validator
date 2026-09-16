@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useId } from 'react';
+import { NavigationLink } from '@/components/navigation-link';
 import { Button } from '@/components/ui/button';
 import { useActions } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
@@ -20,7 +20,7 @@ export function ActionCard({ caseId, compact = false }: { caseId: string; compac
     <p className="copilot-action-note">이 검토 건에만 반영합니다. 회사 프로필은 변경하지 않습니다.</p>
     {compact && (draft || action.proposal) && <>
       <p>{draft?.label ?? action.proposal?.title}</p>
-      <Link className="copilot-detail-link" href={`${path}?caseId=${encodeURIComponent(caseId)}`}>{isRevalidation ? '06 변경 화면' : '03 추가정보 화면'}에서 상세 확인 · 아직 실행 안 함</Link>
+      <NavigationLink className="copilot-detail-link" href={`${path}?caseId=${encodeURIComponent(caseId)}`}>{isRevalidation ? '06 변경 화면' : '03 추가정보 화면'}에서 상세 확인 · 아직 실행 안 함</NavigationLink>
     </>}
     {!compact && draft && <>
       <p>{draft.label}</p>

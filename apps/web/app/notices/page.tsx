@@ -1,7 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -21,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { CachedNoticeMatches } from '@/components/product/cached-notice-matches';
+import { NavigationLink } from '@/components/navigation-link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { findPreflightCasesByNotice, getNoticeVersions, listNotices, listPreflightCases, type BidNoticeSummary, type PreflightCase } from '@/lib/api';
@@ -31,6 +30,7 @@ import {
   type QualificationJudgmentSummary,
 } from '@/lib/qualification-api';
 import { loadCurrentJudgment } from '@/lib/case-workspace';
+import { navigateTo } from '@/lib/navigation';
 import { productProfileCoverage } from '@/lib/product-profile';
 import { ASK_BACK_REASON_COPY, BUSINESS_TYPE_LABEL, labelOf, OVERALL_STATUS_BADGE } from '@/lib/status-copy';
 type OverallStatus = QualificationJudgmentSummary['overall_status'] | 'unreviewed';
@@ -54,7 +54,6 @@ const HYDRATE_CONCURRENCY = 6;
 const VISIBLE_NOTICE_LIMIT = 10;
 
 export default function NoticesPage() {
-  const router = useRouter();
   const [notices, setNotices] = useState<BidNoticeSummary[]>([]);
   const [noticeTotal, setNoticeTotal] = useState(0);
   const [cases, setCases] = useState<PreflightCase[]>([]);
@@ -261,7 +260,7 @@ export default function NoticesPage() {
   async function startReview(notice: BidNoticeSummary) {
     const existing = existingCaseByNotice.get(notice.id);
     if (existing) {
-      router.push(`/qualification?caseId=${existing.id}`);
+      navigateTo(`/qualification?caseId=${existing.id}`);
       return;
     }
     if (!company) {
@@ -281,7 +280,7 @@ export default function NoticesPage() {
       const reusable = known.items.find((item) => item.current_version_number === notice.current_version);
       if (reusable) {
         setCases((previous) => (previous.some((item) => item.id === reusable.id) ? previous : [...previous, reusable]));
-        router.push(`/qualification?caseId=${reusable.id}`);
+        navigateTo(`/qualification?caseId=${reusable.id}`);
         return;
       }
       const versions = await getNoticeVersions(notice.id);
@@ -300,7 +299,7 @@ export default function NoticesPage() {
       const refreshed = await listPreflightCases(company.id);
       setCases(refreshed.items);
       await hydrateCaseMeta(refreshed.items, notices, company.id);
-      router.push(`/qualification?caseId=${created.id}`);
+      navigateTo(`/qualification?caseId=${created.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '검토 건 생성에 실패했습니다.');
     } finally {
@@ -320,7 +319,7 @@ export default function NoticesPage() {
             <span className={profileReady ? 'text-emerald-700' : 'text-amber-700'}>{profileReady ? <CheckCircle2 className="size-[18px]" /> : <CircleHelp className="size-[18px]" />}</span>
             {/* 상태 한 줄이면 된다. 「채우면 걸러드립니다」 같은 설명은 링크가 이미 말한다. */}
             <strong className="font-bold">{company ? `${company.name} · 프로필 ${profile.filled}/${profile.total}` : '회사 프로필이 필요합니다'}</strong>
-            {!profileReady && <Link href="/company" className="font-semibold text-[var(--product-accent-deep)]">채우면 걸러드립니다 →</Link>}
+            {!profileReady && <NavigationLink href="/company" className="font-semibold text-[var(--product-accent-deep)]">채우면 걸러드립니다 →</NavigationLink>}
           </div>
 
           {/* 업무 시작점은 검색이다. 검색 상자 하나에 제목·입력·단계 띠를 모두 담아 첫 화면의 상자를 하나로 유지한다. */}
@@ -486,10 +485,10 @@ export default function NoticesPage() {
           같은 말을 이미 한다. 두 번 말하지 않고 지운다. 확인 필요 안내만 전체 폭으로 남긴다.
         */}
         <section className="mt-12">
-          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[28px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[28px]">{metaLoading ? '—' : unknownTotal}</strong></div><p className="mt-3 text-[15px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[15px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[13px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <Link href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[15px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></Link> : <p className="mt-6 text-[15px] text-white/65">{metaLoading ? '판정 상태를 불러오는 중입니다' : '지금 답할 항목이 없습니다'}</p>}</aside>        </section>
+          <aside className="rounded-[22px] bg-[var(--product-accent-deep)] p-7 text-white"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold text-white/65">확인 필요</p><h2 className="mt-1 text-[28px] font-extrabold">확인이 필요한 항목</h2></div><strong className="text-[28px]">{metaLoading ? '—' : unknownTotal}</strong></div><p className="mt-3 text-[15px] leading-6 text-white/75">정보가 부족한 항목은 미달로 만들지 않고 확인 필요로 남깁니다.</p><div className="mt-6 space-y-3">{Object.entries(ASK_BACK_REASON_COPY).map(([key, reason]) => <div key={key} className="rounded-2xl bg-white/10 p-4"><span className="flex items-center gap-2 text-[15px] font-semibold">{reason.canAnswer ? <CircleHelp className="size-4" /> : <ShieldCheck className="size-4" />} {reason.label}</span><p className="mt-2 text-[13px] leading-5 text-white/65">{reason.description}</p></div>)}</div>{firstUnknownCase ? <NavigationLink href={`/ask-back?caseId=${firstUnknownCase.id}`} className="mt-6 inline-flex items-center gap-2 text-[15px] font-bold">확인 필요 항목 보기 <ArrowRight className="size-4" /></NavigationLink> : <p className="mt-6 text-[15px] text-white/65">{metaLoading ? '판정 상태를 불러오는 중입니다' : '지금 답할 항목이 없습니다'}</p>}</aside>        </section>
 
         {/* 다 채운 사람에게 「모두 연결되어 있습니다」를 한 블록 크기로 알릴 이유가 없다. 빌 때만 띄운다. */}
-        {missingProfile.length > 0 && <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">{missingProfile.join(' · ')} 영역이 아직 비어 있습니다.</p></div><div className="flex items-center gap-4"><span className="text-[15px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><Link href="/company" className={buttonVariants({ variant: 'outline', className: 'rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]' })}>프로필 보완</Link></div></section>}
+        {missingProfile.length > 0 && <section className="mt-12 flex flex-col justify-between gap-5 rounded-[24px] border border-[#d9ddf8] bg-[#f2f4ff] px-8 py-7 md:flex-row md:items-center"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em] text-[var(--product-ink)]">채우면 판정이 더 정확해집니다</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">{missingProfile.join(' · ')} 영역이 아직 비어 있습니다.</p></div><div className="flex items-center gap-4"><span className="text-[15px] font-semibold">{profile.total}개 영역 중 {profile.filled}개 연결</span><NavigationLink href="/company" className={buttonVariants({ variant: 'outline', className: 'rounded-full border-[var(--product-accent)] bg-white text-[var(--product-accent-deep)]' })}>프로필 보완</NavigationLink></div></section>}
       </div>
     </main>
   );

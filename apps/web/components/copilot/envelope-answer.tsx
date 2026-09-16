@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { NavigationLink } from '@/components/navigation-link';
 import type { CopilotEnvelope } from '@/lib/copilot-v31';
 
 const labels: Record<string, string> = { REQUIREMENT: '판정 요건', MANUAL: '직접 확인할 공고 항목', DOCUMENT: '공고문 근거', CHANGE: '변경 항목', ASSUMPTION: '검토용 가정' };
@@ -21,7 +21,7 @@ export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelo
         return <details key={id}><summary>{source.kind === 'DOCUMENT' ? '공고문 원문' : source.kind === 'TURN' ? '대화에서 제시한 가정' : '저장된 데이터'}</summary>
           <blockquote style={{ whiteSpace: 'pre-wrap' }}>{source.quote || '인용문을 표시하지 못했습니다.'}</blockquote>
           <small>버전 {source.scope.notice_version_id.slice(0, 8)} {typeof source.location.page === 'number' ? `· p.${source.location.page}` : ''}</small>
-          {source.kind === 'DOCUMENT' && <Link href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</Link>}
+          {source.kind === 'DOCUMENT' && <NavigationLink href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</NavigationLink>}
         </details>;
       })}</div>
     </div>)}

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
@@ -44,7 +43,7 @@ export default function EvidencePage() {
       <section role="alert" className="mt-5 rounded-xl border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] p-5">
         <h2 className="font-bold">이 근거는 이전 분석 기준입니다</h2>
         <p className="mt-2">현재 분석과 연결 기준이 달라 같은 근거 키로 자동 이동하지 않았습니다. 과거 인용문은 대화에서 확인할 수 있습니다.</p>
-        <Link href={workspaceHref('/evidence', caseId)} className="mt-3 inline-block underline">현재 분석의 근거 선택하기</Link>
+        <NavigationLink href={workspaceHref('/evidence', caseId)} className="mt-3 inline-block underline">현재 분석의 근거 선택하기</NavigationLink>
       </section>
     </main>;
   }
@@ -137,10 +136,11 @@ function EvidenceWorkspace({ workspace, evidenceParam }: { workspace: CaseWorksp
               <div className="mt-3 divide-y divide-[var(--product-line)]">{nearbyEvidence.map((item) => <button key={item.evidence_key} type="button" onClick={() => { setSelectedEvidenceKey(item.evidence_key); setDocumentId(item.document_id); }} className="flex w-full items-center justify-between gap-3 py-3 text-left"><span className="truncate text-[13px]">{item.quote}</span><span className="shrink-0 text-[12px] font-semibold text-[var(--product-accent)]">{displayLocation(item.location)}</span></button>)}</div>
             </section>
 
-            <Link href={workspaceHref('/ask-back', workspace.caseItem.id)} className={buttonVariants({ variant: 'outline', className: 'w-full rounded-full' })}>확인 필요에 답하기</Link>
+            <NavigationLink href={workspaceHref('/ask-back', workspace.caseItem.id)} className={buttonVariants({ variant: 'outline', className: 'w-full rounded-full' })}>확인 필요에 답하기</NavigationLink>
           </aside>
         </section>
       </div>
     </main>
   );
 }
+import { NavigationLink } from '@/components/navigation-link';

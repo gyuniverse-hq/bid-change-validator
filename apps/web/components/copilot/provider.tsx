@@ -49,9 +49,10 @@ export function useActions(caseId: string) {
 }
 export function useCopilotPanelRestore(caseId: string) {
   const { reopenCaseId, consumeReopen } = useStores();
+  const consume = useCallback(() => consumeReopen(caseId), [caseId, consumeReopen]);
   return {
     shouldReopen: Boolean(caseId && reopenCaseId === caseId),
-    consumeReopen: () => consumeReopen(caseId),
+    consumeReopen: consume,
   };
 }
 export function useCopilotNavigation(caseId: string) {

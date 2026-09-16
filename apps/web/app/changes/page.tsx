@@ -10,12 +10,8 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
-/*
-  재검증 결과의 요건은 코파일럿 응답(RevalidationResult)으로 들어온다.
-  분석 조회(qualification-api)의 CanonicalRequirement와 모양은 같지만 다른 타입이라,
-  이 화면은 실제로 받는 쪽인 copilot-api의 것을 쓴다. (#132 리뷰)
-*/
-import type { QualificationRequirement } from '@/lib/copilot-api';
+import type { CanonicalRequirement as QualificationRequirement } from '@/lib/qualification-api';
+import { diffCanonicalRequirements } from '@/lib/requirement-diff';
 import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
@@ -112,6 +108,14 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     ];
   }, [workspace]);
 
+  const analyzedChanges = useMemo(() => {
+    if (result) return result.changes;
+    const baseline = workspace?.baselineAnalysisDetail;
+    const current = workspace?.currentAnalysisDetail;
+    if (!baseline || !current) return [];
+    return diffCanonicalRequirements(baseline.requirements, current.requirements);
+  }, [result, workspace?.baselineAnalysisDetail, workspace?.currentAnalysisDetail]);
+
   /*
     요건 행의 펼침 상태. 기본값은 행마다 다르다(구조화 값이 바뀐 것만 펼쳐 둔다).
     그래서 상태에는 「사용자가 직접 뒤집은 행」만 담고, 나머지는 렌더할 때 기본값을 쓴다.
@@ -142,7 +146,8 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     !workspace.currentAnalysis && '현재 차수 분석',
     !workspace.sourceJudgment && '기준 차수 판정',
   ].filter((item): item is string => typeof item === 'string');
-  const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
+  const affectedChanges = analyzedChanges.filter((item) => item.change_type !== 'UNCHANGED');
+  const hasRequirementComparison = Boolean(workspace.baselineAnalysisDetail && workspace.currentAnalysisDetail);
   /*
     「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
     원문만 바뀐 것도 섞인다. 구조화된 값이 실제로 달라진 것이 몇 건인지 따로 센다.
@@ -192,7 +197,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[13px] leading-[1.75] text-[var(--product-muted)]"><strong className="text-[var(--product-body)]">{missingForRevalidation.join(' · ')}</strong>이 준비되지 않아 실행할 수 없습니다. 참가자격 검토 화면에서 다시 검토하면 기준 차수까지 현재 판정 규칙으로 함께 분석·판정합니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+              {hasRequirementComparison && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong>{result && <> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></>} · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
                 // 재검증 결과가 양쪽 차수의 요건을 그대로 담아 온다. 따로 조회해 이어붙이지 않는다.
                 const before = item.baseline;
                 const after = item.current;

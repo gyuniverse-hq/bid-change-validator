@@ -10,7 +10,10 @@ export function CopilotNavigationLink({ caseId, href, onClick, ...props }: Props
   const { stage } = useCopilotNavigation(caseId);
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
-    if (!event.defaultPrevented) stage(href, true);
+    if (!event.defaultPrevented) {
+      const reopenPanel = Boolean(event.currentTarget.closest('#copilot-panel[open]'));
+      stage(href, reopenPanel);
+    }
   };
   return <NavigationLink {...props} href={href} onClick={handleClick} />;
 }

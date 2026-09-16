@@ -123,7 +123,7 @@ SLOT_SCHEMA: dict[str, Any] = {
 SYSTEM_PROMPT = """너는 입찰공고 RFP에서 참가자격 요건을 추출하는 도구다. 규칙:
 1. 본문에 명시된 요건만 추출한다. 없는 요건을 만들어내지 마라. 없으면 빈 배열.
 2. raw에는 원문 문장을 그대로 담는다. 요약하거나 수치·코드·enum으로 변환하지 마라.
-3. 모든 *_raw 필드는 제공된 원문 표현을 그대로 담고, 해당 표현이 없으면 null로 둔다.
+3. 모든 *_raw 필드는 원문에서 **연속된 한 구간을 그대로 복사**한다. 요약·축약·조사 수정 금지. ※ ○ ▶ 같은 기호도 원문에 있으면 함께 복사한다. 해당 표현이 없으면 null로 둔다. 여러 조건을 쉼표·세미콜론으로 이어 붙이지 마라 — 조건이 여럿이면 각각 별도 requirement로 낸다. 복사한 구간이 원문과 한 글자라도 다르면 그 값은 버려진다.
 4. 실적요건은 기간/금액/건수/경험분야/실적기관 표현을 같은 슬롯에 함께 담을 수 있다.
 5. 업종·업태 자체가 참가 제한이면 유형=업종요건, 업종_raw에 원문 명칭을 담는다. 등록·면허·인증 보유 여부와 혼동하지 마라.
 6. 금액·건수와 독립적으로 특정 경험 분야 보유 자체를 요구하는 경우에만 유형=경험분야요건을 사용한다.
@@ -254,12 +254,121 @@ _GROUNDING_PUNCTUATION = str.maketrans(
 )
 
 
+# 공고문이 눈에 띄라고 찍는 기호들. 모델은 인용할 때 이것을 빼고 적는 일이 잦다 —
+# 원문 "각 단체급식소※(1일 평균 800식 이상)" 에 대해 모델은 "각 단체급식소(1일 평균
+# 800식 이상)" 라고 쓴다. 같은 문장인데 대조가 어긋나 DETAIL_NOT_FOUND_IN_SOURCE 가 났다.
+# 비교할 때만 지운다. 저장되는 raw 는 그대로다.
+_DECORATION_MARKS_RE = re.compile(r"[※▶▷◆◇■□●○◦☞‣✓✔★☆]")
+
+# [재현 2026-09-15, 우치공원 1/5 PARTIAL] PDF 는 쪽 번호를 "- 4 -" 한 줄로 찍는다. 청크 안에서
+# 그 줄이 문장 한가운데 오면(쪽이 바뀌는 자리) 대조용 본문이 "종사자의-4-안전" 이 되고, 모델은
+# 당연히 그 마커 없이 인용하니 RAW_NOT_FOUND_IN_SOURCE 로 버려져 분석이 PARTIAL 로 떨어졌다.
+# 쪽 번호는 공고의 말이 아니다 — 대조에서도, 저장되는 값에서도 걷어낸다. 한 줄 전체가 마커일
+# 때만 잡는다(날짜 "2026-09-15" 같은 하이픈 숫자는 줄 전체가 아니라 안 걸린다).
+_PAGE_MARKER_RE = re.compile(r"(?m)^[ \t]*-\s*\d{1,3}\s*-[ \t]*$")
+
+
+def _page_marker_indices(value: str) -> set[int]:
+    skip: set[int] = set()
+    for match in _PAGE_MARKER_RE.finditer(value):
+        skip.update(range(match.start(), match.end()))
+    return skip
+
+
 def _squash(value: str) -> str:
     """Normalize source text only for containment checks; stored raw stays untouched."""
     # U+2024 (ONE DOT LEADER) becomes an ASCII period under NFKC, so translate
     # punctuation variants first and apply compatibility normalization afterward.
-    normalized = unicodedata.normalize("NFKC", value.translate(_GROUNDING_PUNCTUATION))
+    normalized = unicodedata.normalize("NFKC", _PAGE_MARKER_RE.sub("", value).translate(_GROUNDING_PUNCTUATION))
+    normalized = _DECORATION_MARKS_RE.sub("", normalized)
     return re.sub(r"\s+", "", normalized)
+
+
+def _squash_with_map(value: str) -> tuple[str, list[int]]:
+    """`_squash` 와 같은 결과에, 글자마다 원문 어디서 왔는지를 함께 낸다.
+
+    글자 단위로 돌리는 이유는 NFKC 가 길이를 바꾸기 때문이다(㈜ -> (주)). 통째로
+    정규화한 뒤 위치를 세면 어긋난다.
+    """
+    squashed: list[str] = []
+    origin: list[int] = []
+    skip = _page_marker_indices(value)
+    for index, char in enumerate(value):
+        if index in skip:
+            continue
+        piece = unicodedata.normalize("NFKC", char.translate(_GROUNDING_PUNCTUATION))
+        piece = _DECORATION_MARKS_RE.sub("", piece)
+        piece = re.sub(r"\s+", "", piece)
+        for produced in piece:
+            squashed.append(produced)
+            origin.append(index)
+    return "".join(squashed), origin
+
+
+def join_wrapped_lines(text: str) -> str:
+    """저장되는 값에서 PDF 줄바꿈·쪽 번호를 걷어낸다.
+
+    [재현 2026-09-15] REGION 값이 "전북특⏎별자치도" 로, raw 가 "…재활용업⏎(6770)또는…" 로
+    저장됐다. 판정은 공백을 접어 비교하니 통과했지만 화면엔 그대로 보이고, 같은 조항의 raw 가
+    실행마다 줄바꿈 위치만 달라 지문이 갈렸다(코덱스 Core-4 실행 기록). 한국어 PDF 의 줄바꿈은
+    낱말 한가운데서도 일어나므로 공백 없이 잇는다 — 원래 띄어쓰기는 줄바꿈 앞에 공백 문자로
+    남아 있다. 대조(_squash)가 이미 같은 가정을 쓴다.
+    """
+    text = _PAGE_MARKER_RE.sub("", text or "")
+    text = re.sub(r"[ \t]*\r?\n[ \t]*", "", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+# 모델이 같은 문장에서 어디까지 끊어 적을지가 실행마다 다르다. 실측(2026-09-14) —
+#
+#   run0  "각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영"
+#   run1  "단체급식소"                                   <- 판정에 쓸 수 없을 만큼 짧다
+#   run2  "각 단체급식소※(1일 평균 800식 이상)를 1년 이상 운영한 실적"
+#
+# 원문 구간으로 스냅해도 이건 안 잡힌다. 스냅은 "원문과 다른 글자" 를 없앨 뿐
+# "어디부터 어디까지" 를 정하지 않는다. 그래서 구간을 **문장 경계까지 넓힌다** —
+# 셋 다 같은 문장 안이므로 같은 값이 된다.
+#
+# 넓히는 필드를 경험분야 하나로 둔다. 지역·업종·인증처럼 값 자체를 회사 프로필과
+# 맞대는 필드를 문장으로 넓히면 비교가 깨진다.
+_SENTENCE_LEVEL_FIELDS = ("경험분야_raw",)
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?:(?<=다[.])|(?<=[.!?。]))\s|\n")
+
+
+def _sentence_span(source: str, start: int, end: int) -> tuple[int, int]:
+    """[start, end) 를 감싸는 문장의 경계."""
+    left = 0
+    right = len(source)
+    for match in _SENTENCE_BOUNDARY_RE.finditer(source):
+        if match.end() <= start:
+            left = match.end()
+        elif match.start() >= end:
+            right = match.start()
+            break
+    return left, right
+
+
+def snap_to_source_span(detail: str, source: str, *, whole_sentence: bool = False) -> str | None:
+    """모델이 적은 세부값을 **원문의 실제 구간**으로 바꿔 준다. 없으면 None.
+
+    모델은 원문을 그대로 옮기라고 해도 옮기지 않는다. ※ 를 빼고, 값 둘을 쉼표로 잇고,
+    조사를 다듬는다. 그 결과가 실행마다 다르고, 판정과 차수 비교가 그 글자를 본다.
+
+    그래서 모델 값은 **가리키는 손가락**으로만 쓰고, 저장되는 값은 원문에서 잘라 온다.
+    같은 구간을 가리키면 모델이 뭐라고 적었든 같은 글자가 저장된다.
+    """
+    squashed_source, origin = _squash_with_map(source)
+    squashed_detail = _squash(detail)
+    if not squashed_detail or not squashed_source:
+        return None
+    position = squashed_source.find(squashed_detail)
+    if position < 0:
+        return None
+    start = origin[position]
+    end = origin[position + len(squashed_detail) - 1] + 1
+    if whole_sentence:
+        start, end = _sentence_span(source, start, end)
+    return join_wrapped_lines(source[start:end])
 
 
 def _normalize_reference(value: str) -> str:
@@ -319,8 +428,61 @@ def _find_source_chunk(raw: str, chunks: list[dict[str, Any]]) -> dict[str, Any]
     return None
 
 
-def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) -> tuple[bool, str, dict[str, Any] | None]:
-    """Reject unsupported source text; clear unverified document locations."""
+# 한 필드에 조건이 둘 이상이면 모델은 세미콜론이나 쉼표로 잇는다. 실측(2026-09-14) 값 —
+#
+#   기간_raw     "입찰 공고일 기준 2년 내에; 1년 이상"
+#   등록인증_raw "식품위생법에 따른 인·허가, 영업신고(업종코드:1450)"
+#
+# 조각은 전부 원문에 있는데 **이어붙인 문자열**이 원문에 없다. 그것을 통째로 찾다가
+# DETAIL_NOT_FOUND_IN_SOURCE 로 버렸다 — 지어낸 값이 아니라 우리 대조가 못 따라간 것이다.
+#
+# 통째로 먼저 찾고, 없을 때만 쪼갠다. 쉼표는 값 안에도 나오므로("대표자 전원의 성명을
+# 모두 등재, 각자대표도 해당") 쪼개는 것이 항상 옳지는 않다. 그래도 안전한 이유는
+# **조각 하나라도 원문에 없으면 그대로 버리기** 때문이다 — 쪼개기가 틀렸으면 조각이
+# 원문에 없고, 결과는 쪼개기 전과 같다.
+_DETAIL_PART_SPLIT_RE = re.compile(r"[;；,，]")
+# [재현 2026-09-15, 골든 17개 실측] 기업규모는 원문이 "「중소기업기본법」 제2조에 따른 소기업자
+# 또는 「…특별조치법」 제2조에 따른 소상공인" 처럼 법령 인용을 사이에 끼고 나열되는데, 모델은
+# "소기업자 또는 소상공인" 으로 인용을 빼고 적는다. 조각은 다 원문에 있는데 이어붙인 문자열이
+# 없어 DETAIL_NOT_FOUND 로 버려졌고, 그것이 실행마다 있다 없다 해서 흔들렸다(01694234 0건).
+# 규모 낱말은 닫힌 어휘라 '또는·및' 로도 쪼개서 조각마다 확인한다 — 이 필드에만 쓴다.
+_SIZE_DETAIL_SPLIT_RE = re.compile(r"[;；,，·ㆍ]|또는|및|\s와\s|\s과\s")
+_SIZE_DETAIL_FIELDS = ("기업규모_raw",)
+
+
+def _detail_parts(detail: str, field_name: str | None = None) -> list[str]:
+    splitter = _SIZE_DETAIL_SPLIT_RE if field_name in _SIZE_DETAIL_FIELDS else _DETAIL_PART_SPLIT_RE
+    parts = [part.strip() for part in splitter.split(detail)]
+    return [part for part in parts if part] or [detail]
+
+
+def _notice_haystack(chunks: list[dict[str, Any]]) -> str:
+    """선별된 청크 전체를 이어붙인 비교용 본문.
+
+    청크 경계는 우리가 자른 것이지 공고가 나눈 것이 아니다. 세부 조건이 옆 청크에 있다고
+    해서 그 공고에 없는 말이 되지는 않는다.
+    """
+    return "".join(_squash(chunk.get("text") or "") for chunk in chunks)
+
+
+def validate_extracted_slot(
+    slot: dict[str, Any],
+    chunks: list[dict[str, Any]],
+    *,
+    notice_text: str | None = None,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Reject unsupported source text; clear unverified document locations.
+
+    [재현 2026-09-14] 세부 조건을 **raw 가 들어 있던 청크 하나에서만** 찾고 있었다.
+    같은 공고를 세 번 돌린 실측에서 「다. 입찰 공고일 기준 2년 내에 2개 이상 각
+    단체급식소…」 조항이 한 번은 요건으로 올라가고 두 번은 DETAIL_NOT_FOUND_IN_SOURCE 로
+    버려졌다. 모델이 세부 조건을 어디까지 끊어 적느냐에 따라 그 문자열이 옆 청크로
+    넘어가기 때문이다. 청크 경계는 우리가 자른 것이고, 공고가 나눈 것이 아니다.
+
+    그래서 **공고 전체**에서 찾는다. 공고 어디에도 없는 세부 조건은 여전히 버린다 —
+    지어낸 값을 판정에 넣지 않는다는 원칙은 그대로다. 넓어진 것은 "어디서 찾는가" 이지
+    "무엇을 받아주는가" 가 아니다.
+    """
     raw = (slot.get("raw") or "").strip()
     if not raw:
         return False, "raw 비어 있음", None
@@ -328,11 +490,39 @@ def validate_extracted_slot(slot: dict[str, Any], chunks: list[dict[str, Any]]) 
     source_chunk = _find_source_chunk(raw, chunks)
     if source_chunk is None:
         return False, "raw가 본문에 존재하지 않음(과잉 추출 의심)", None
+    # 원문에 있는 것이 확인됐으니, 저장되는 raw 는 줄바꿈·쪽 번호를 걷어낸 모양으로 둔다.
+    slot["raw"] = join_wrapped_lines(raw)
 
-    source_text = _squash(source_chunk.get("text") or "")
+    source_original = source_chunk.get("text") or ""
+    source_text = _squash(source_original)
+    haystack = _notice_haystack(chunks) if notice_text is None else notice_text
     for field_name in _DETAIL_RAW_FIELDS:
         detail = (slot.get(field_name) or "").strip()
-        if detail and _squash(detail) not in source_text:
+        if not detail:
+            continue
+        # 모델이 적은 글자를 그대로 저장하지 않는다. 원문의 실제 구간으로 바꿔 넣는다 —
+        # 같은 구간을 가리키면 모델이 뭐라고 적었든 같은 글자가 남는다.
+        snapped = snap_to_source_span(
+            detail, source_original, whole_sentence=field_name in _SENTENCE_LEVEL_FIELDS
+        )
+        if snapped:
+            slot[field_name] = snapped
+            continue
+        squashed_whole = _squash(detail)
+        if squashed_whole and squashed_whole in haystack:
+            slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
+            continue
+        for part in _detail_parts(detail, field_name):
+            squashed = _squash(part)
+            if not squashed or squashed in source_text:
+                continue
+            if squashed in haystack:
+                # 같은 공고 안의 다른 청크에 있다. 어디서 확인했는지는 남긴다.
+                slot.setdefault("_details_found_outside_source_chunk", []).append(field_name)
+                continue
+            # 무엇이 걸렸는지 남긴다. "세부 조건을 못 찾았다" 만으로는 모델이 지어낸 것인지
+            # 우리 대조가 못 따라간 것인지 가릴 수 없고, 둘은 고칠 자리가 다르다.
+            slot["_rejected_detail"] = {"field": field_name, "value": detail, "part": part}
             return False, f"{field_name}가 본문에 존재하지 않음(과잉 추출 의심)", source_chunk
 
     reference = slot.get("근거조항")
@@ -384,17 +574,23 @@ def extract_legacy_slots(chunks: list[dict[str, Any]], *, structured_extract: St
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, str]] = []
         requirements = result.get("requirements", []) if isinstance(result, dict) else []
+        notice_text = _notice_haystack(target)  # 슬롯마다 다시 만들지 않는다
 
         for extracted in requirements:
             slot = dict(extracted)
-            valid, reason, source_chunk = validate_extracted_slot(slot, target)
+            valid, reason, source_chunk = validate_extracted_slot(
+                slot, target, notice_text=notice_text
+            )
             if not valid:
-                rejected.append(
-                    {
-                        "raw": str(slot.get("raw") or ""),
-                        "reason_code": _rejection_reason_code(reason),
-                    }
-                )
+                record = {
+                    "raw": str(slot.get("raw") or ""),
+                    "reason_code": _rejection_reason_code(reason),
+                }
+                detail = slot.get("_rejected_detail")
+                if detail:
+                    record["detail_field"] = str(detail.get("field") or "")
+                    record["detail_value"] = str(detail.get("value") or "")
+                rejected.append(record)
                 continue
             if source_chunk is not None:
                 slot["_source_chunk_id"] = source_chunk.get("chunk_id")

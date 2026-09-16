@@ -97,9 +97,13 @@ def test_repeated_runs_keep_each_value_next_to_the_mean() -> None:
     canonical = report["metrics"]["canonical_match"]
     # 개별 값이 남아야 "3번 중 2번" 과 "매번 66%" 를 구분할 수 있다.
     assert len(canonical["runs"]) == 3
-    assert len(set(canonical["runs"])) > 1, "흔들리는 추출기인데 값이 전부 같다"
     measured = [v for v in canonical["runs"] if v is not None]
     assert canonical["value"] == sum(measured) / len(measured)
+
+    # 이 케이스의 판정 가능한 요건은 업종코드 1468 하나다. 모델이 빈 결과를 준 실행에서도
+    # 코드가 원문에서 채우므로 일치율은 안 떨어진다 — 그게 의도다. 모델이 실제로
+    # 흔들렸다는 사실은 채운 횟수로 남아야 한다: 두 번째 실행에서만 1.
+    assert [r["salvaged_from_source"] for r in report["runs"]] == [0, 1, 0],         "흔들리는 추출기인데 코드가 채운 흔적이 없다"
 
 
 def test_deterministic_stages_are_verified_not_averaged() -> None:

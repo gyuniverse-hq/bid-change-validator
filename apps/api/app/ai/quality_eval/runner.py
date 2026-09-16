@@ -38,9 +38,15 @@ def evaluate_case(case, *, structured_extract=None):
         if chunks and not calls:
             raise ValueError("Core did not receive the expected evaluation context")
     report = score_case(case.spans, chunks, selected, result)
+    # 모델이 빠뜨려 코드가 원문에서 채운 요건 수. 채우기가 들어간 뒤로는 모델이 빈 결과를
+    # 줘도 일치율이 안 떨어질 수 있어서, 모델이 실제로 얼마나 흔들렸는지는 이 숫자로 본다.
+    salvaged = 0 if result is None else sum(
+        1 for d in result.diagnostics if d.code == "INDUSTRY_CODE_SALVAGED_FROM_SOURCE"
+    )
     return {"case_id": case.spec.case_id, "notice_no": case.spec.notice_no,
             "notice_version_id": case.spec.notice_version_id,
             "provenance": case.spec.provenance, "extractor_calls": calls if structured_extract is not None else None,
+            "salvaged_from_source": salvaged,
             **report, "analysis": None if result is None else result.model_dump(mode="json")}
 
 
@@ -85,6 +91,7 @@ def evaluate_case_runs(case, *, structured_extract, runs=3):
     report["run_count"] = runs
     report["runs"] = [
         {"analysis_status": r["analysis_status"], "extractor_calls": r["extractor_calls"],
+         "salvaged_from_source": r["salvaged_from_source"],
          **{name: r["metrics"][name]["value"] for name in MODEL_DEPENDENT_METRICS}}
         for r in reports
     ]

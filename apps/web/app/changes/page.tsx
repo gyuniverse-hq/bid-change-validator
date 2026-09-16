@@ -94,17 +94,17 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     if (action.stage === 'COMPLETED') void reload();
   }, [action.stage, action.result?.result_judgment_run_id, reload]);
 
-  const comparison = useMemo(() => {
+  const noticeComparison = useMemo(() => {
     if (!workspace) return [];
     const base = baselineVersion(workspace);
     if (!base) return [];
     const current = currentVersion(workspace);
     return [
-      ['입찰서 제출마감', formatDate(base.bid_closed_at), formatDate(current.bid_closed_at)],
-      ['추정가격', money(base.estimated_price), money(current.estimated_price)],
-      ['배정예산', money(base.allocated_budget), money(current.allocated_budget)],
-      ['계약방법', base.contract_method ?? '-', current.contract_method ?? '-'],
-      ['첨부문서 수', `${base.documents.length}종`, `${current.documents.length}종`],
+      { key: 'bid-closed-at', label: '입찰서 제출마감', before: formatDate(base.bid_closed_at), after: formatDate(current.bid_closed_at) },
+      { key: 'estimated-price', label: '추정가격', before: money(base.estimated_price), after: money(current.estimated_price) },
+      { key: 'allocated-budget', label: '배정예산', before: money(base.allocated_budget), after: money(current.allocated_budget) },
+      { key: 'contract-method', label: '계약방법', before: base.contract_method ?? '-', after: current.contract_method ?? '-' },
+      { key: 'document-count', label: '첨부문서 수', before: `${base.documents.length}종`, after: `${current.documents.length}종` },
     ];
   }, [workspace]);
 
@@ -115,6 +115,24 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     if (!baseline || !current) return [];
     return diffCanonicalRequirements(baseline.requirements, current.requirements);
   }, [result, workspace?.baselineAnalysisDetail, workspace?.currentAnalysisDetail]);
+
+  const comparison = useMemo(() => [
+    ...noticeComparison,
+    ...analyzedChanges
+      .filter((item) => (
+        item.change_type !== 'UNCHANGED'
+        && (!item.baseline || !item.current || !sameStructuredValue(item.baseline, item.current))
+      ))
+      .map((item) => {
+        const requirement = item.current ?? item.baseline;
+        return {
+          key: `requirement:${item.identity}`,
+          label: `자격요건 · ${requirement ? labelOf(REQUIREMENT_TYPE_LABEL, requirement.type) : '유형 확인 필요'}`,
+          before: item.baseline ? requirementValue(item.baseline) : '없음',
+          after: item.current ? requirementValue(item.current) : '없음',
+        };
+      }),
+  ], [noticeComparison, analyzedChanges]);
 
   /*
     요건 행의 펼침 상태. 기본값은 행마다 다르다(구조화 값이 바뀐 것만 펼쳐 둔다).
@@ -183,13 +201,13 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
           </section>
         ) : (
           <>
-            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[15px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
-              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[15px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
+            <section className="mt-8">{comparison.every(({ before, after }) => before === after) && <p className="mt-2 text-[15px] text-[var(--product-muted)]">주요 공고 정보와 구조화된 자격요건에는 변경이 없습니다.</p>}
+              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[15px] text-[var(--product-muted)]">나라장터 수집 값과 구조화된 자격요건을 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
                 <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[13px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
-                {comparison.map(([label, before, after]) => {
+                {comparison.map(({ key, label, before, after }) => {
                   const changed = before !== after;
-                  return <div key={label} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[15px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[13px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span></div></div>;
+                  return <div key={key} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[15px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[13px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span></div></div>;
                 })}
               </div>
             </section>

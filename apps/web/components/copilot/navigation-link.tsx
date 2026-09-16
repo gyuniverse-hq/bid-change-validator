@@ -10,7 +10,7 @@ export function CopilotNavigationLink({ caseId, href, onClick, ...props }: Props
   const { stage } = useCopilotNavigation(caseId);
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event);
-    if (!event.defaultPrevented) stage(href);
+    if (!event.defaultPrevented) stage(href, true);
   };
   return <NavigationLink {...props} href={href} onClick={handleClick} />;
 }

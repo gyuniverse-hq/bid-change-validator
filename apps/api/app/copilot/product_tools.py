@@ -13,16 +13,12 @@ from sqlalchemy.orm import Session
 
 from ..analysis_models import QualificationAnalysisRun
 from ..analysis_schemas import QualificationAnalysisRunRead
-from ..judgment_models import CompanyQualificationProfileCompleteness
 from ..judgment_schemas import QualificationJudgmentRunRead
 from ..models import PreflightCase
 from ..qualification.analysis import analysis_run_response, load_qualification_analysis_run
 from ..qualification.ask_back import list_questions
 from ..qualification.judgment import (
     QualificationJudgmentError,
-    _load_company,
-    _record_to_completeness,
-    build_company_profile_snapshot,
     judgment_run_response,
     list_qualification_judgment_runs,
     load_qualification_judgment_run,
@@ -39,22 +35,6 @@ from .contracts import (
 )
 
 
-def assert_current_company_snapshot(db: Session, case: PreflightCase, stored_snapshot: dict) -> None:
-    """Reject explanations whose judgment predates an edited company profile."""
-    current_company = _load_company(db, case.company_id)
-    current_completeness = _record_to_completeness(
-        db.get(CompanyQualificationProfileCompleteness, case.company_id)
-    )
-    current_snapshot = build_company_profile_snapshot(
-        current_company, current_completeness
-    ).model_dump(mode="json")
-    if current_snapshot != stored_snapshot:
-        raise QualificationJudgmentError(
-            "STALE_COMPANY_PROFILE",
-            "회사정보가 판정 이후 변경되었습니다. 현재 회사정보로 다시 판정한 뒤 확인해 주세요.",
-        )
-
-
 def _load_context(
     db: Session, case_id: UUID,
 ) -> tuple[ProductProvenance, QualificationAnalysisRunRead, QualificationJudgmentRunRead]:
@@ -62,10 +42,6 @@ def _load_context(
     if case is None:
         raise QualificationJudgmentError("PREFLIGHT_CASE_NOT_FOUND", "사전검토 건을 찾을 수 없습니다.", status_code=404)
 
-    # Establish the current Product Truth from the latest analysis first. Selecting
-    # the newest judgment before this can accidentally choose a later write that
-    # still belongs to an older analysis, while the qualification page correctly
-    # shows a judgment tied to the latest analysis.
     latest_id = db.scalar(
         select(QualificationAnalysisRun.id)
         .where(QualificationAnalysisRun.notice_version_id == case.current_version_id)
@@ -116,9 +92,10 @@ def _load_context(
     judgment = judgment_run_response(run)
     if judgment.profile_snapshot.get("company_id") != str(case.company_id):
         raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정 스냅샷의 회사가 다릅니다.")
-    # Preserve the stored snapshot exactly, including any historical extra fields.
+    # Historical product reads describe the exact snapshot used by the persisted
+    # judgment. They must not silently switch to current profile state. Freshness
+    # is revalidated at write/action boundaries by the qualification services.
     judgment.profile_snapshot = deepcopy(run.profile_snapshot)
-    assert_current_company_snapshot(db, case, judgment.profile_snapshot)
     requirement_keys = {item.requirement_key for item in analysis.requirements}
     if requirement_keys != {item.requirement_key for item in judgment.judgments}:
         raise QualificationJudgmentError("REQUIREMENT_JUDGMENT_MISMATCH", "요건과 판정 연결이 불완전합니다.")
@@ -140,7 +117,6 @@ def _load_context(
 
 
 def analysis_scope(analysis: QualificationAnalysisRunRead) -> AnalysisScope:
-    """Use the exact judged analysis; exclude opaque diagnostic details."""
     evidence = {item.evidence_key: item for item in analysis.evidence}
     return AnalysisScope(
         analysis_run_id=analysis.id,
@@ -175,7 +151,6 @@ def get_requirement_evidence(db: Session, case_id: UUID, requirement_key: str) -
 
 
 def get_explanation_evidence(db: Session, case_id: UUID, requirement_keys: list[str]) -> list[RequirementEvidenceResult]:
-    """Read several reasons' evidence with one existing context validation."""
     with db.no_autoflush:
         provenance, analysis, _ = _load_context(db, case_id)
         requirements = {item.requirement_key: item for item in analysis.requirements}
@@ -189,7 +164,6 @@ def get_explanation_evidence(db: Session, case_id: UUID, requirement_keys: list[
 
 
 def matching_provenance(*results) -> bool:
-    """A composed explanation must use exactly one observed product context."""
     return bool(results) and all(item.provenance == results[0].provenance for item in results[1:])
 
 

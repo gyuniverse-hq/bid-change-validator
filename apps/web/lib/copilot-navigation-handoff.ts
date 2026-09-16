@@ -9,6 +9,7 @@ export type CopilotNavigationHandoff = {
   caseId: string;
   destination: string;
   expiresAt: number;
+  reopenPanel: boolean;
   conversation: Conversation | null;
   action: ActionState | null;
 };
@@ -23,6 +24,7 @@ export function saveCopilotNavigationHandoff(
   caseId: string,
   conversation: Conversation | null,
   action: ActionState | null,
+  reopenPanel = false,
 ) {
   if (!caseId || (!conversation && !action)) return;
   try {
@@ -31,6 +33,7 @@ export function saveCopilotNavigationHandoff(
       caseId,
       destination: destinationOf(href),
       expiresAt: Date.now() + TTL_MS,
+      reopenPanel,
       conversation,
       action,
     };
@@ -50,7 +53,10 @@ export function takeCopilotNavigationHandoff(): CopilotNavigationHandoff | null 
     if (payload.version !== 1 || typeof payload.caseId !== 'string' ||
         typeof payload.destination !== 'string' || payload.destination !== current ||
         typeof payload.expiresAt !== 'number' || payload.expiresAt < Date.now()) return null;
-    return payload as CopilotNavigationHandoff;
+    return {
+      ...payload,
+      reopenPanel: payload.reopenPanel === true,
+    } as CopilotNavigationHandoff;
   } catch {
     try { window.sessionStorage.removeItem(KEY); } catch { /* unavailable */ }
     return null;

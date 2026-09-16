@@ -23,6 +23,17 @@ from ..models import NoticeDocument, ProposalDocument
 KST = ZoneInfo("Asia/Seoul")
 
 
+# HWP 5.0 paragraph text stores inline and extended controls in the same
+# WCHAR array as visible text. Both control types occupy eight WCHARs; decoding
+# the complete payload as UTF-16LE turns their ASCII control IDs (for example
+# ``dces`` for a section definition) into unrelated CJK glyphs.
+_HWP_INLINE_CONTROL_CODES = frozenset({4, 5, 6, 7, 8, 9, 19, 20})
+_HWP_EXTENDED_CONTROL_CODES = frozenset(
+    {1, 2, 3, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23}
+)
+_HWP_STRUCTURED_CONTROL_CODES = _HWP_INLINE_CONTROL_CODES | _HWP_EXTENDED_CONTROL_CODES
+
+
 class UnsupportedDocumentError(ValueError):
     pass
 
@@ -67,6 +78,48 @@ def _finish(extractor: str, blocks: list[dict[str, Any]]) -> ExtractionResult:
         text="\n\n".join(block["text"] for block in normalized_blocks),
         blocks=normalized_blocks,
     )
+
+
+def _decode_hwp_paragraph_text(payload: bytes) -> str:
+    """Decode visible text while skipping HWP paragraph control records."""
+
+    even_length = len(payload) - (len(payload) % 2)
+    units = struct.unpack(f"<{even_length // 2}H", payload[:even_length])
+    parts: list[str] = []
+    visible = bytearray()
+
+    def flush_visible() -> None:
+        if visible:
+            parts.append(visible.decode("utf-16le", errors="ignore"))
+            visible.clear()
+
+    index = 0
+    while index < len(units):
+        code = units[index]
+        if code in _HWP_STRUCTURED_CONTROL_CODES:
+            flush_visible()
+            control_end = index + 7
+            if control_end >= len(units) or units[control_end] != code:
+                raise ValueError("invalid HWP paragraph control record")
+            if code == 9:  # tab
+                parts.append("\t")
+            index += 8
+            continue
+        if code <= 31:
+            flush_visible()
+            if code == 10:  # line break
+                parts.append("\n")
+            elif code == 24:  # hyphen
+                parts.append("-")
+            elif code in {30, 31}:  # non-breaking/fixed-width space
+                parts.append(" ")
+            index += 1
+            continue
+        visible.extend(struct.pack("<H", code))
+        index += 1
+
+    flush_visible()
+    return "".join(parts)
 
 
 def _extract_hwpx(source: BinaryIO) -> ExtractionResult:
@@ -176,7 +229,7 @@ def _extract_hwp(source: BinaryIO) -> ExtractionResult:
                             "section_index": section_index,
                             "paragraph_index": paragraph_index,
                             "location": f"section {section_index + 1} · paragraph {paragraph_index + 1}",
-                            "text": payload.decode("utf-16le", errors="ignore"),
+                            "text": _decode_hwp_paragraph_text(payload),
                         }
                     )
                     paragraph_index += 1

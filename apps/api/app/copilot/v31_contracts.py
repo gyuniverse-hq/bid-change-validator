@@ -136,6 +136,13 @@ class Processing(Contract):
     storage: str = 'process-memory; restart clears history; one worker only'
 
 
+class GuidedTurn(Contract):
+    job_id: str
+    question_id: str
+    status: Literal['COMPLETE', 'PARTIAL', 'BLOCKED']
+    next_question_id: str | None = None
+
+
 class AnswerEnvelope(Contract):
     version: Literal['3.1'] = '3.1'
     conversation_id: UUID
@@ -149,6 +156,7 @@ class AnswerEnvelope(Contract):
     actions: list[ActionProposal] = Field(default_factory=list)
     capabilities: dict[str, int] = Field(default_factory=dict)
     clarification: str | None = None
+    guided: GuidedTurn | None = None
     processing: Processing = Field(default_factory=Processing)
 
 

@@ -1,5 +1,7 @@
 """Additive Copilot endpoints. Chat never calls action execution."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Header
 from openai import OpenAIError
 from sqlalchemy.orm import Session
@@ -17,10 +19,21 @@ from .context import compact
 from .contracts import ConfirmAction
 from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
+from .job_catalog import GuidedJobCatalog, catalog_for_case, get_question
 from .narration import apply_product_narration
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
+
+
+@router.get("/jobs", response_model=GuidedJobCatalog)
+def copilot_jobs(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+):
+    case = authorize_case_access(db, user, case_id)
+    return catalog_for_case(case)
 
 
 def semantic_recheck_candidate(payload: CopilotChatRequest, deterministic: str) -> bool:
@@ -115,6 +128,9 @@ def copilot_chat(
     user: AppUser | None = Depends(get_optional_current_user),
 ):
     case = authorize_case_access(db, user, payload.case_id)
+    guided = get_question(payload.job_id, payload.question_id)
+    if guided is not None:
+        payload = payload.model_copy(update={"message": guided.label})
     if payload.response_version == '3.1':
         from .orchestration import chat_v31
         return chat_v31(db, payload, user, case, semantic_processing)

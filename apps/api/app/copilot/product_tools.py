@@ -13,12 +13,16 @@ from sqlalchemy.orm import Session
 
 from ..analysis_models import QualificationAnalysisRun
 from ..analysis_schemas import QualificationAnalysisRunRead
+from ..judgment_models import CompanyQualificationProfileCompleteness
 from ..judgment_schemas import QualificationJudgmentRunRead
 from ..models import PreflightCase
 from ..qualification.analysis import analysis_run_response, load_qualification_analysis_run
 from ..qualification.ask_back import list_questions
 from ..qualification.judgment import (
     QualificationJudgmentError,
+    _load_company,
+    _record_to_completeness,
+    build_company_profile_snapshot,
     judgment_run_response,
     list_qualification_judgment_runs,
     load_qualification_judgment_run,
@@ -33,6 +37,22 @@ from .contracts import (
     RequirementEvidenceResult,
     RequirementJudgmentSummary,
 )
+
+
+def assert_current_company_snapshot(db: Session, case: PreflightCase, stored_snapshot: dict) -> None:
+    """Reject explanations whose judgment predates an edited company profile."""
+    current_company = _load_company(db, case.company_id)
+    current_completeness = _record_to_completeness(
+        db.get(CompanyQualificationProfileCompleteness, case.company_id)
+    )
+    current_snapshot = build_company_profile_snapshot(
+        current_company, current_completeness
+    ).model_dump(mode="json")
+    if current_snapshot != stored_snapshot:
+        raise QualificationJudgmentError(
+            "STALE_COMPANY_PROFILE",
+            "회사정보가 판정 이후 변경되었습니다. 현재 회사정보로 다시 판정한 뒤 확인해 주세요.",
+        )
 
 
 def _load_context(
@@ -98,6 +118,7 @@ def _load_context(
         raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정 스냅샷의 회사가 다릅니다.")
     # Preserve the stored snapshot exactly, including any historical extra fields.
     judgment.profile_snapshot = deepcopy(run.profile_snapshot)
+    assert_current_company_snapshot(db, case, judgment.profile_snapshot)
     requirement_keys = {item.requirement_key for item in analysis.requirements}
     if requirement_keys != {item.requirement_key for item in judgment.judgments}:
         raise QualificationJudgmentError("REQUIREMENT_JUDGMENT_MISMATCH", "요건과 판정 연결이 불완전합니다.")

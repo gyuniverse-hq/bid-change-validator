@@ -1,38 +1,74 @@
 'use client';
 
+import { ChevronDown } from 'lucide-react';
+import { useId, useState } from 'react';
 import type { CopilotEnvelope } from '@/lib/copilot-v31';
 import { CopilotNavigationLink } from './navigation-link';
 
-const labels: Record<string, string> = { REQUIREMENT: '판정 요건', MANUAL: '직접 확인할 공고 항목', DOCUMENT: '공고문 근거', CHANGE: '변경 항목', ASSUMPTION: '검토용 가정' };
+type EnvelopeSource = CopilotEnvelope['sources'][number];
 
-export function EnvelopeAnswer({ envelope, onTarget }: { envelope: CopilotEnvelope; onTarget: (id: string) => void }) {
-  const sources = new Map(envelope.sources.map(source => [source.source_id, source]));
+function EvidenceGroup({ label, sources }: { label: string; sources: EnvelopeSource[] }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  if (!sources.length) return null;
+  return <div className={`copilot-evidence-group${open ? ' is-open' : ''}`}>
+    <button type="button" className="copilot-evidence-toggle" aria-expanded={open} aria-controls={contentId}
+      onClick={() => setOpen(value => !value)}>
+      <span><ChevronDown size={15} aria-hidden="true" />{label} {sources.length}건</span>
+      <span>{open ? '접기' : '보기'}</span>
+    </button>
+    {open && <div id={contentId} className="copilot-evidence-list">
+      {sources.map((source, index) => <article className="copilot-evidence-item" key={source.source_id}>
+        <strong>근거 {index + 1}</strong>
+        <blockquote>{source.quote || '인용문을 표시하지 못했습니다.'}</blockquote>
+        <small>버전 {source.scope.notice_version_id.slice(0, 8)} {typeof source.location.page === 'number' ? `· p.${source.location.page}` : ''}</small>
+        {source.kind === 'DOCUMENT' && <CopilotNavigationLink caseId={source.scope.case_id}
+          href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</CopilotNavigationLink>}
+      </article>)}
+    </div>}
+  </div>;
+}
+
+function LimitationGroup({ limitations }: { limitations: string[] }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  if (!limitations.length) return null;
+  return <div className={`copilot-evidence-group copilot-check-group${open ? ' is-open' : ''}`}>
+    <button type="button" className="copilot-evidence-toggle" aria-expanded={open} aria-controls={contentId}
+      onClick={() => setOpen(value => !value)}>
+      <span><ChevronDown size={15} aria-hidden="true" />추가 확인 필요 {limitations.length}건</span>
+      <span>{open ? '접기' : '보기'}</span>
+    </button>
+    {open && <div id={contentId} className="copilot-evidence-list">
+      {limitations.map((text, index) => <p className="copilot-limitation" key={index}>{text}</p>)}
+    </div>}
+  </div>;
+}
+
+export function EnvelopeAnswer({ envelope }: { envelope: CopilotEnvelope }) {
+  const uniqueSources = [...new Map(envelope.sources.map(source => [source.source_id, source])).values()];
+  const productSources = uniqueSources.filter(source => source.kind === 'PRODUCT');
+  const documentSources = uniqueSources.filter(source => source.kind === 'DOCUMENT');
+  const conversationSources = uniqueSources.filter(source => source.kind === 'TURN');
+  const hasPrimaryAnswer = Boolean(envelope.status_card || envelope.clarification || envelope.claims.length);
   return <section aria-label="근거 기반 검토 답변" data-copilot-version="3.1">
     {envelope.status_card && <output className="copilot-status-card">
       <strong>{envelope.status_card.text}</strong>
       <small>공고 v{envelope.status_card.provenance.version_number} · 저장된 판정 기준</small>
     </output>}
     {envelope.clarification && <p>{envelope.clarification}</p>}
-    {envelope.claims.map(claim => <div className="copilot-claim" key={claim.claim_id}>
-      <p style={{ whiteSpace: 'pre-wrap' }}>{claim.text}</p>
-      <div className="copilot-evidence-chips">{claim.source_ids.map(id => {
-        const source = sources.get(id);
-        if (!source) return null;
-        return <details key={id}><summary>{source.kind === 'DOCUMENT' ? '공고문 원문' : source.kind === 'TURN' ? '대화에서 제시한 가정' : '저장된 데이터'}</summary>
-          <blockquote style={{ whiteSpace: 'pre-wrap' }}>{source.quote || '인용문을 표시하지 못했습니다.'}</blockquote>
-          <small>버전 {source.scope.notice_version_id.slice(0, 8)} {typeof source.location.page === 'number' ? `· p.${source.location.page}` : ''}</small>
-          {source.kind === 'DOCUMENT' && <CopilotNavigationLink caseId={source.scope.case_id} href={`/evidence?caseId=${encodeURIComponent(source.scope.case_id)}`}>원문 화면 열기</CopilotNavigationLink>}
-        </details>;
-      })}</div>
-    </div>)}
-    {envelope.follow_up_targets.length > 0 && <div aria-label="답변에서 확인한 항목">{envelope.follow_up_targets.map(target =>
-      <button type="button" className="copilot-detail-link" key={target.target_id} onClick={() => onTarget(target.target_id)}>
-        {labels[target.kind] ?? '확인 항목'} {target.ordinal} · 이 항목 근거 보기
-      </button>)}</div>}
-    {'answerable_count' in envelope.capabilities && <p>
-      추가 답변 입력 가능 {envelope.capabilities.answerable_count}건 · 입력으로 해결할 수 없는 항목 {envelope.capabilities.unanswerable_count}건 · 직접 확인할 공고 항목 {envelope.capabilities.manual_review_count}건
+    {!hasPrimaryAnswer && <p className="copilot-limitation">
+      {envelope.limitations[0] ?? '현재 자료로는 이 질문의 답변을 확인하지 못했습니다.'}
     </p>}
-    {envelope.limitations.map((text, index) => <p className="copilot-limitation" key={index}>{text}</p>)}
-    {envelope.processing.task_status !== 'PASS' && <output>일부 요청은 추가 확인이 필요합니다.</output>}
+    <div className="copilot-claims">
+      {envelope.claims.map((claim, index) => <p className={index === 0 ? 'copilot-conclusion' : undefined}
+        key={claim.claim_id}>{claim.text}</p>)}
+    </div>
+    <div className="copilot-evidence-groups" aria-label="답변 근거와 추가 확인사항">
+      <EvidenceGroup label="저장된 판정 근거" sources={productSources} />
+      <EvidenceGroup label="공고문 원문 근거" sources={documentSources} />
+      <EvidenceGroup label="대화에서 확인한 내용" sources={conversationSources} />
+      <LimitationGroup limitations={envelope.limitations} />
+    </div>
   </section>;
 }

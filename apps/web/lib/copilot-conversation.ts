@@ -7,6 +7,7 @@ export type Conversation = { turns: Turn[]; busy: boolean; error: string; errorC
 const empty = (): Conversation => ({ turns: [], busy: false, error: '', errorCode: '', focus: null, revision: 0 });
 type ConversationRequest = CopilotChatRequest & { semantic_processing?: boolean; document_processing?: boolean };
 export type Transport = (request: ConversationRequest) => Promise<CopilotChatResponse>;
+export type GuidedSelection = { jobId: string; questionId: string };
 type FailedRead = { request: ConversationRequest; turnId: number };
 
 async function sendConversationMessage(request: ConversationRequest): Promise<CopilotChatResponse> {
@@ -76,7 +77,7 @@ export function inferE1Intent(question: string): CopilotIntent | undefined {
   const companySubject = ['우리', '저희', '당사'].some(term => text.includes(term));
   if (companySubject && ['참가할수', '참여할수', '넣어도돼', '넣을수', '지원할수']
       .some(term => text.includes(term))) return 'QUALIFICATION_SUMMARY';
-  if (['무엇이바뀌', '뭐가바뀌', '바뀐내용', '달라진내용', '변경내용']
+  if (['무엇이바뀌', '뭐가바뀌', '바뀐내용', '달라진내용', '변경내용', '무슨차이', '어떤차이', '차이가뭐', '다른점', '비교해']
       .some(term => text.includes(term))) return 'CHANGED_NOTICE';
   return undefined;
 }
@@ -201,6 +202,7 @@ export class ConversationStore {
     page?: 'QUALIFICATION' | 'ASK_BACK' | 'EVIDENCE' | 'CHANGES',
     semanticProcessing = false,
     documentProcessing = false,
+    guided?: GuidedSelection,
   ) {
     const old = this.get(caseId);
     if (!caseId || old.busy || !question.trim()) return;
@@ -217,6 +219,7 @@ export class ConversationStore {
 
     const request: ConversationRequest = {
         case_id: caseId, message: question, intent: intent ?? inferE1Intent(question),
+        job_id: guided?.jobId, question_id: guided?.questionId,
         conversation_id: old.conversationId, context_revision: old.serverRevision, target_id: old.targetId,
         requirement_key: hasOrdinalReference(question) ? undefined : old.focus,
         semantic_processing: semanticProcessing || undefined,

@@ -83,6 +83,7 @@ export type RequirementChange = {
 export type ChangedNoticeResult = { provenance: RevalidationProvenance; changes: RequirementChange[] };
 export type CopilotChatRequest = {
   response_version?: 'legacy' | '3.1'; conversation_id?: string; context_revision?: number; target_id?: string;
+  job_id?: string; question_id?: string;
   case_id: string; message: string; requirement_key?: string | null; intent?: CopilotIntent | null;
   user_input?: ActionInput | null;
   conversation_context?: ConversationContext;
@@ -90,6 +91,14 @@ export type CopilotChatRequest = {
   public_document_question?: string | null;
   allow_external_processing?: boolean;
 };
+
+export type GuidedQuestion = {
+  question_id: string; label: string; order: number; answer_scope: string;
+  completion_criteria: string[]; required_tools: string[];
+  availability: 'AVAILABLE' | 'BLOCKED'; unavailable_reason: string | null;
+};
+export type GuidedJob = { job_id: string; label: string; order: number; questions: GuidedQuestion[] };
+export type GuidedJobCatalog = { contract_version: 'copilot-guided-jobs-v1'; jobs: GuidedJob[] };
 export type CopilotChatResponse = {
   envelope?: CopilotEnvelope | null;
   answer: string; intent: CopilotIntent;
@@ -130,6 +139,16 @@ async function post<T>(path: string, payload: CopilotChatRequest | ConfirmAction
 
 export function sendCopilotMessage(payload: CopilotChatRequest, signal?: AbortSignal) {
   return post<CopilotChatResponse>('/api/v1/copilot/chat', payload, signal);
+}
+
+export async function getCopilotJobs(caseId: string, signal?: AbortSignal) {
+  const response = await apiFetch(`/api/v1/copilot/jobs?case_id=${encodeURIComponent(caseId)}`, { signal });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(payload?.error?.message ?? `질문 목록을 불러오지 못했습니다. (${response.status})`,
+      response.status, payload?.error?.code ?? 'HTTP_ERROR');
+  }
+  return response.json() as Promise<GuidedJobCatalog>;
 }
 
 /** Invoke only after explicit confirmation. Pass the server proposal unchanged; never auto-retry. */

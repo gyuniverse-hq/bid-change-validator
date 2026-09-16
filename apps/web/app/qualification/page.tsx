@@ -50,7 +50,10 @@ type RequirementView = {
   requirement: CanonicalRequirement;
   judgment: QualificationJudgment | null;
   status: QualificationRowStatus;
-  satisfiedByGroupPeer: boolean;
+  /* 택일 묶음을 한 줄로 접었을 때, 어느 요건으로 갈렸는지 적는 자리. 묶음이 아니면 null. */
+  groupPeerNote: string | null;
+  /* 조치(확인하기)는 묶음 안 어느 구성원에 걸려 있을지 모른다. 전부 들고 본다. */
+  memberKeys: string[];
   evidenceLabel: string;
 };
 
@@ -503,17 +506,59 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     [shownAnalysis, shownJudgment],
   );
 
+  /*
+    택일(ANY_OF) 묶음은 화면에 한 줄로만 나와야 한다.
+    구성원마다 한 줄씩 그리면 「1257 또는 6770 또는 6786」 한 조건이 똑같은 문장 세 줄로 반복된다.
+    셋 다 충족으로 칠해도 마찬가지다 — 보유하지 않은 6770·6786이 충족으로 보이기 때문이다.
+    결론 카드(countByStatus)는 이미 묶음을 한 건으로 세고 있어서, 접지 않으면 위아래 건수도 어긋난다.
+  */
   const views: RequirementView[] = useMemo(() => {
     if (!shownAnalysis) return [];
-    return shownAnalysis.requirements.map((requirement) => {
-      const judgment = shownJudgment?.judgments.find((item) => item.requirement_key === requirement.requirement_key) ?? null;
-      const evidenceKey = requirement.evidence_keys[0];
-      const status = resolvedStatuses.get(requirement.requirement_key) ?? judgmentStatus(judgment);
-      // 이 요건 자체는 충족이 아닌데 같은 택일 묶음의 다른 요건이 충족시킨 경우. 표에서 왜 충족인지 말해야 한다.
-      const satisfiedByGroupPeer = status === 'SATISFIED' && judgment?.status !== 'SATISFIED';
-      // evidence_key(REQ-004-EVD)는 내부 식별자다. 누르면 원문이 열리므로 무엇을 하는 버튼인지 쓴다.
-      return { requirement, judgment, status, satisfiedByGroupPeer, evidenceLabel: evidenceKey ? '근거 보기' : '근거 없음' };
-    });
+    const judgmentOf = (key: string) => shownJudgment?.judgments.find((item) => item.requirement_key === key) ?? null;
+    const seenGroups = new Set<string>();
+    const rows: RequirementView[] = [];
+
+    for (const requirement of shownAnalysis.requirements) {
+      const groupKey = anyOfGroupKey(requirement);
+
+      if (!groupKey) {
+        const judgment = judgmentOf(requirement.requirement_key);
+        rows.push({
+          requirement,
+          judgment,
+          status: resolvedStatuses.get(requirement.requirement_key) ?? judgmentStatus(judgment),
+          groupPeerNote: null,
+          memberKeys: [requirement.requirement_key],
+          // evidence_key(REQ-004-EVD)는 내부 식별자다. 누르면 원문이 열리므로 무엇을 하는 버튼인지 쓴다.
+          evidenceLabel: requirement.evidence_keys[0] ? '근거 보기' : '근거 없음',
+        });
+        continue;
+      }
+
+      if (seenGroups.has(groupKey)) continue;
+      seenGroups.add(groupKey);
+
+      const members = shownAnalysis.requirements.filter((item) => anyOfGroupKey(item) === groupKey);
+      // 묶음을 대표할 줄 — 실제로 충족시킨 요건이 있으면 그것을 세운다. 근거도 그 요건 것이어야 맞다.
+      const satisfiedMember = members.find((item) => judgmentOf(item.requirement_key)?.status === 'SATISFIED') ?? null;
+      const representative = satisfiedMember ?? members[0];
+      const judgment = judgmentOf(representative.requirement_key);
+
+      rows.push({
+        requirement: representative,
+        judgment,
+        status: resolvedStatuses.get(representative.requirement_key) ?? judgmentStatus(judgment),
+        groupPeerNote: members.length > 1
+          ? satisfiedMember
+            ? `택일 조건 ${members.length}개 중 ${satisfiedMember.value ?? '1개'} 보유로 충족`
+            : `택일 조건 ${members.length}개 · 충족된 것 없음`
+          : null,
+        memberKeys: members.map((item) => item.requirement_key),
+        evidenceLabel: representative.evidence_keys[0] ? '근거 보기' : '근거 없음',
+      });
+    }
+
+    return rows;
   }, [shownAnalysis, shownJudgment, resolvedStatuses]);
 
   const selectedEvidence = selectedEvidenceKey ? shownAnalysis?.evidence.find((item) => item.evidence_key === selectedEvidenceKey) ?? null : null;
@@ -736,8 +781,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">{canViewBaseline ? `v${viewingBaseline ? activeCase.baseline_version_number : activeCase.current_version_number} 공고 원문에서 구조화한 자격요건과 그 근거입니다.` : '공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.'}</p></div><span className="text-[15px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {shownJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
                 <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[13px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
-                {views.length ? views.map(({ requirement, judgment, status, satisfiedByGroupPeer, evidenceLabel }) => {
-                  const askable = askableQuestionKeys.has(requirement.requirement_key);
+                {views.length ? views.map(({ requirement, judgment, status, groupPeerNote, memberKeys, evidenceLabel }) => {
+                  // 묶음을 접었으므로 조치도 묶음 전체로 본다. 대표 줄만 보면 다른 구성원에 걸린 질문을 놓친다.
+                  const askable = memberKeys.some((key) => askableQuestionKeys.has(key));
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
                   /*
                     조치는 ① 그룹 판정 기준으로 걸고 ② 현재 차수에서만 건다.
@@ -746,8 +792,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                     같은 evidence key를 가진 v2 근거가 열린다. 기준 차수에서는 같은 화면의 「근거 보기」만 쓴다. (#147 리뷰 필수 2)
                   */
                   const actionable = !viewingBaseline && status === 'UNKNOWN';
-                  const companyValueText = satisfiedByGroupPeer
-                    ? `${companyValue(requirement, company, judgment)} · 택일 조건이라 같은 묶음의 다른 요건으로 충족`
+                  const companyValueText = groupPeerNote
+                    ? `${companyValue(requirement, company, judgment)} · ${groupPeerNote}`
                     : companyValue(requirement, company, judgment);
                   return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
                 }) :<div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>

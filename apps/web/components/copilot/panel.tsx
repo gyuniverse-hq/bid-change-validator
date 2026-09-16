@@ -4,12 +4,11 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { NavigationLink } from '@/components/navigation-link';
-import { navigateTo } from '@/lib/navigation';
 import { ActionCard } from './action-card';
+import { CopilotNavigationLink } from './navigation-link';
 import { CopilotMascot } from './mascot';
 import { EnvelopeAnswer } from './envelope-answer';
-import { useActions, useCopilot } from './provider';
+import { useActions, useCopilot, useCopilotNavigation } from './provider';
 import { isLocked } from '@/lib/copilot-actions';
 import { getCopilotStatusLabel, getSourceLocationLabel } from '@/lib/copilot-view-model';
 import type { CopilotChatResponse, CopilotIntent, CopilotSource } from '@/lib/copilot-api';
@@ -131,7 +130,7 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
       {state.error && <div role="alert" className={noJudgment ? 'copilot-notice' : 'copilot-error'} data-state={noJudgment ? 'NO_JUDGMENT' : 'ERROR'}>
         <strong>{noJudgment ? '저장된 판정이 아직 없습니다' : '요청을 완료하지 못했습니다'}</strong>
         <p>{noJudgment ? '참가자격 화면에서 검토 상태를 확인해 주세요. 화면 이동만으로 분석이나 저장을 시작하지 않습니다.' : state.error}</p>
-        {caseId && <NavigationLink className="copilot-detail-link" href={href('/qualification', caseId)}>참가자격 화면에서 확인</NavigationLink>}
+        {caseId && <CopilotNavigationLink caseId={caseId} className="copilot-detail-link" href={href('/qualification', caseId)}>참가자격 화면에서 확인</CopilotNavigationLink>}
         <Button type="button" variant="outline" className="copilot-quiet" disabled={state.busy} onClick={() => void store.retry(caseId, semanticProcessing, documentProcessing)}>실패한 질문 다시 조회</Button>
       </div>}
       <ActionCard caseId={caseId} compact />
@@ -151,14 +150,15 @@ function PanelBody({ caseId, page }: { caseId: string; page: typeof pages[keyof 
 
 function SourceChip({ source, caseId, analysisRunId }: { source: CopilotSource; caseId: string; analysisRunId?: string }) {
   if (source.source_origin !== 'PRODUCT_EVIDENCE') return <span className="copilot-evidence-chip">[{source.ref}] {getSourceLocationLabel(source)}</span>;
-  return <NavigationLink className="copilot-evidence-chip" href={`${href('/evidence', caseId)}&evidence=${encodeURIComponent(source.evidence.evidence_key)}${analysisRunId ? '&analysisRunId=' + encodeURIComponent(analysisRunId) : ''}`}>
+  return <CopilotNavigationLink caseId={caseId} className="copilot-evidence-chip" href={`${href('/evidence', caseId)}&evidence=${encodeURIComponent(source.evidence.evidence_key)}${analysisRunId ? '&analysisRunId=' + encodeURIComponent(analysisRunId) : ''}`}>
     [{source.ref}] {getSourceLocationLabel(source)} · 원문
-  </NavigationLink>;
+  </CopilotNavigationLink>;
 }
 
 function Answer({ response, caseId, onSelect, onTarget }: { response: CopilotChatResponse; caseId: string; onSelect: (key: string) => void; onTarget: (id: string) => void }) {
   const p = response.presentation;
   const { controller, action } = useActions(caseId);
+  const { navigate } = useCopilotNavigation(caseId);
   const state = response.product_state;
   const changed = Boolean(state && 'changes' in state);
   const analysisRunId = state && 'analysis_run_id' in state.provenance ? state.provenance.analysis_run_id : undefined;
@@ -182,7 +182,7 @@ function Answer({ response, caseId, onSelect, onTarget }: { response: CopilotCha
       <p className="copilot-conclusion">{p.conclusion}</p>
       {reasons.map(renderReason)}
       {outside.length > 0 && <div className="copilot-scope"><strong>{response.intent === 'DOCUMENT_QA' ? '사용한 공고문 근거' : '직접 확인할 공고 항목'}</strong>{outside.map(renderReason)}
-        {response.intent !== 'DOCUMENT_QA' && <NavigationLink className="copilot-detail-link" href={`${href('/qualification', caseId)}#analysis-scope`}>참가자격 화면에서 함께 확인</NavigationLink>}
+        {response.intent !== 'DOCUMENT_QA' && <CopilotNavigationLink caseId={caseId} className="copilot-detail-link" href={`${href('/qualification', caseId)}#analysis-scope`}>참가자격 화면에서 함께 확인</CopilotNavigationLink>}
       </div>}
       {p.limitations.map((text, i) => <p className="copilot-limitation" key={i}>{text}</p>)}
       {p.next_action && <p>{p.next_action.label}</p>}
@@ -193,18 +193,18 @@ function Answer({ response, caseId, onSelect, onTarget }: { response: CopilotCha
         <blockquote>{source.source_origin === 'PRODUCT_EVIDENCE' ? source.evidence.quote : source.quote}</blockquote>
       </div>)}
     </details>}
-    {(insufficient || response.intent === 'DOCUMENT_QA') && <NavigationLink className="copilot-detail-link" href={href('/evidence', caseId)}>근거 원문 직접 확인</NavigationLink>}
-    {changed && <NavigationLink className="copilot-detail-link" href={href('/changes', caseId)}>변경사항 상세 보기 · 06</NavigationLink>}
+    {(insufficient || response.intent === 'DOCUMENT_QA') && <CopilotNavigationLink caseId={caseId} className="copilot-detail-link" href={href('/evidence', caseId)}>근거 원문 직접 확인</CopilotNavigationLink>}
+    {changed && <CopilotNavigationLink caseId={caseId} className="copilot-detail-link" href={href('/changes', caseId)}>변경사항 상세 보기 · 06</CopilotNavigationLink>}
     {state && 'profile_snapshot' in state && <details><summary>판정 당시 회사정보 · 현재 프로필과 다를 수 있음</summary><pre>{JSON.stringify(state.profile_snapshot, null, 2)}</pre></details>}
     {state && 'questions' in state && state.questions.filter(q => q.askable).map(q =>
       <Button type="button" variant="outline" className="copilot-quiet" key={q.requirement_key} disabled={isLocked(action)} onClick={async () => {
         await controller.beginAnswer(caseId, q.requirement_key,
           response.reply_context?.last_read_receipt?.kind === 'product' ? response.reply_context.last_read_receipt.provenance.judgment_run_id : undefined);
-        navigateTo(href('/ask-back', caseId));
+        navigate(href('/ask-back', caseId));
       }}>{q.question} · 답변 입력</Button>)}
     {response.actions.map((proposal, i) => <Button type="button" variant="outline" className="copilot-quiet" key={i} disabled={isLocked(action)} onClick={() => {
       controller.adopt(caseId, proposal);
-      navigateTo(href(proposal.action_type === 'REVALIDATE' ? '/changes' : '/ask-back', caseId));
+      navigate(href(proposal.action_type === 'REVALIDATE' ? '/changes' : '/ask-back', caseId));
     }}>서버 제안 검토 · 아직 실행 안 함</Button>)}
   </article>;
 }

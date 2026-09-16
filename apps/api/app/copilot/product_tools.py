@@ -23,6 +23,7 @@ from ..qualification.judgment import (
     list_qualification_judgment_runs,
     load_qualification_judgment_run,
 )
+from ..qualification.rules.judgment import RULE_VERSION
 from .contracts import (
     AnalysisScope, AnalysisNoticeFact,
     JudgmentProfileResult,
@@ -40,36 +41,60 @@ def _load_context(
     case = db.get(PreflightCase, case_id)
     if case is None:
         raise QualificationJudgmentError("PREFLIGHT_CASE_NOT_FOUND", "사전검토 건을 찾을 수 없습니다.", status_code=404)
-    runs = list_qualification_judgment_runs(db, case_id=case_id)
-    candidates = [item for item in runs if item.notice_version_id == case.current_version_id]
-    if not candidates:
-        raise QualificationJudgmentError("CURRENT_JUDGMENT_REQUIRED", "현재 공고 버전의 판정이 필요합니다.")
-    selected = max(candidates, key=lambda item: (item.created_at, str(item.id)))
-    run = load_qualification_judgment_run(db, selected.id)
-    if run.notice_version_id != case.current_version_id:
-        raise QualificationJudgmentError("JUDGMENT_VERSION_MISMATCH", "현재 버전과 판정 버전이 다릅니다.")
-    if run.preflight_case_id != case.id or run.company_id != case.company_id:
-        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정의 검토 건 또는 회사가 다릅니다.")
-    analysis_run = load_qualification_analysis_run(db, run.analysis_run_id)
-    if analysis_run.notice_version_id != case.current_version_id or analysis_run.notice_version.notice_id != case.notice_id:
-        raise QualificationJudgmentError("ANALYSIS_VERSION_MISMATCH", "현재 공고와 분석 버전이 다릅니다.")
+
     latest_id = db.scalar(
         select(QualificationAnalysisRun.id)
         .where(QualificationAnalysisRun.notice_version_id == case.current_version_id)
         .order_by(QualificationAnalysisRun.created_at.desc(), QualificationAnalysisRun.id.desc())
         .limit(1)
     )
-    if latest_id != analysis_run.id:
-        raise QualificationJudgmentError("STALE_JUDGMENT", "최신 분석을 사용한 판정이 필요합니다.")
+    if latest_id is None:
+        raise QualificationJudgmentError("CURRENT_JUDGMENT_REQUIRED", "현재 공고 버전의 판정이 필요합니다.")
+
+    analysis_run = load_qualification_analysis_run(db, latest_id)
+    if analysis_run.notice_version_id != case.current_version_id or analysis_run.notice_version.notice_id != case.notice_id:
+        raise QualificationJudgmentError("ANALYSIS_VERSION_MISMATCH", "현재 공고와 분석 버전이 다릅니다.")
     if analysis_run.status == "FAILED":
         raise QualificationJudgmentError("QUALIFICATION_ANALYSIS_FAILED", "실패한 분석의 판정은 반환할 수 없습니다.")
+
+    runs = list_qualification_judgment_runs(db, case_id=case_id)
+    current_candidates = [
+        item for item in runs
+        if item.notice_version_id == case.current_version_id and item.rule_version == RULE_VERSION
+    ]
+    if not current_candidates:
+        raise QualificationJudgmentError(
+            "CURRENT_JUDGMENT_REQUIRED",
+            "현재 공고 버전과 판정 규칙으로 생성된 판정이 필요합니다.",
+        )
+
+    analysis_candidates = [item for item in current_candidates if item.analysis_run_id == latest_id]
+    if not analysis_candidates:
+        raise QualificationJudgmentError("STALE_JUDGMENT", "최신 분석을 사용한 판정이 필요합니다.")
+
+    company_candidates = [item for item in analysis_candidates if item.company_id == case.company_id]
+    if not company_candidates:
+        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정의 검토 건 또는 회사가 다릅니다.")
+
+    selected = max(company_candidates, key=lambda item: (item.created_at, str(item.id)))
+    run = load_qualification_judgment_run(db, selected.id)
+    if run.notice_version_id != case.current_version_id:
+        raise QualificationJudgmentError("JUDGMENT_VERSION_MISMATCH", "현재 버전과 판정 버전이 다릅니다.")
+    if run.rule_version != RULE_VERSION:
+        raise QualificationJudgmentError("CURRENT_JUDGMENT_REQUIRED", "현재 판정 규칙으로 생성된 판정이 필요합니다.")
+    if run.preflight_case_id != case.id or run.company_id != case.company_id:
+        raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정의 검토 건 또는 회사가 다릅니다.")
+    if run.analysis_run_id != latest_id:
+        raise QualificationJudgmentError("STALE_JUDGMENT", "최신 분석을 사용한 판정이 필요합니다.")
     if run.analysis_status != analysis_run.status:
         raise QualificationJudgmentError("ANALYSIS_STATUS_MISMATCH", "분석과 판정에 기록된 분석 상태가 다릅니다.")
     analysis = analysis_run_response(analysis_run)
     judgment = judgment_run_response(run)
     if judgment.profile_snapshot.get("company_id") != str(case.company_id):
         raise QualificationJudgmentError("JUDGMENT_CASE_MISMATCH", "판정 스냅샷의 회사가 다릅니다.")
-    # Preserve the stored snapshot exactly, including any historical extra fields.
+    # Historical product reads describe the exact snapshot used by the persisted
+    # judgment. They must not silently switch to current profile state. Freshness
+    # is revalidated at write/action boundaries by the qualification services.
     judgment.profile_snapshot = deepcopy(run.profile_snapshot)
     requirement_keys = {item.requirement_key for item in analysis.requirements}
     if requirement_keys != {item.requirement_key for item in judgment.judgments}:
@@ -92,7 +117,6 @@ def _load_context(
 
 
 def analysis_scope(analysis: QualificationAnalysisRunRead) -> AnalysisScope:
-    """Use the exact judged analysis; exclude opaque diagnostic details."""
     evidence = {item.evidence_key: item for item in analysis.evidence}
     return AnalysisScope(
         analysis_run_id=analysis.id,
@@ -127,7 +151,6 @@ def get_requirement_evidence(db: Session, case_id: UUID, requirement_key: str) -
 
 
 def get_explanation_evidence(db: Session, case_id: UUID, requirement_keys: list[str]) -> list[RequirementEvidenceResult]:
-    """Read several reasons' evidence with one existing context validation."""
     with db.no_autoflush:
         provenance, analysis, _ = _load_context(db, case_id)
         requirements = {item.requirement_key: item for item in analysis.requirements}
@@ -141,7 +164,6 @@ def get_explanation_evidence(db: Session, case_id: UUID, requirement_keys: list[
 
 
 def matching_provenance(*results) -> bool:
-    """A composed explanation must use exactly one observed product context."""
     return bool(results) and all(item.provenance == results[0].provenance for item in results[1:])
 
 

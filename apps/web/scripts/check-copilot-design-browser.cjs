@@ -26,6 +26,18 @@ function load(file) {
   const req = m.productEvidence.product_state.requirement, e = m.productEvidence.sources[0];
   const company = { id: prov.company_id, name: '합성 검증 회사', industries: [], staff: null, performances: [], certifications: [], company_size: 'SMALL', region_code: null, region_name: null };
   const caseItem = { id, company_id: company.id, notice_id: prov.notice_id, bid_notice_no: 'TEST-COPILOT', notice_title: '합성 공고 · 디자인 검증', title: '통합 검증', status: 'DRAFT', baseline_version_number: 1, current_version_number: 2, documents: [], created_at: '2026-09-11T00:00:00Z' };
+  const catalog = { contract_version:'copilot-guided-jobs-v1', jobs:[
+    { job_id:'changed_notice', label:'변경 공고 대응', order:1, questions:[
+      { question_id:'what_changed', label:'무엇이 바뀌었나요?', order:1, answer_scope:'변경 설명', completion_criteria:['변경 확인'], required_tools:['READ_CHANGES'], availability:'AVAILABLE', unavailable_reason:null },
+      { question_id:'company_impact', label:'우리 회사에 어떤 영향이 있나요?', order:2, answer_scope:'회사 영향', completion_criteria:['영향 확인'], required_tools:['READ_CHANGES','READ_JUDGMENT','READ_PROFILE'], availability:'AVAILABLE', unavailable_reason:null },
+      { question_id:'next_checks', label:'무엇을 확인해야 하나요?', order:3, answer_scope:'확인사항', completion_criteria:['다음 행동'], required_tools:['READ_CHECKS'], availability:'AVAILABLE', unavailable_reason:null },
+    ] },
+    { job_id:'bid_preparation', label:'입찰 참여 준비', order:2, questions:[
+      { question_id:'documents_deadlines_methods', label:'필요한 서류·기한·방법은?', order:1, answer_scope:'서류', completion_criteria:['서류 확인'], required_tools:['READ_DOCUMENT'], availability:'AVAILABLE', unavailable_reason:null },
+      { question_id:'preparation_order', label:'준비 순서는?', order:2, answer_scope:'순서', completion_criteria:['순서 확인'], required_tools:['READ_DOCUMENT'], availability:'AVAILABLE', unavailable_reason:null },
+      { question_id:'unresolved', label:'아직 확인하지 못한 것은?', order:3, answer_scope:'미확인', completion_criteria:['미확인 확인'], required_tools:['READ_CHECKS'], availability:'AVAILABLE', unavailable_reason:null },
+    ] },
+  ] };
   const versions = [1,2].map(n => ({ id: n===2 ? prov.notice_version_id : 'baseline-version', version_number:n, documents:[], is_current:n===2, collected_at:'2026-09-11T00:00:00Z', bid_closed_at:null, estimated_price:null, allocated_budget:null, contract_method:null }));
   let mode = 'summary', authMode='anonymous', logoutMode='ok', saved=false, failWorkspace=false, confirms=0, reads=0;
   const errors=[];
@@ -42,7 +54,9 @@ function load(file) {
   };
   const analysis = n => ({ id:n===2?prov.analysis_run_id:'baseline-analysis',notice_id:prov.notice_id,notice_version_id:versions[n-1].id,version_number:n,status:'SUCCEEDED',requirements:[req],evidence:[e.evidence],diagnostics:[{kind:'NOTICE_FACT',code:'FACT',message:'판정 대상이 아닌 확인사항',evidence_keys:['MISSING']},{kind:'PIPELINE',code:'P',message:'처리 진단'}],dropped_requirements:[{raw:'',reason_code:'MISSING_RAW'}],requirement_count:1,evidence_count:1 });
   const run = baseline => ({ ...summary().product_state, id:baseline?'baseline-judgment':saved?'saved-judgment':prov.judgment_run_id,preflight_case_id:id,company_id:prov.company_id,notice_version_id:baseline?versions[0].id:prov.notice_version_id,analysis_run_id:baseline?'baseline-analysis':prov.analysis_run_id,rule_version:prov.rule_version,profile_snapshot:{},profile_completeness:{} });
-  const browser = await chromium.launch({headless:true});
+  const launchOptions = process.env.COPILOT_BROWSER_CHANNEL
+    ? {headless:true,channel:process.env.COPILOT_BROWSER_CHANNEL} : {headless:true};
+  const browser = await chromium.launch(launchOptions);
   let page;
   try {
     page = await browser.newPage({viewport:{width:1440,height:1000}});
@@ -66,6 +80,7 @@ function load(file) {
         confirms++;const action=request.postDataJSON().action;assert.equal(action.user_input.evidence_held,false);saved=true;failWorkspace=true;
         return reply({id:'answer',preflight_case_id:id,result_judgment_run_id:'saved-judgment',result:run(false)});
       }
+      if(p.endsWith('/copilot/jobs'))return reply(catalog);
       if(p.endsWith('/copilot/chat')){
         reads++; const body=request.postDataJSON();
         if(mode==='loading') await new Promise(resolve=>setTimeout(resolve,1200));
@@ -73,9 +88,9 @@ function load(file) {
         if(mode==='error')return reply({error:{code:'TEST_READ_FAILED',message:'연결을 확인하지 못했습니다.'}},503);
         if(mode==='no-evidence')return reply({...m.noEvidence,presentation:{conclusion:'검색된 공고문 근거가 없습니다.',reasons:[],limitations:['조건이 없다는 뜻은 아닙니다.'],next_action:null}});
         if(body.intent==='ACTION_REQUEST')return reply({...m.answerProposal,actions:[{...m.answerProposal.actions[0],user_input:body.user_input}]});
-        if(body.intent==='REQUIRED_CHECKS')return reply({...m.askableUnknown,reply_context:summary().reply_context});
+        if(body.intent==='REQUIRED_CHECKS'||body.question_id==='next_checks')return reply({...m.askableUnknown,reply_context:summary().reply_context});
         if(body.intent==='REQUIREMENT_EVIDENCE')return reply({...m.productEvidence,reply_context:summary().reply_context});
-        if(body.intent==='CHANGED_NOTICE')return reply({...m.revalidationProposal,actions:[],presentation:{conclusion:'공고 1차와 2차의 분석된 요건을 비교했습니다.',reasons:[],limitations:['공고 전체의 모든 변경을 확인했다는 의미는 아닙니다.'],next_action:null}});
+        if(body.intent==='CHANGED_NOTICE'||body.question_id==='what_changed')return reply({...m.revalidationProposal,actions:[],presentation:{conclusion:'공고 1차와 2차의 분석된 요건을 비교했습니다.',reasons:[],limitations:['공고 전체의 모든 변경을 확인했다는 의미는 아닙니다.'],next_action:null}});
         return reply(summary());
       }
       if(failWorkspace && p===`/api/v1/preflight-cases/${id}`)return reply({error:{code:'WORKSPACE_REFRESH_FAILED',message:'화면 갱신 실패'}},503);
@@ -100,33 +115,38 @@ function load(file) {
       await page.getByRole('button',{name:'AI Copilot',exact:true}).click();
       await page.locator('#copilot-panel[open]').waitFor();
     };
+    const waitForCopilotAfterNavigation = async()=>{
+      await page.locator('#copilot-panel[open]').waitFor();
+    };
     const shoot=async name=>page.locator('#copilot-panel').screenshot({path:path.join(out,`${name}.png`)});
     await open();await shoot('01-empty');assert.equal(await page.locator('.copilot-mascot').count(),3);
-    await page.getByRole('button',{name:'우리 회사, 참여 가능해?',exact:true}).click();
+    await page.getByRole('button',{name:'2. 우리 회사에 어떤 영향이 있나요?',exact:true}).click();
     await page.locator('[data-state=ANSWER]').waitFor();await shoot('04-answer');
     assert.equal(await page.locator('.copilot-header-badges').getByText('조회 v2',{exact:true}).count(),1);
     assert.equal(await page.locator('.copilot-header-badges').getByText('확인 필요',{exact:true}).count(),1);
     await page.locator('.copilot-evidence-chip').first().click();await page.waitForURL('**/evidence?**');
-    assert(await page.locator('.copilot-conclusion').isVisible());
-    assert.equal(await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).count(),0,'Evidence page must not show the changes suggestion');
-    assert.equal(await page.getByRole('button',{name:'내가 물어볼 수 있는 질문이 뭐야?',exact:true}).count(),1,'Evidence page should show the contextual help suggestion');
+    await waitForCopilotAfterNavigation();
+    await page.locator('.copilot-conclusion').waitFor();
+    assert.equal(await page.getByRole('button',{name:'1. 무엇이 바뀌었나요?',exact:true}).count(),1,'Evidence page should restore the guided question catalog');
     await page.goto(`${origin}/changes?caseId=${id}`);
     await page.getByRole('heading',{name:caseItem.notice_title,exact:true}).waitFor();
     await page.getByRole('button',{name:'AI Copilot',exact:true}).click();
     await page.locator('#copilot-panel[open]').waitFor();
-    await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).click();await page.locator('[data-state=CHANGED_NOTICE]').waitFor();await shoot('05-changed');
+    await page.getByRole('button',{name:'1. 무엇이 바뀌었나요?',exact:true}).click();await page.locator('[data-state=CHANGED_NOTICE]').waitFor();await shoot('05-changed');
     await page.getByRole('link',{name:'변경사항 상세 보기 · 06'}).click();await page.waitForURL('**/changes?**');
+    await waitForCopilotAfterNavigation();
     await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#copilot-panel').matches(':modal'));
     await shoot('08-mobile');assert((await page.locator('#copilot-panel').boundingBox()).width<=390);
     await page.setViewportSize({width:1440,height:1000});
     for(const [testMode,state,file] of [['no-judgment','NO_JUDGMENT','02-no-judgment'],['no-evidence','INSUFFICIENT_EVIDENCE','06-no-evidence'],['error','ERROR','07-error']]){
-      mode=testMode;await open();await page.getByRole('button',{name:'우리 회사, 참여 가능해?',exact:true}).click();await page.locator(`[data-state=${state}]`).waitFor();await shoot(file);
+      mode=testMode;await open();await page.getByRole('button',{name:'2. 우리 회사에 어떤 영향이 있나요?',exact:true}).click();await page.locator(`[data-state=${state}]`).waitFor();await shoot(file);
       if(state==='INSUFFICIENT_EVIDENCE')assert(await page.getByRole('link',{name:'근거 원문 직접 확인'}).isVisible());
     }
-    mode='loading';await open();await page.getByRole('button',{name:'우리 회사, 참여 가능해?',exact:true}).click();await page.locator('[data-state=LOADING]').waitFor();await shoot('03-loading');await page.locator('[data-state=ANSWER]').waitFor();
+    mode='loading';await open();await page.getByRole('button',{name:'2. 우리 회사에 어떤 영향이 있나요?',exact:true}).click();await page.locator('[data-state=LOADING]').waitFor();await shoot('03-loading');await page.locator('[data-state=ANSWER]').waitFor();
     assert.equal(confirms,0,'Every read/design state performs zero confirms');
-    mode='summary';await open();await page.getByRole('button',{name:'무엇을 확인해야 해?',exact:true}).click();await page.locator('[data-state=NEEDS_CHECK]').waitFor();
+    mode='summary';await open();await page.getByRole('button',{name:'3. 무엇을 확인해야 하나요?',exact:true}).click();await page.locator('[data-state=NEEDS_CHECK]').waitFor();
     await page.locator('#copilot-panel').getByRole('button',{name:/· 답변 입력$/}).click();await page.waitForURL('**/ask-back?**');
+    await waitForCopilotAfterNavigation();
     assert.equal(await page.locator('#copilot-panel').getByRole('button',{name:'내용 확인 후 실행'}).count(),0,'Panel summarizes, detail confirms');
     await page.getByRole('button',{name:'도우미 닫기'}).click();
     const card=page.locator('.app-shell-content .copilot-action-card').first();

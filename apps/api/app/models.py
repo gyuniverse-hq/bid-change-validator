@@ -270,6 +270,7 @@ class BidNoticeVersion(Base):
     __table_args__ = (
         UniqueConstraint("notice_id", "version_number", name="uq_notice_version_number"),
         UniqueConstraint("notice_id", "payload_hash", name="uq_notice_payload_hash"),
+        UniqueConstraint("notice_id", "bid_notice_order", name="uq_notice_bid_order"),
         CheckConstraint("version_number > 0", name="bid_notice_versions_number_positive"),
     )
 
@@ -570,9 +571,59 @@ class NoticeCollectionRun(Base):
     created_count: Mapped[int] = mapped_column(Integer, default=0)
     new_version_count: Mapped[int] = mapped_column(Integer, default=0)
     unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_item_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NoticeHistoryBackfillJob(Base):
+    """Durable request to fetch every published order for one G2B notice."""
+
+    __tablename__ = "notice_history_backfill_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED')",
+            name="notice_history_backfill_jobs_status_valid",
+        ),
+        CheckConstraint(
+            "attempts >= 0",
+            name="notice_history_backfill_jobs_attempts_nonnegative",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    notice_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("bid_notices.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(Text, default="PENDING", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+Index(
+    "idx_notice_history_backfill_jobs_due",
+    NoticeHistoryBackfillJob.status,
+    NoticeHistoryBackfillJob.next_attempt_at,
+)
 
 
 class PreflightCase(Base):

@@ -81,7 +81,8 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
     <section className="mt-7 grid gap-5 xl:grid-cols-2">
       {error && <div className="xl:col-span-2 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>}
 
-      <div className="rounded-[20px] border border-[var(--product-line)] bg-white p-6">
+      {/* 위 「비어 있는 항목」에서 바로 여기로 보낸다. id를 바꾸면 app/company/page.tsx의 앵커도 같이 고칠 것. */}
+      <div id="profile-performance" className="scroll-mt-24 rounded-[20px] border border-[var(--product-line)] bg-white p-6">
         <div className="flex items-center justify-between gap-3">
           <div><h3 className="text-[19px] font-bold">수행 실적</h3><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">건수·금액·경험 분야 판정에 사용합니다.</p></div>
           <span className="text-[12px] text-[var(--product-muted)]">{company.performances.length}건</span>
@@ -101,7 +102,7 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
         </div>
       </div>
 
-      <div className="rounded-[20px] border border-[var(--product-line)] bg-white p-6">
+      <div id="profile-certification" className="scroll-mt-24 rounded-[20px] border border-[var(--product-line)] bg-white p-6">
         <div className="flex items-center justify-between gap-3">
           <div><h3 className="text-[19px] font-bold">인증 · 등록</h3><p className="mt-1 text-[12.5px] text-[var(--product-muted)]">등록·면허·인증 보유 사실 판정에 사용합니다.</p></div>
           <span className="text-[12px] text-[var(--product-muted)]">{company.certifications.length}건</span>
@@ -111,7 +112,7 @@ export function ProfileRecordsManager({ company, onChanged }: Props) {
           <Input placeholder="번호" value={certification.certificate_number} onChange={(e) => setCertification({ ...certification, certificate_number: e.target.value })} />
           <Input placeholder="발급기관" value={certification.issuer_name} onChange={(e) => setCertification({ ...certification, issuer_name: e.target.value })} />
           <Input type="date" value={certification.issued_at} onChange={(e) => setCertification({ ...certification, issued_at: e.target.value })} />
-          <label className="sm:col-span-2 text-[12px] text-[var(--product-muted)]">만료일<Input className="mt-1" type="date" value={certification.expires_at} onChange={(e) => setCertification({ ...certification, expires_at: e.target.value })} /></label>
+          <label className="sm:col-span-2 text-[12px] text-[var(--product-muted)]" htmlFor="certification-expires-at">만료일<Input id="certification-expires-at" className="mt-1" type="date" value={certification.expires_at} onChange={(e) => setCertification({ ...certification, expires_at: e.target.value })} /></label>
         </div>
         <Button className="mt-3 rounded-full" onClick={() => void addCertification()} disabled={busy !== null}><Plus /> 인증·등록 추가</Button>
 

@@ -35,7 +35,7 @@ from ..schemas import (
     NoticeSyncRequest,
 )
 from ..services.g2b import G2BApiError, G2BClient
-from ..services.document_storage import build_document_downloader
+from ..services.document_storage import build_document_downloader, build_s3_client
 from ..services.document_extraction import extract_pending_documents
 from ..services.notices import run_notice_sync
 from ..services.notice_facts import diff_notice_facts
@@ -268,9 +268,10 @@ def get_notice_document_render_source(
     if backend == "S3":
         if not settings.document_s3_bucket:
             raise ApiError(503, "DOCUMENT_STORAGE_NOT_CONFIGURED", "S3 저장소 설정이 없습니다.")
-        import boto3
-
-        s3 = boto3.client("s3", region_name=settings.aws_region)
+        s3 = build_s3_client(
+            region=settings.aws_region,
+            endpoint_url=settings.document_s3_endpoint_url,
+        )
         url = s3.generate_presigned_url(
             "get_object",
             Params={
@@ -329,9 +330,10 @@ def download_notice_document(
     if backend == "S3":
         if not settings.document_s3_bucket:
             raise ApiError(503, "DOCUMENT_STORAGE_NOT_CONFIGURED", "S3 저장소 설정이 없습니다.")
-        import boto3
-
-        s3 = boto3.client("s3", region_name=settings.aws_region)
+        s3 = build_s3_client(
+            region=settings.aws_region,
+            endpoint_url=settings.document_s3_endpoint_url,
+        )
         url = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": settings.document_s3_bucket, "Key": document.storage_key},
@@ -384,9 +386,10 @@ def preview_notice_document(
     if backend == "S3":
         if not settings.document_s3_bucket:
             raise ApiError(503, "DOCUMENT_STORAGE_NOT_CONFIGURED", "S3 저장소 설정이 없습니다.")
-        import boto3
-
-        s3 = boto3.client("s3", region_name=settings.aws_region)
+        s3 = build_s3_client(
+            region=settings.aws_region,
+            endpoint_url=settings.document_s3_endpoint_url,
+        )
         url = s3.generate_presigned_url(
             "get_object",
             Params={

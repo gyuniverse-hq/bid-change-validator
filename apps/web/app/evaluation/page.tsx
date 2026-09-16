@@ -143,6 +143,13 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
       });
   }, [workspace, blocks]);
 
+  /**
+   * 안내 문구에 쓸 전체 요건 수. 위 rows는 PROPOSAL_CHECK_TYPES로 걸러진 뒤라
+   * 「전체 N건 중 M건」의 N을 여기서 따로 센다. 걸러진 이유를 화면이 말하지 않으면
+   * 참가자격 탭에는 3건인데 여기는 1건인 이유를 알 수 없다.
+   */
+  const totalRequirementCount = workspace?.currentAnalysisDetail?.requirements.length ?? 0;
+
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selected = rows.find((row) => row.requirement.requirement_key === selectedKey) ?? rows[0] ?? null;
   const stateOf = (key: string): ProposalCheckState => checks[key] ?? 'PENDING';
@@ -217,39 +224,67 @@ function EvaluationWorkspace({ caseId }: { caseId: string | null }) {
             <span className="ml-auto text-[13px] text-[var(--product-muted)]">자격요건 {rows.length}건 · 제안서 {proposalDoc ? 1 : 0}건</span>
           </div>
 
+          {totalRequirementCount > rows.length && (
+            <p className="mt-3 rounded-[14px] bg-[var(--product-tint)] px-4 py-3 text-[13px] leading-[1.75] text-[var(--product-muted)]">
+              제안서에서 확인할 수 있는 항목만 보여줍니다. 업종·소재지처럼 회사 등록정보로 판정하는 항목은 참가자격 화면에서 확인해 주세요.
+              <span className="ml-1 font-semibold text-[var(--product-ink)]">전체 {totalRequirementCount}건 중 {rows.length}건</span>
+            </p>
+          )}
+
           <div className="mt-3 grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
             {/* ── 왼쪽: 요건 표 ── */}
-            <div className="overflow-hidden rounded-[20px] border border-[#eef0f4] bg-white">
-              <div className="grid grid-cols-[minmax(0,1.6fr)_140px_180px_220px] bg-[#f6f7f9] py-[13px] text-[12.5px] font-semibold text-[var(--product-muted)]"><div className="px-4">공고 요구 항목</div><div className="px-4">귀사 값</div><div className="px-4">제안서 위치</div><div className="px-4">확인</div></div>
+            {/*
+              4열 표를 버리고 카드로 바꾼다.
+              고정 폭 세 열(140 + 180 + 220 = 540px)이 왼쪽 패널을 거의 다 먹어서
+              「공고 요구 항목」 열에 70px밖에 안 남았고, 요건 문장이 한 줄에 두 글자씩
+              세로로 흘러 행 하나가 1000px가 됐다.
+              요건 문장은 길고 나머지 셋은 짧다. 같은 줄에 둘 이유가 없다.
+            */}
+            <div className="overflow-hidden rounded-[20px] border border-[var(--product-line)] bg-white">
+              <div className="border-b border-[var(--product-line-2)] bg-[var(--product-tint)] px-5 py-3 text-[13px] font-bold text-[var(--product-muted)]">공고 요구 항목</div>
               {rows.map(({ requirement, value, hits }) => {
                 const key = requirement.requirement_key;
                 const isSelected = selected?.requirement.requirement_key === key;
                 const state = stateOf(key);
                 const first = hits?.[0] ?? null;
                 return (
-                  <div key={key} className={`grid min-h-[64px] grid-cols-[minmax(0,1.6fr)_140px_180px_220px] items-stretch border-t border-[#eef0f4] text-[13.5px] ${isSelected ? 'bg-[#edeafb]' : 'hover:bg-[var(--product-tint)]'}`}>
-                    <button type="button" onClick={() => setSelectedKey(key)} className="flex h-full w-full cursor-pointer flex-col justify-center bg-transparent px-4 py-3 text-left">
-                      <strong className="block text-[14.5px]">{requirement.raw}</strong>
-                      <span className="mt-1 block text-[12px] text-[var(--product-muted)]">{labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)}</span>
+                  <div key={key} className={`border-t border-[var(--product-line-2)] first:border-t-0 ${isSelected ? 'bg-[#edeafb]' : ''}`}>
+                    {/* 요건 문장은 폭을 통째로 쓴다. 눌러서 오른쪽 패널을 바꾼다. */}
+                    <button type="button" onClick={() => setSelectedKey(key)} className="block w-full cursor-pointer bg-transparent px-5 pb-3 pt-4 text-left">
+                      <span className="inline-block rounded-full bg-[var(--product-tint-2)] px-2.5 py-0.5 text-[13px] font-bold text-[var(--product-muted)]">{labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)}</span>
+                      <strong className="mt-2 block text-[15px] font-bold leading-[1.7] text-[var(--product-ink)]">{requirement.raw}</strong>
                     </button>
-                    <button type="button" onClick={() => setSelectedKey(key)} className={`flex h-full w-full cursor-pointer items-center bg-transparent px-4 text-left ${value === '프로필에 없음' ? 'text-[var(--product-faint)]' : ''}`}>{value}</button>
-                    <button type="button" onClick={() => setSelectedKey(key)} className="flex h-full w-full cursor-pointer items-center bg-transparent px-4 text-left text-[13px]">
-                      {!proposalDoc ? <span className="text-[var(--product-faint)]">제안서를 올리면 찾습니다</span>
-                        : !extracted ? <span className="text-[var(--product-faint)]">텍스트를 추출하지 못했습니다</span>
-                        : blocksError ? <span className="text-[var(--product-bad)]">불러오지 못했습니다</span>
-                        : blocksLoading || hits === null ? <LoaderCircle className="size-4 animate-spin text-[var(--product-faint)]" />
-                        : first ? <><span className="text-[var(--product-accent)]">{first.location}</span><span className="mt-0.5 block text-[11.5px] text-[var(--product-faint)]">후보 {hits.length}곳</span></>
-                        : <span className="text-[var(--product-faint)]">{NOT_FOUND_COPY}</span>}
-                    </button>
-                    <div className="flex gap-1 px-4">
+
+                    <div className="grid gap-x-6 gap-y-3 px-5 pb-4 sm:grid-cols-2">
+                      <div>
+                        <span className="block text-[13px] text-[var(--product-muted)]">귀사 값</span>
+                        <span className={`mt-0.5 block text-[15px] leading-[1.7] ${value === '프로필에 없음' ? 'text-[var(--product-faint)]' : 'text-[var(--product-body)]'}`}>{value}</span>
+                      </div>
+                      <div>
+                        <span className="block text-[13px] text-[var(--product-muted)]">제안서 위치</span>
+                        <span className="mt-0.5 block text-[15px] leading-[1.7]">
+                          {!proposalDoc ? <span className="text-[var(--product-faint)]">제안서를 올리면 찾습니다</span>
+                            : !extracted ? <span className="text-[var(--product-faint)]">텍스트를 추출하지 못했습니다</span>
+                            : blocksError ? <span className="text-[var(--product-bad)]">불러오지 못했습니다</span>
+                            : blocksLoading || hits === null ? <LoaderCircle className="size-4 animate-spin text-[var(--product-faint)]" />
+                            : first ? <button type="button" onClick={() => setSelectedKey(key)} className="cursor-pointer bg-transparent text-left font-semibold text-[var(--product-accent-deep)] hover:underline">{first.location} · 후보 {hits.length}곳</button>
+                            : <span className="text-[var(--product-faint)]">{NOT_FOUND_COPY}</span>}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 확인 3상태. 열을 따로 잡지 않고 카드 아래 한 줄로 둔다 (DL-001 · 판단은 사용자가 한다). */}
+                    <div className="flex flex-wrap items-center gap-2 border-t border-[var(--product-line-2)] px-5 py-3">
+                      <span className="mr-1 text-[13px] text-[var(--product-muted)]">이 항목을 제안서에서</span>
                       {CHECK_STATES.map((candidate) => {
                         const active = state === candidate;
                         const warn = candidate === 'PENDING';
-                        return <button key={candidate} type="button" disabled={!proposalDoc} onClick={() => setCheck(key, candidate)} className={`rounded-full border px-2.5 py-0.5 text-[11.5px] disabled:opacity-40 ${active ? (warn ? 'border-[#8a5a00] bg-[#fbf0dc] font-bold text-[#8a5a00]' : 'border-[var(--product-accent)] bg-[#edeafb] font-bold text-[var(--product-accent-deep)]') : 'border-[var(--product-line)] text-[var(--product-faint)]'}`}>{PROPOSAL_CHECK_COPY[candidate]}</button>;
+                        return <button key={candidate} type="button" disabled={!proposalDoc} aria-pressed={active} onClick={() => setCheck(key, candidate)} className={`rounded-full border px-3.5 py-1 text-[13px] disabled:opacity-40 ${active ? (warn ? 'border-[#8a5a00] bg-[#fbf0dc] font-bold text-[#8a5a00]' : 'border-[var(--product-accent)] bg-[#edeafb] font-bold text-[var(--product-accent-deep)]') : 'border-[var(--product-line)] text-[var(--product-muted)]'}`}>{PROPOSAL_CHECK_COPY[candidate]}</button>;
                       })}
                     </div>
                   </div>
-                );              })}
+                );
+              })}
               {!rows.length && <div className="px-6 py-14 text-center text-[14px] text-[var(--product-muted)]">현재 대조할 참가자격 조건이 없습니다. 참가자격 분석이 먼저 필요합니다.</div>}
             </div>
 

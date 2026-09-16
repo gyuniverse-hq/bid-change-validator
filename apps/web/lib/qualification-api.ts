@@ -88,6 +88,9 @@ export type CanonicalRequirement = {
   unit: string | null;
   period_months: number | null;
   scope: Record<string, unknown>;
+  /* 백엔드 QualificationRequirement에 있는데 빠져 있던 필드들. 판정 입력 비교에 쓴다. (#132 리뷰) */
+  requirement_role: string;
+  condition_complexity: string;
   required: boolean;
   raw: string;
   evidence_keys: string[];
@@ -197,6 +200,9 @@ export type QualificationJudgmentSummary = {
   company_id: string;
   notice_version_id: string;
   overall_status: 'eligible' | 'ineligible' | 'insufficient_data';
+  rule_version: string;
+  reference_date: string;
+  analysis_status: string;
   judgment_count: number;
   unknown_count: number;
   unsatisfied_count: number;
@@ -218,6 +224,12 @@ export type RequirementChange = {
   identity: string;
   baseline_key: string | null;
   current_key: string | null;
+  /*
+    양쪽 차수의 요건 전체가 여기 이미 들어온다. 키만 주는 줄 알고 분석 상세를 따로 받아
+    키로 이어붙이고 있었는데 그럴 필요가 없었다. (#132 리뷰)
+  */
+  baseline: CanonicalRequirement | null;
+  current: CanonicalRequirement | null;
 };
 
 export type QualificationRevalidation = {

@@ -19,10 +19,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ...ai.contracts import Judgment, QualificationRequirement
-from .clause_safety import unsafe_clause_reason
+from .clause_safety import GUARD_REASON_EXCEPTION, is_guard_assessed, unsafe_clause_reason
 
 
-RULE_VERSION = "qualification-rules-v0.2"
+RULE_VERSION = "qualification-rules-v0.3"
 OverallQualificationStatus = Literal["eligible", "ineligible", "insufficient_data"]
 
 
@@ -315,6 +315,74 @@ def _performance_candidates(
     return candidates, has_ambiguous_date
 
 
+# [재현 2026-09-13] 2026-07-01 광주·전남 행정통합으로 지역 이름에 위계가 생겼다.
+# 전남광주통합특별시 안에 "종전 광주광역시" 와 "종전 전라남도" 가 있고, 통합 전 이름
+# "광주광역시" · "전라남도" 도 같은 하위 지역을 가리킨다. 부분문자열 비교는 이 관계를
+# 모른다 — R26BK01634263 004차수가 소재지를 "전남광주통합특별시" 에서 "종전 광주광역시" 로
+# 좁혔을 때, 통합시 단위로 등록된 회사 셋에 전부 '미달' 을 확정했다. 그 회사가 옛 광주
+# 안에 있을 수도 있어서 프로필로는 답할 수 없는데 답한 것이다 — 잘못된 확정 미달.
+#
+# 하위 -> 상위. 키는 _norm 을 거친 형태(공백 없음).
+_REGION_PARENT: dict[str, str] = {
+    "종전광주광역시": "전남광주통합특별시",
+    "종전전라남도": "전남광주통합특별시",
+    "광주광역시": "전남광주통합특별시",
+    "전라남도": "전남광주통합특별시",
+}
+
+
+# 지역 값은 모델이 쓴 문구가 그대로 들어온다(canonical/legacy_slots.py 의 지역_raw).
+# 같은 곳을 "종전 광주광역시", "종전 광주광역시 관내", "광주광역시(종전)" 로 제각기 적는데,
+# 표를 정확히 일치로만 찾으면 표기 하나에 위계가 사라지고 다시 미달을 확정한다.
+# 통합 전후를 가리키는 꾸밈말만 떼어내고 표를 찾는다. 떼어낸 열쇠는 표 조회에만 쓰고,
+# 두 문구가 같은 곳인지 보는 비교(_string_match)는 원래 값으로 한다.
+_REGION_PREFIXES = ("종전의", "종전", "옛")
+# 괄호는 _norm 이 지우므로 "광주광역시(종전)" 은 "광주광역시종전" 으로 들어온다.
+_REGION_SUFFIXES = ("소재지", "소재", "관내", "일원", "전역", "지역", "종전의", "종전", "옛")
+# "구"를 범용 prefix로 떼면 구미시·구리시·구례군 같은 실제 지명이 훼손된다.
+# 확인된 과거 명칭 표현만 명시적으로 alias 처리한다.
+_REGION_ALIASES = {
+    "구광주광역시": "광주광역시",
+}
+
+
+def _region_key(value: object) -> str:
+    """표를 찾기 위한 열쇠. 꾸밈말을 다 뗄 때까지 반복한다("종전 광주광역시 일원")."""
+    key = _norm(value)
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _REGION_PREFIXES:
+            if key.startswith(prefix) and len(key) > len(prefix):
+                key, changed = key[len(prefix):], True
+        for suffix in _REGION_SUFFIXES:
+            if key.endswith(suffix) and len(key) > len(suffix):
+                key, changed = key[: -len(suffix)], True
+    return _REGION_ALIASES.get(key, key)
+
+
+def _region_relation(observed: str, required: object) -> str:
+    """'match' | 'contained' | 'too_coarse' | 'none'.
+
+    contained  프로필이 하위 지역이고 요건이 그 상위 — 포함되므로 충족.
+    too_coarse 요건이 하위 지역인데 프로필은 상위 단위 — 프로필로는 가를 수 없다.
+    """
+    obs, req = _norm(observed), _norm(required)
+    if not obs or not req:
+        return "none"
+    if _string_match(observed, required):
+        return "match"
+    obs_key, req_key = _region_key(observed), _region_key(required)
+    if obs_key and obs_key == req_key:
+        # 꾸밈말만 다른 같은 지역. "종전 광주광역시" 와 "광주광역시(종전)".
+        return "match"
+    if _REGION_PARENT.get(obs_key) == req_key:
+        return "contained"
+    if _REGION_PARENT.get(req_key) == obs_key:
+        return "too_coarse"
+    return "none"
+
+
 def _judge_region(
     requirement: QualificationRequirement,
     profile: CompanyProfileSnapshot,
@@ -325,7 +393,12 @@ def _judge_region(
         return _unknown(requirement, preflight_case_id)
     if requirement.operator not in {"MATCH", "="} or requirement.value is None:
         return _unknown(requirement, preflight_case_id, unsupported=True)
-    matched = _string_match(observed, requirement.value)
+    relation = _region_relation(observed, requirement.value)
+    if relation == "too_coarse":
+        # 통합시 단위 프로필로는 종전 시·도 안인지 알 수 없다. 미달로 확정하면 옛 광주
+        # 안에 있는 회사를 떨어뜨린다. 상세 주소를 물어야 하므로 확인 필요로 넘긴다.
+        return _unknown(requirement, preflight_case_id)
+    matched = relation in {"match", "contained"}
     if not matched and not profile.completeness.region:
         return _unknown(requirement, preflight_case_id)
     return _judgment(
@@ -703,9 +776,37 @@ def judge_requirement(
     # 안전 가드가 가장 먼저다. 판정하기 위험한 조항(복합 조건·부정 조건 등)이면
     # 확장 경로라고 예외일 이유가 없다. 순서를 뒤집으면 SW등급 요건이 가드를
     # 우회해서, 하나로 줄일 수 없는 조건을 충족/미충족으로 단정하게 된다.
-    if unsafe_clause_reason(requirement.raw) or requirement.condition_complexity == "composite":
+    #
+    # [2026-09-15] 추출이 가드 평가를 마치고 구조에 새긴 요건(scope.guard == "assessed")은
+    # raw 를 다시 읽지 않는다 — condition_complexity 가 그 결과다. 추출이 ANY_OF 로 담아 둔
+    # 대안 묶음의 raw 에는 '또는' 이 있고, 그것을 여기서 또 읽으면 이미 구조로 표현된 대안을
+    # 다시 막는다(J14: 1257 보유 회사가 적합이 아니라 확인 필요). 표시가 없는 요건(예전 저장
+    # 행, 골든 고정본)은 예전처럼 raw 를 본다.
+    #
+    # 예외 단서가 붙은 코드(scope.guard_reason == EXCEPTION_UNRESOLVED)는 "코드 OR 예외 사실"
+    # 이다(골든 J13~J16 transport). 코드를 실제로 가진 회사는 예외를 따질 것 없이 충족이고,
+    # 없는 회사만 예외 사실이 확인될 때까지 확인 필요다 — 미달로 확정하지 않는다. 그래서
+    # 이 원자는 보통 경로로 판정한 뒤 SATISFIED 가 아니면 UNKNOWN 으로 바꾼다.
+    exception_alternative = (
+        is_guard_assessed(requirement.scope)
+        and requirement.scope.get("guard_reason") == GUARD_REASON_EXCEPTION
+    )
+    if (requirement.condition_complexity == "composite" and not exception_alternative) or (
+        not is_guard_assessed(requirement.scope) and unsafe_clause_reason(requirement.raw)
+    ):
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if exception_alternative:
+        base = _judge_by_type(requirement, profile, preflight_case_id, reference_date)
+        return base if base.status == "SATISFIED" else _unknown(requirement, preflight_case_id)
+    return _judge_by_type(requirement, profile, preflight_case_id, reference_date)
 
+
+def _judge_by_type(
+    requirement: QualificationRequirement,
+    profile: CompanyProfileSnapshot,
+    preflight_case_id: str,
+    reference_date: date,
+) -> Judgment:
     # 공고별 확장 요건은 일반 유형보다 먼저 판정한다. 특히 SW기술자 등급은
     # `_judge_staff` 로도 흘러가면 안 된다 — 같은 요건을 두 번 판정하게 되고,
     # 역할 이름 매칭이라는 더 약한 기준이 결과를 뒤집을 수 있다.

@@ -21,6 +21,30 @@ class DocumentStorage(Protocol):
     def put(self, storage_key: str, source: BinaryIO, content_type: str | None) -> str: ...
 
 
+def build_s3_client(*, region: str | None, endpoint_url: str | None = None):
+    """Build the S3 client used by both storage and signed-download paths.
+
+    ``endpoint_url`` keeps the storage implementation compatible with OCI's
+    S3 Compatibility API while remaining optional for AWS S3.
+    """
+    import boto3
+    from botocore.config import Config
+
+    kwargs: dict[str, object] = {"region_name": region}
+    if endpoint_url:
+        kwargs["endpoint_url"] = endpoint_url.rstrip("/")
+    # OCI's S3 Compatibility API does not accept AWS chunked payload
+    # signatures. Disable payload signing and use path-style addressing; both
+    # settings are also valid for AWS S3 and keep the client deterministic.
+    kwargs["config"] = Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path", "payload_signing_enabled": False},
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+    )
+    return boto3.client("s3", **kwargs)
+
+
 class LocalDocumentStorage:
     def __init__(self, root: str) -> None:
         self.root = Path(root).resolve()
@@ -39,19 +63,24 @@ class LocalDocumentStorage:
 
 
 class S3DocumentStorage:
-    def __init__(self, bucket: str, region: str | None) -> None:
-        import boto3
-
+    def __init__(self, bucket: str, region: str | None, endpoint_url: str | None = None) -> None:
         self.bucket = bucket
-        self.client = boto3.client("s3", region_name=region)
+        self.client = build_s3_client(region=region, endpoint_url=endpoint_url)
 
     def put(self, storage_key: str, source: BinaryIO, content_type: str | None) -> str:
         source.seek(0)
-        extra_args = {"ContentType": content_type} if content_type else None
-        if extra_args:
-            self.client.upload_fileobj(source, self.bucket, storage_key, ExtraArgs=extra_args)
-        else:
-            self.client.upload_fileobj(source, self.bucket, storage_key)
+        # ``upload_fileobj`` may use AWS chunked encoding when the stream length
+        # is unknown. OCI's S3 Compatibility API rejects that transfer mode, so
+        # send a bytes body with a known length instead. The downloader already
+        # bounds each document size, and this keeps AWS S3 behavior unchanged.
+        params: dict[str, object] = {
+            "Bucket": self.bucket,
+            "Key": storage_key,
+            "Body": source.read(),
+        }
+        if content_type:
+            params["ContentType"] = content_type
+        self.client.put_object(**params)
         return storage_key
 
 
@@ -84,6 +113,7 @@ class NoticeDocumentDownloader:
         notice_no: str,
         version_number: int,
         known_storage_by_hash: dict[str, str] | None = None,
+        extract_document: bool = True,
     ) -> None:
         try:
             with self.session.get(
@@ -138,7 +168,8 @@ class NoticeDocumentDownloader:
                     document.downloaded_at = datetime.now(KST)
                     document.download_status = "DOWNLOADED"
                     document.download_error = None
-                    extract_into_document(document, temp)
+                    if extract_document:
+                        extract_into_document(document, temp)
         except (requests.RequestException, OSError, ValueError) as error:
             document.download_status = "FAILED"
             document.download_error = (
@@ -164,7 +195,11 @@ def build_document_storage(settings: Settings) -> tuple[DocumentStorage, str]:
     elif backend == "S3":
         if not settings.document_s3_bucket:
             raise ValueError("DOCUMENT_S3_BUCKET is required when backend is S3")
-        storage = S3DocumentStorage(settings.document_s3_bucket, settings.aws_region)
+        storage = S3DocumentStorage(
+            settings.document_s3_bucket,
+            settings.aws_region,
+            settings.document_s3_endpoint_url,
+        )
         prefix = settings.document_s3_prefix
     else:
         raise ValueError("DOCUMENT_STORAGE_BACKEND must be LOCAL or S3")

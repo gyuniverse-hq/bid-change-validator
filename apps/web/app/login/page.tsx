@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, type SyntheticEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import { Building2, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -16,9 +15,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ApiError } from '@/lib/api';
 import { getCurrentUser, login } from '@/lib/auth';
+import { replaceWith } from '@/lib/navigation';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -27,10 +26,10 @@ export default function LoginPage() {
   useEffect(() => {
     void getCurrentUser()
       .then((current) => {
-        if (current) router.replace('/company');
+        if (current) replaceWith('/company');
       })
       .catch(() => undefined);
-  }, [router]);
+  }, []);
 
   async function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,7 +37,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      router.replace('/company');
+      replaceWith('/company');
     } catch (cause) {
       setError(
         cause instanceof ApiError

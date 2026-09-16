@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import BidNotice, BidNoticeVersion, NoticeChangeHistory
+from .json_safety import sanitize_json_value
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -39,6 +40,7 @@ def _normalized_order(value: str | None) -> str | None:
 
 
 def _payload_hash(item: dict[str, Any]) -> str:
+    item = sanitize_json_value(item)
     canonical = json.dumps(
         item,
         ensure_ascii=False,
@@ -73,6 +75,7 @@ def upsert_notice_change_history(
 
     processed = 0
     for item in items:
+        item = sanitize_json_value(item)
         if _text(item.get("bidNtceNo")) != notice.bid_notice_no:
             continue
         item_name = _text(item.get("chgItemNm"))

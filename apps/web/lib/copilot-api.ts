@@ -1,4 +1,5 @@
 import { apiFetch, ApiError } from './api';
+import type { CopilotEnvelope } from './copilot-v31';
 import type { EvidenceLocation, QualificationQuestion } from './qualification-api';
 
 // Pydantic app/copilot/{chat,contracts,actions}.py is the source of truth.
@@ -13,6 +14,8 @@ export type QualificationRequirement = {
   notice_version_id: string; type: RequirementType; operator: '>=' | '>' | '<=' | '<' | '=' | 'MATCH' | 'RANGE' | null;
   value: number | string | null; unit: string | null; period_months: number | null;
   scope: Record<string, unknown>; required: boolean; raw: string; confidence: number | null; evidence_keys: string[];
+  /* 백엔드 contracts.py의 QualificationRequirement에 있는데 빠져 있던 필드. 판정 입력 비교에 쓴다. (#132 리뷰) */
+  requirement_role: string; condition_complexity: string;
 };
 export type Evidence = {
   evidence_key: string; source_type: 'NOTICE_DOCUMENT' | 'PROPOSAL_DOCUMENT'; document_id: string;
@@ -79,6 +82,8 @@ export type RequirementChange = {
 };
 export type ChangedNoticeResult = { provenance: RevalidationProvenance; changes: RequirementChange[] };
 export type CopilotChatRequest = {
+  response_version?: 'legacy' | '3.1'; conversation_id?: string; context_revision?: number; target_id?: string;
+  job_id?: string; question_id?: string;
   case_id: string; message: string; requirement_key?: string | null; intent?: CopilotIntent | null;
   user_input?: ActionInput | null;
   conversation_context?: ConversationContext;
@@ -86,7 +91,16 @@ export type CopilotChatRequest = {
   public_document_question?: string | null;
   allow_external_processing?: boolean;
 };
+
+export type GuidedQuestion = {
+  question_id: string; label: string; order: number; answer_scope: string;
+  completion_criteria: string[]; required_tools: string[];
+  availability: 'AVAILABLE' | 'BLOCKED'; unavailable_reason: string | null;
+};
+export type GuidedJob = { job_id: string; label: string; order: number; questions: GuidedQuestion[] };
+export type GuidedJobCatalog = { contract_version: 'copilot-guided-jobs-v1'; jobs: GuidedJob[] };
 export type CopilotChatResponse = {
+  envelope?: CopilotEnvelope | null;
   answer: string; intent: CopilotIntent;
   presentation?: Presentation | null; reply_context?: ReplyContext | null;
   // Backend has no discriminator on product_state; narrow by field presence, not intent alone.
@@ -125,6 +139,16 @@ async function post<T>(path: string, payload: CopilotChatRequest | ConfirmAction
 
 export function sendCopilotMessage(payload: CopilotChatRequest, signal?: AbortSignal) {
   return post<CopilotChatResponse>('/api/v1/copilot/chat', payload, signal);
+}
+
+export async function getCopilotJobs(caseId: string, signal?: AbortSignal) {
+  const response = await apiFetch(`/api/v1/copilot/jobs?case_id=${encodeURIComponent(caseId)}`, { signal });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(payload?.error?.message ?? `질문 목록을 불러오지 못했습니다. (${response.status})`,
+      response.status, payload?.error?.code ?? 'HTTP_ERROR');
+  }
+  return response.json() as Promise<GuidedJobCatalog>;
 }
 
 /** Invoke only after explicit confirmation. Pass the server proposal unchanged; never auto-retry. */

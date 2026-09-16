@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     document_max_file_size_bytes: int = 100 * 1024 * 1024
     document_s3_bucket: str | None = None
     document_s3_prefix: str = "notice-documents"
+    document_s3_endpoint_url: str | None = None
     aws_region: str | None = None
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     notice_poll_interval_seconds: int = Field(default=300, ge=30)
@@ -38,6 +39,8 @@ class Settings(BaseSettings):
     notice_poll_page_size: int = Field(default=100, ge=1, le=999)
     notice_poll_max_pages: int = Field(default=10, ge=1, le=100)
     notice_poll_business_types: str = "SERVICE,GOODS,CONSTRUCTION,FOREIGN"
+    notice_history_backfill_batch_size: int = Field(default=10, ge=1, le=100)
+    notice_history_backfill_retry_minutes: int = Field(default=15, ge=1, le=1_440)
     auth_bootstrap_admin_username: str = "admin"
     auth_bootstrap_admin_password: str = "admin"
     auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)

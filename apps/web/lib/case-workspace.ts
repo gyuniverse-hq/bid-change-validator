@@ -22,6 +22,8 @@ import {
   type QualificationQuestion,
 } from '@/lib/qualification-api';
 
+const CURRENT_QUALIFICATION_RULE_VERSION = 'qualification-rules-v0.3';
+
 export type CaseWorkspace = {
   caseItem: PreflightCase;
   notice: BidNoticeDetail;
@@ -30,6 +32,8 @@ export type CaseWorkspace = {
   baselineAnalysis: QualificationAnalysisSummary | null;
   currentAnalysis: QualificationAnalysisSummary | null;
   currentAnalysisDetail: QualificationAnalysisRun | null;
+  // 기준 차수의 분석 본문. 1차/2차 보기 전환은 분석과 판정을 한 쌍으로 같이 바꿔야 해서 둘 다 필요하다.
+  baselineAnalysisDetail: QualificationAnalysisRun | null;
   sourceJudgment: QualificationJudgmentRun | null;
   displayJudgment: QualificationJudgmentRun | null;
   questions: QualificationQuestion[];
@@ -51,10 +55,6 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
 
   const currentAnalysis = currentAnalyses[0] ?? null;
   const baselineAnalysis = baselineAnalyses[0] ?? null;
-  const currentAnalysisDetail = currentAnalysis
-    ? await getQualificationAnalysis(currentAnalysis.id)
-    : null;
-
   const baselineVersionId = versions.find(
     (item) => item.version_number === caseItem.baseline_version_number,
   )?.id;
@@ -71,16 +71,21 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     judgmentSummaries.find((item) => judgmentMatchesAnalysis(item, currentAnalysis, caseItem.company_id));
   const sourceSummary = baselineVersionId ? baselineSummary : displaySummary;
 
-  const [source, display] = await Promise.all([
+  const [currentAnalysisDetail, baselineAnalysisDetail, source, display, questions] = await Promise.all([
+    currentAnalysis
+      ? getQualificationAnalysis(currentAnalysis.id)
+      : Promise.resolve(null),
+    baselineAnalysis && baselineAnalysis.id !== currentAnalysis?.id
+      ? getQualificationAnalysis(baselineAnalysis.id)
+      : Promise.resolve(null),
     sourceSummary && sourceSummary.id !== displaySummary?.id ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
     displaySummary ? getQualificationJudgment(displaySummary.id) : Promise.resolve(null),
+    displaySummary
+      ? listQualificationQuestions(caseItem.id, displaySummary.id)
+      : Promise.resolve([]),
   ]);
-  const displayJudgment = display?.rule_version === 'qualification-rules-v0.2' ? display : null;
-  const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === 'qualification-rules-v0.2' ? source : null;
-
-  const questions = displayJudgment
-    ? await listQualificationQuestions(caseItem.id, displayJudgment.id)
-    : [];
+  const displayJudgment = display?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? display : null;
+  const sourceJudgment = sourceSummary?.id === displaySummary?.id ? displayJudgment : source?.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? source : null;
 
   return {
     caseItem,
@@ -90,9 +95,10 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     baselineAnalysis,
     currentAnalysis,
     currentAnalysisDetail,
+    baselineAnalysisDetail,
     sourceJudgment,
     displayJudgment,
-    questions,
+    questions: displayJudgment ? questions : [],
   };
 }
 
@@ -105,7 +111,14 @@ export function currentVersion(workspace: CaseWorkspace) {
 }
 
 export function judgmentMatchesAnalysis(judgment: QualificationJudgmentSummary, analysis: QualificationAnalysisSummary | null, companyId: string | null) {
-  return Boolean(analysis && analysis.status !== 'FAILED' && judgment.analysis_run_id === analysis.id && judgment.notice_version_id === analysis.notice_version_id && judgment.company_id === companyId);
+  return Boolean(
+    analysis
+    && analysis.status !== 'FAILED'
+    && judgment.analysis_run_id === analysis.id
+    && judgment.notice_version_id === analysis.notice_version_id
+    && judgment.company_id === companyId
+    && judgment.rule_version === CURRENT_QUALIFICATION_RULE_VERSION
+  );
 }
 
 export async function loadCurrentJudgment(caseItem: PreflightCase) {
@@ -116,7 +129,7 @@ export async function loadCurrentJudgment(caseItem: PreflightCase) {
   const summary = judgments.find((item) => judgmentMatchesAnalysis(item, analyses[0] ?? null, caseItem.company_id));
   if (!summary) return null;
   const run = await getQualificationJudgment(summary.id);
-  return run.rule_version === 'qualification-rules-v0.2' ? run : null;
+  return run.rule_version === CURRENT_QUALIFICATION_RULE_VERSION ? run : null;
 }
 
 export function useCaseWorkspace(caseId: string | null) {

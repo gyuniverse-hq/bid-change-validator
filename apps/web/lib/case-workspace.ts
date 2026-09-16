@@ -32,6 +32,8 @@ export type CaseWorkspace = {
   baselineAnalysis: QualificationAnalysisSummary | null;
   currentAnalysis: QualificationAnalysisSummary | null;
   currentAnalysisDetail: QualificationAnalysisRun | null;
+  // 기준 차수의 분석 본문. 1차/2차 보기 전환은 분석과 판정을 한 쌍으로 같이 바꿔야 해서 둘 다 필요하다.
+  baselineAnalysisDetail: QualificationAnalysisRun | null;
   sourceJudgment: QualificationJudgmentRun | null;
   displayJudgment: QualificationJudgmentRun | null;
   questions: QualificationQuestion[];
@@ -69,9 +71,12 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     judgmentSummaries.find((item) => judgmentMatchesAnalysis(item, currentAnalysis, caseItem.company_id));
   const sourceSummary = baselineVersionId ? baselineSummary : displaySummary;
 
-  const [currentAnalysisDetail, source, display, questions] = await Promise.all([
+  const [currentAnalysisDetail, baselineAnalysisDetail, source, display, questions] = await Promise.all([
     currentAnalysis
       ? getQualificationAnalysis(currentAnalysis.id)
+      : Promise.resolve(null),
+    baselineAnalysis && baselineAnalysis.id !== currentAnalysis?.id
+      ? getQualificationAnalysis(baselineAnalysis.id)
       : Promise.resolve(null),
     sourceSummary && sourceSummary.id !== displaySummary?.id ? getQualificationJudgment(sourceSummary.id) : Promise.resolve(null),
     displaySummary ? getQualificationJudgment(displaySummary.id) : Promise.resolve(null),
@@ -90,6 +95,7 @@ export async function loadCaseWorkspace(caseId: string): Promise<CaseWorkspace> 
     baselineAnalysis,
     currentAnalysis,
     currentAnalysisDetail,
+    baselineAnalysisDetail,
     sourceJudgment,
     displayJudgment,
     questions: displayJudgment ? questions : [],

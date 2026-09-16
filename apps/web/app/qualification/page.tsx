@@ -12,7 +12,7 @@ import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DIAGNOSTIC_CODE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, evidenceLocationText, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -49,12 +49,74 @@ type ReviewStep = 'idle' | 'analysis' | 'judgment' | 'done';
 type RequirementView = {
   requirement: CanonicalRequirement;
   judgment: QualificationJudgment | null;
+  status: QualificationRowStatus;
+  satisfiedByGroupPeer: boolean;
   evidenceLabel: string;
 };
 
 
 function judgmentStatus(value: QualificationJudgment | null): QualificationRowStatus {
   return value?.status ?? 'UNJUDGED';
+}
+
+/*
+  ── 택일(ANY_OF) 그룹 ──────────────────────────────────────────────
+  백엔드는 요건 하나하나에 판정을 내려준다. 그런데 「폐기물중간처분업(1257) 또는
+  폐기물중간재활용업(6770) 또는 폐기물종합재활용업(6786)」처럼 requirement_group_key를
+  공유하고 group_operator가 ANY_OF인 묶음은 하나만 충족해도 그룹 전체가 충족이다.
+  이걸 화면이 모르면 1257을 가진 회사가 6770·6786 미보유 때문에 미달로 표시된다.
+  요건별 판정을 그대로 합산하지 말고 그룹 단위로 접어서 쓴다.
+*/
+function anyOfGroupKey(requirement: CanonicalRequirement) {
+  return requirement.group_operator === 'ANY_OF' ? requirement.requirement_group_key : null;
+}
+
+function resolveRequirementStatuses(
+  requirements: CanonicalRequirement[],
+  judgments: QualificationJudgment[],
+): Map<string, QualificationRowStatus> {
+  const statusOf = new Map<string, QualificationRowStatus>(judgments.map((item) => [item.requirement_key, item.status]));
+  const resolved = new Map<string, QualificationRowStatus>();
+  const groups = new Map<string, CanonicalRequirement[]>();
+
+  for (const requirement of requirements) {
+    const groupKey = anyOfGroupKey(requirement);
+    if (groupKey) {
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), requirement]);
+      continue;
+    }
+    resolved.set(requirement.requirement_key, statusOf.get(requirement.requirement_key) ?? 'UNJUDGED');
+  }
+
+  for (const members of groups.values()) {
+    const statuses = members.map((item) => statusOf.get(item.requirement_key) ?? 'UNJUDGED');
+    // 하나라도 충족이면 그룹 충족. 아니면 아직 모르는 게 남았는지 보고, 그것도 없을 때만 미달이다.
+    const groupStatus: QualificationRowStatus = statuses.includes('SATISFIED')
+      ? 'SATISFIED'
+      : statuses.includes('UNKNOWN')
+        ? 'UNKNOWN'
+        : statuses.includes('UNSATISFIED')
+          ? 'UNSATISFIED'
+          : 'UNJUDGED';
+    for (const member of members) resolved.set(member.requirement_key, groupStatus);
+  }
+
+  return resolved;
+}
+
+/* 결론 카드의 충족·확인 필요·미달 건수. 택일 그룹은 구성원 수만큼이 아니라 한 건으로 센다. */
+function countByStatus(requirements: CanonicalRequirement[], statuses: Map<string, QualificationRowStatus>) {
+  const counted = new Set<string>();
+  const counts: Record<QualificationRowStatus, number> = { SATISFIED: 0, UNSATISFIED: 0, UNKNOWN: 0, UNJUDGED: 0 };
+  for (const requirement of requirements) {
+    const groupKey = anyOfGroupKey(requirement);
+    if (groupKey) {
+      if (counted.has(groupKey)) continue;
+      counted.add(groupKey);
+    }
+    counts[statuses.get(requirement.requirement_key) ?? 'UNJUDGED'] += 1;
+  }
+  return counts;
 }
 
 function overallCopy(status: QualificationJudgmentRun['overall_status'] | undefined) {
@@ -107,6 +169,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   const [baselineAnalysis, setBaselineAnalysis] = useState<QualificationAnalysisSummary | null>(null);
   const [currentAnalysis, setCurrentAnalysis] = useState<QualificationAnalysisSummary | null>(null);
   const [analysisDetail, setAnalysisDetail] = useState<QualificationAnalysisRun | null>(null);
+  const [baselineAnalysisDetail, setBaselineAnalysisDetail] = useState<QualificationAnalysisRun | null>(null);
+  // 어느 차수 기준으로 볼지. 기본은 현재 차수다. 기준 차수가 없는 검토 건에서는 토글 자체가 안 뜬다.
+  const [judgmentView, setJudgmentView] = useState<'baseline' | 'current'>('current');
   const [sourceJudgment, setSourceJudgment] = useState<QualificationJudgmentRun | null>(null);
   const [displayJudgment, setDisplayJudgment] = useState<QualificationJudgmentRun | null>(null);
   const [questions, setQuestions] = useState<QualificationQuestion[]>([]);
@@ -176,6 +241,13 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     if (request === generation.current) setAnalysisDetail(detail);
   }
 
+  async function loadBaselineAnalysisDetail(summary: QualificationAnalysisSummary | QualificationAnalysisRun | null, request: number) {
+    if (!summary) return setBaselineAnalysisDetail(null);
+    if ('requirements' in summary) return setBaselineAnalysisDetail(summary);
+    const detail = await getQualificationAnalysis(summary.id);
+    if (request === generation.current) setBaselineAnalysisDetail(detail);
+  }
+
   const generation = useRef(0);
 
   const initialize = useCallback(async () => {
@@ -196,6 +268,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       setBaselineAnalysis(workspace.baselineAnalysis);
       setCurrentAnalysis(workspace.currentAnalysis);
       setAnalysisDetail(workspace.currentAnalysisDetail);
+      setBaselineAnalysisDetail(workspace.baselineAnalysisDetail);
+      setJudgmentView('current');
       setSourceJudgment(workspace.sourceJudgment);
       setDisplayJudgment(workspace.displayJudgment);
       setQuestions(workspace.questions);
@@ -320,7 +394,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       if (request !== generation.current) return;
       setBaselineAnalysis(baseline);
       setCurrentAnalysis(current);
-      await loadAnalysisDetail(current, request);
+      // 기준 차수 본문도 같이 갱신한다. 판정만 새로 받고 분석을 그대로 두면
+      // 기준 차수 보기에서 옛 요건과 새 판정의 requirement_key가 어긋나 전부 미판정으로 나온다.
+      await Promise.all([
+        loadAnalysisDetail(current, request),
+        loadBaselineAnalysisDetail(sameVersion ? null : baseline, request),
+      ]);
       if (request !== generation.current) return;
 
       setReviewStep('judgment');
@@ -352,21 +431,100 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     }
   }
 
-  const views: RequirementView[] = useMemo(() => {
-    if (!analysisDetail) return [];
-    return analysisDetail.requirements.map((requirement) => {
-      const judgment = displayJudgment?.judgments.find((item) => item.requirement_key === requirement.requirement_key) ?? null;
-      const evidenceKey = requirement.evidence_keys[0];
-      // evidence_key(REQ-004-EVD)는 내부 식별자다. 누르면 원문이 열리므로 무엇을 하는 버튼인지 쓴다.
-      return { requirement, judgment, evidenceLabel: evidenceKey ? '근거 보기' : '근거 없음' };
-    });
-  }, [analysisDetail, displayJudgment]);
+  /*
+    1차 / 2차 보기.
 
-  const selectedEvidence = selectedEvidenceKey ? analysisDetail?.evidence.find((item) => item.evidence_key === selectedEvidenceKey) ?? null : null;
-  const satisfied = displayJudgment?.judgments.filter((item) => item.status === 'SATISFIED').length ?? 0;
-  const unknown = displayJudgment?.judgments.filter((item) => item.status === 'UNKNOWN').length ?? 0;
-  const unsatisfied = displayJudgment?.judgments.filter((item) => item.status === 'UNSATISFIED').length ?? 0;
-  const [conclusionTitle, conclusionDescription] = overallCopy(displayJudgment?.overall_status);
+    요건 목록은 분석 결과에서 오고, 판정은 「그 분석」을 기준으로 내려진 것이다.
+    그래서 둘을 한 쌍으로 같이 바꾼다. 판정만 바꾸면 2차 요건 목록에 1차 판정이 붙어
+    실제로는 없는 화면이 만들어진다.
+
+    기준 차수 보기는 읽기 전용이다. 확인 필요 답변과 재검토는 현재 차수 판정에 묶여 있다.
+  */
+  const canViewBaseline = Boolean(
+    baselineVersion
+      && currentVersion
+      && baselineVersion.id !== currentVersion.id
+      && baselineAnalysisDetail
+      && sourceJudgment
+      && sourceJudgment.notice_version_id === baselineVersion.id,
+  );
+  const viewingBaseline = judgmentView === 'baseline' && canViewBaseline;
+  const shownAnalysis = viewingBaseline ? baselineAnalysisDetail : analysisDetail;
+  const shownJudgment = viewingBaseline ? sourceJudgment : displayJudgment;
+
+  /*
+    차수 간 요건 구성 차이.
+
+    요건 수가 다르면 미달이 줄어든 것만 보고 「좋아졌다」고 읽기 쉽다. 빠진 요건은 판정에 아예 들어가지
+    않았을 뿐이라 충족된 것이 아니다. 왜 빠졌는지(공고가 조건을 뺐는지, 분석이 놓쳤는지)를 가르는 건
+    원문을 나란히 놓는 변경 이력의 일이라, 여기서는 사실만 알리고 그쪽으로 보낸다.
+  */
+  const versionRequirementGap = useMemo(() => {
+    if (!canViewBaseline || !baselineAnalysisDetail || !analysisDetail) return null;
+    // requirement_key는 차수마다 새로 만들어져서 같은 요건이라도 값이 달라진다.
+    // 키로 비교하면 업종 하나가 양쪽 목록에 동시에 뜨므로 요건 종류로 비교한다.
+    const typeLabels = (list: typeof baselineAnalysisDetail.requirements) => new Set(
+      list.map((item) => REQUIREMENT_TYPE_LABEL[item.type] ?? item.type),
+    );
+    const baselineTypes = typeLabels(baselineAnalysisDetail.requirements);
+    const currentTypes = typeLabels(analysisDetail.requirements);
+    const droppedInCurrent = Array.from(baselineTypes).filter((label) => !currentTypes.has(label));
+    const addedInCurrent = Array.from(currentTypes).filter((label) => !baselineTypes.has(label));
+    const baselineCount = baselineAnalysisDetail.requirements.length;
+    const currentCount = analysisDetail.requirements.length;
+    /*
+      종류만 비교하면 값이 바뀐 변경을 통째로 놓친다 — 남원처럼 v1 INDUSTRY 1224가
+      v2 INDUSTRY 1227로 바뀌면 양쪽 다 「업종」이고 건수도 같아서 아무 안내도 안 뜬다.
+      완전한 diff는 변경 이력 화면의 일이고, 여기서는 내용이 달라졌다는 사실까지만 잡는다. (#147 리뷰)
+    */
+    const signatures = (list: typeof baselineAnalysisDetail.requirements) => new Set(
+      list.map((item) => [item.type, item.operator ?? '', String(item.value ?? ''), item.group_operator ?? ''].join('|')),
+    );
+    const baselineSignatures = signatures(baselineAnalysisDetail.requirements);
+    const currentSignatures = signatures(analysisDetail.requirements);
+    const contentDiffers = baselineSignatures.size !== currentSignatures.size
+      || Array.from(baselineSignatures).some((item) => !currentSignatures.has(item));
+    // 종류는 같아도 건수가 달라질 수 있고(업종 2건 → 4건), 건수는 같아도 종류가 바뀔 수 있다.
+    // 둘 중 하나라도 어긋나면 두 차수의 숫자를 그대로 비교할 수 없으므로 알린다.
+    const countsDiffer = baselineCount !== currentCount;
+    if (!countsDiffer && !droppedInCurrent.length && !addedInCurrent.length && !contentDiffers) return null;
+    return {
+      baselineCount,
+      currentCount,
+      countsDiffer,
+      contentDiffers,
+      droppedInCurrent,
+      addedInCurrent,
+    };
+  }, [canViewBaseline, baselineAnalysisDetail, analysisDetail]);
+
+  const resolvedStatuses = useMemo(
+    () => resolveRequirementStatuses(shownAnalysis?.requirements ?? [], shownJudgment?.judgments ?? []),
+    [shownAnalysis, shownJudgment],
+  );
+
+  const views: RequirementView[] = useMemo(() => {
+    if (!shownAnalysis) return [];
+    return shownAnalysis.requirements.map((requirement) => {
+      const judgment = shownJudgment?.judgments.find((item) => item.requirement_key === requirement.requirement_key) ?? null;
+      const evidenceKey = requirement.evidence_keys[0];
+      const status = resolvedStatuses.get(requirement.requirement_key) ?? judgmentStatus(judgment);
+      // 이 요건 자체는 충족이 아닌데 같은 택일 묶음의 다른 요건이 충족시킨 경우. 표에서 왜 충족인지 말해야 한다.
+      const satisfiedByGroupPeer = status === 'SATISFIED' && judgment?.status !== 'SATISFIED';
+      // evidence_key(REQ-004-EVD)는 내부 식별자다. 누르면 원문이 열리므로 무엇을 하는 버튼인지 쓴다.
+      return { requirement, judgment, status, satisfiedByGroupPeer, evidenceLabel: evidenceKey ? '근거 보기' : '근거 없음' };
+    });
+  }, [shownAnalysis, shownJudgment, resolvedStatuses]);
+
+  const selectedEvidence = selectedEvidenceKey ? shownAnalysis?.evidence.find((item) => item.evidence_key === selectedEvidenceKey) ?? null : null;
+  const statusCounts = useMemo(
+    () => countByStatus(shownAnalysis?.requirements ?? [], resolvedStatuses),
+    [shownAnalysis, resolvedStatuses],
+  );
+  const satisfied = statusCounts.SATISFIED;
+  const unknown = statusCounts.UNKNOWN;
+  const unsatisfied = statusCounts.UNSATISFIED;
+  const [conclusionTitle, conclusionDescription] = overallCopy(shownJudgment?.overall_status);
   const canRevalidate = Boolean(
     activeCase?.baseline_version_number
       && activeCase.baseline_version_number !== activeCase.current_version_number
@@ -376,7 +534,10 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
       && baselineVersion
       && sourceJudgment.notice_version_id === baselineVersion.id,
   );
-  const askableQuestionKeys = new Set(questions.filter((item) => item.askable).map((item) => item.requirement_key));
+  // 확인 필요 답변은 현재 차수 판정에만 붙는다. 기준 차수를 보는 중에는 조치를 걸지 않는다.
+  const askableQuestionKeys = new Set(
+    viewingBaseline ? [] : questions.filter((item) => item.askable).map((item) => item.requirement_key),
+  );
   const analysisNeedsRetry = Boolean(analysisDetail && (analysisDetail.status !== 'SUCCEEDED' || analysisDetail.requirements.length === 0));
 
   /**
@@ -393,16 +554,21 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   // P0-5 · 판정에 들어가지 못한 조건은 두 갈래로 들어온다. 성격이 달라서 한 자리에 섞어 그리면 안 된다.
   //  · NOTICE_FACT 진단 — 공고에서 확인했지만 회사 프로필과 대조할 수 없는 사실. 근거(evidence_keys)가 있다.
   //  · dropped_requirements — 공고 원문 대조를 통과하지 못해 구조화에서 빠진 후보. raw·reason_code만 온다.
-  const noticeFacts = analysisDetail?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT') ?? [];
-  const pipelineDiagnostics = analysisDetail?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
-  const droppedRequirements = analysisDetail?.dropped_requirements ?? [];
+  // 아래 블록들은 보고 있는 차수(shownAnalysis)를 따라간다. 현재 차수 고정으로 두면
+  // 기준 v1을 보는 중에도 v2의 진단·제외 요건·건수가 섞여 나온다. (#147 리뷰 필수 1)
+  const noticeFacts = shownAnalysis?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT') ?? [];
+  const pipelineDiagnostics = shownAnalysis?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
+  const shownDiagnostics = pipelineDiagnostics
+    .map((item) => ({ code: item.code, text: diagnosticText(item.code) }))
+    .filter((item): item is { code: string; text: string } => Boolean(item.text));
+  const droppedRequirements = shownAnalysis?.dropped_requirements ?? [];
 
   // 판정 밖 조건도 셋으로 갈린다 — 아직 안 돌렸다 / 못 읽었다 / 확인했더니 없다.
   // 0건일 때도 이 자리에서 말해야 한다. 아무 말도 안 하면 「빠진 게 없다」를 사용자가 알 수 없다.
   const unjudgedCount = noticeFacts.length + droppedRequirements.length;
-  const unjudgedState: 'NOT_RUN' | 'FAILED' | 'DONE' = !analysisDetail
+  const unjudgedState: 'NOT_RUN' | 'FAILED' | 'DONE' = !shownAnalysis
     ? 'NOT_RUN'
-    : analysisDetail.status === 'FAILED'
+    : shownAnalysis.status === 'FAILED'
       ? 'FAILED'
       : 'DONE';
 
@@ -414,13 +580,15 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     : droppedRequirements.slice(0, Math.max(0, UNJUDGED_PREVIEW - previewNoticeFacts.length));
   const hiddenUnjudgedCount = unjudgedCount - previewNoticeFacts.length - previewDropped.length;
 
-  // message는 code별 고정 문구다. 걸린 code가 하나뿐이면 열 줄 모두 같은 문장이 되므로
+  // 문구는 code별 고정이다. 걸린 code가 하나뿐이면 열 줄 모두 같은 문장이 되므로
   // 항목마다 반복하지 않고 목록 머리에 한 번만 쓴다. 종류가 섞여 있으면 항목별로 둔다.
-  const noticeFactMessages = Array.from(new Set(noticeFacts.map((item) => item.message)));
+  const noticeFactMessages = Array.from(
+    new Set(noticeFacts.map((item) => diagnosticText(item.code)).filter((text): text is string => Boolean(text))),
+  );
   const sharedNoticeFactMessage = noticeFactMessages.length === 1 ? noticeFactMessages[0] : null;
 
   // 실행 전·실패는 「세어본 적이 없는」 상태다. 0으로 적으면 확인 후 0건으로 읽힌다 — #119 리뷰.
-  const countedAnalysis = analysisDetail && analysisDetail.status !== 'FAILED' ? analysisDetail : null;
+  const countedAnalysis = shownAnalysis && shownAnalysis.status !== 'FAILED' ? shownAnalysis : null;
 
   /*
     첨부가 0종이면 「읽지 못했다」가 아니라 「읽을 것이 없었다」다.
@@ -488,8 +656,66 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             <CaseTabs caseId={activeCase.id} active="qualification" />
 
+            {/* ── 1-1 어느 차수 기준으로 보는가 ── */}
+            {canViewBaseline && (
+              <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="inline-flex rounded-full border border-[var(--product-line)] bg-white p-1">
+                  <button
+                    type="button"
+                    aria-pressed={viewingBaseline}
+                    onClick={() => setJudgmentView('baseline')}
+                    className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${viewingBaseline ? 'bg-[var(--product-ink)] text-white' : 'text-[var(--product-muted)] hover:bg-[var(--product-tint)]'}`}
+                  >
+                    기준 v{activeCase.baseline_version_number}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={!viewingBaseline}
+                    onClick={() => setJudgmentView('current')}
+                    className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${!viewingBaseline ? 'bg-[var(--product-ink)] text-white' : 'text-[var(--product-muted)] hover:bg-[var(--product-tint)]'}`}
+                  >
+                    현재 v{activeCase.current_version_number}
+                  </button>
+                </div>
+                <p className="text-[13px] text-[var(--product-muted)]">
+                  {viewingBaseline
+                    ? `기준 차수(v${activeCase.baseline_version_number}) 공고문으로 내린 판정입니다. 읽기 전용이라 답변과 재검토는 현재 차수에서만 됩니다.`
+                    : `현재 차수(v${activeCase.current_version_number}) 공고문으로 내린 판정입니다.`}
+                </p>
+              </div>
+            )}
+
+            {versionRequirementGap && (
+              <section className="mt-4 rounded-[18px] border border-[var(--product-warn-line)] bg-[var(--product-warn-soft)] px-5 py-4">
+                <strong className="text-[15px] text-[var(--product-warn)]">
+                  {versionRequirementGap.countsDiffer
+                    ? '두 차수의 요건 수가 다릅니다'
+                    : versionRequirementGap.droppedInCurrent.length || versionRequirementGap.addedInCurrent.length
+                      ? '두 차수의 요건 구성이 다릅니다'
+                      : '두 차수의 요건 내용이 다릅니다'} — 기준 v{activeCase.baseline_version_number} {versionRequirementGap.baselineCount}건 · 현재 v{activeCase.current_version_number} {versionRequirementGap.currentCount}건
+                </strong>
+                {versionRequirementGap.droppedInCurrent.length > 0 && (
+                  <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">
+                    현재 차수에 없는 요건 — {versionRequirementGap.droppedInCurrent.join(' · ')}
+                  </p>
+                )}
+                {versionRequirementGap.addedInCurrent.length > 0 && (
+                  <p className="mt-1 text-[15px] leading-6 text-[var(--product-body)]">
+                    기준 차수에 없던 요건 — {versionRequirementGap.addedInCurrent.join(' · ')}
+                  </p>
+                )}
+                <p className="mt-2 text-[13px] leading-[1.7] text-[var(--product-muted)]">
+                  {versionRequirementGap.droppedInCurrent.length > 0
+                    ? '빠진 요건은 판정에서 제외됩니다. 미달이 줄어도 충족된 것은 아닙니다. 요건이 왜 빠졌는지는 변경 이력에서 원문으로 확인해 주세요.'
+                    : versionRequirementGap.addedInCurrent.length > 0 || versionRequirementGap.countsDiffer
+                      ? '요건 구성이 달라 두 차수의 건수를 그대로 비교할 수 없습니다. 무엇이 달라졌는지는 변경 이력에서 원문으로 확인해 주세요.'
+                      : '요건 수와 종류는 같지만 조건 값이 달라진 요건이 있습니다. 무엇이 달라졌는지는 변경 이력에서 원문으로 확인해 주세요.'}
+                </p>
+              </section>
+            )}
+
             {/* ── 2 결론 — 이 화면에 온 이유에 먼저 답한다 ── */}
-            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
+            <div className="mt-6"><ConclusionBox title={conclusionTitle} description={conclusionDescription} satisfied={satisfied} unknown={unknown} unsatisfied={unsatisfied} action={<div className="flex gap-2"><Button onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked || viewingBaseline}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{displayJudgment ? '다시 검토' : '참가자격 검토 시작'}</Button>{!viewingBaseline && analysisNeedsRetry && <Badge className="self-center bg-amber-100 text-amber-800">기존 분석 {analysisDetail ? analysisStatusLabel(analysisDetail.status) : '없음'} · 새로 분석합니다</Badge>}</div>} /></div>
 
             {/* ── 3 결론의 신뢰도 — 첨부를 다 읽지 못했으면 여기서 말한다 ── */}
             {/* S-9 · 첨부를 다 읽지 못한 경우를 판정과 같은 화면에서 말한다. PARTIAL을 SUCCEEDED처럼 그리면 빠진 조건이 사용자에게 안 보인다. */}
@@ -507,14 +733,24 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
 
             {/* ── 5 왜 그 결론인지 — 요건별 판정과 근거 ── */}
             <section className="mt-10">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.</p></div><span className="text-[15px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {displayJudgment?.judgments.length ?? 0}건</span></div>
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-[28px] font-extrabold tracking-[-0.035em]">참가 자격 (필수)</h2><p className="mt-1 text-[15px] text-[var(--product-muted)]">{canViewBaseline ? `v${viewingBaseline ? activeCase.baseline_version_number : activeCase.current_version_number} 공고 원문에서 구조화한 자격요건과 그 근거입니다.` : '공고 원문에서 구조화한 자격요건과 그 근거를 기준으로 표시합니다.'}</p></div><span className="text-[15px] text-[var(--product-muted)]">구조화 {views.length}건 · 판정 {shownJudgment?.judgments.length ?? 0}건</span></div>
               <div className="mt-4 overflow-hidden rounded-[18px] border border-[var(--product-line)] bg-white">
                 <div className="hidden min-h-[45px] grid-cols-[152px_minmax(0,1.9fr)_minmax(190px,0.8fr)_170px_160px] items-center bg-[var(--product-tint)] text-[13px] font-semibold text-[var(--product-muted)] lg:grid"><div className="px-3">판정</div><div className="px-3">참가 자격 조건</div><div className="px-3">비교 값 / 판정 근거</div><div className="px-3">근거</div><div className="px-3">조치</div></div>
-                {views.length ? views.map(({ requirement, judgment, evidenceLabel }) => {
+                {views.length ? views.map(({ requirement, judgment, status, satisfiedByGroupPeer, evidenceLabel }) => {
                   const askable = askableQuestionKeys.has(requirement.requirement_key);
                   const evidenceHref = `/evidence?caseId=${activeCase.id}${requirement.evidence_keys[0] ? `&evidence=${encodeURIComponent(requirement.evidence_keys[0])}` : ''}`;
-                  return <QualificationRow key={requirement.requirement_key} status={judgmentStatus(judgment)} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValue(requirement, company, judgment)} evidenceLabel={evidenceLabel} actionLabel={judgment?.status === 'UNKNOWN' ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={judgment?.status === 'UNKNOWN' ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
-                }) : <div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
+                  /*
+                    조치는 ① 그룹 판정 기준으로 걸고 ② 현재 차수에서만 건다.
+                    ①이 없으면 이미 충족된 택일 그룹인데 개별 요건이 UNKNOWN이라고 다시 묻는다.
+                    ②가 없으면 기준 v1 요건에서 「원문 확인」을 눌렀을 때 Evidence 화면이 현재 차수 분석만 써서
+                    같은 evidence key를 가진 v2 근거가 열린다. 기준 차수에서는 같은 화면의 「근거 보기」만 쓴다. (#147 리뷰 필수 2)
+                  */
+                  const actionable = !viewingBaseline && status === 'UNKNOWN';
+                  const companyValueText = satisfiedByGroupPeer
+                    ? `${companyValue(requirement, company, judgment)} · 택일 조건이라 같은 묶음의 다른 요건으로 충족`
+                    : companyValue(requirement, company, judgment);
+                  return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { router.push(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
+                }) :<div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
             {/*
@@ -531,7 +767,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   <p className="mt-2 text-[15px] leading-6 text-[var(--product-muted)]">기준 차수와 현재 차수가 모두 있으면 변경된 자격요건만 다시 판정합니다.</p>
                   {revalidation && <p className="mt-3 text-[15px]">다시 판정한 자격요건 <strong>{revalidation.revalidated_keys.length}건</strong></p>}
                 </div>
-                <Button variant="outline" className="shrink-0" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>
+                {/* 기준 차수는 읽기 전용이다. 「다시 검토」를 막아뒀으니 재검증 제안도 같이 막는다. (#147 리뷰) */}
+                <Button variant="outline" className="shrink-0" onClick={() => void controller.propose(activeCase.id, true)} disabled={!canRevalidate || busy !== null || actionLocked || viewingBaseline}>{actionLocked ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button>
               </div>
             </section>
 
@@ -569,12 +806,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                       {/* 무엇이 걸렸는지는 근거 원문으로만 구분된다. 공통 문구는 위에서 한 번 말했다. */}
                       {previewNoticeFacts.map((item, index) => {
                         const evidenceKey = item.evidence_keys[0];
-                        const evidence = evidenceKey ? analysisDetail?.evidence.find((row) => row.evidence_key === evidenceKey) ?? null : null;
+                        const evidence = evidenceKey ? shownAnalysis?.evidence.find((row) => row.evidence_key === evidenceKey) ?? null : null;
                         const locationText = evidence ? evidenceLocationText(evidence.location) : null;
                         return (
                           <li key={`${item.code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
                             {evidence && <p className="text-[15px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
-                            {!sharedNoticeFactMessage && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{item.message}</p>}
+                            {!sharedNoticeFactMessage && diagnosticText(item.code) && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{diagnosticText(item.code)}</p>}
                             {locationText && <p className="mt-1 text-[13px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
                             {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
@@ -636,8 +873,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 </div>
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">분석 상태</span>
-                  <strong className="mt-0.5 block text-[15px]">{analysisDetail ? analysisStatusLabel(analysisDetail.status) : '분석 전'}</strong>
-                  <p className="text-[13px] text-[var(--product-muted)]">{analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p>
+                  <strong className="mt-0.5 block text-[15px]">{shownAnalysis ? analysisStatusLabel(shownAnalysis.status) : '분석 전'}</strong>
+                  {/* 재분석은 현재 차수에만 건다. 기준 차수는 읽기 전용이라 「재분석 권장」을 띄우면 안 된다. */}
+                  <p className="text-[13px] text-[var(--product-muted)]">{viewingBaseline ? '기준 차수 · 읽기 전용' : analysisNeedsRetry ? '재분석 권장' : currentAnalysis ? '사용 가능' : '미실행'}</p>
                 </div>
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">자격요건 · 근거</span>
@@ -651,10 +889,12 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 <div>
                   <span className="text-[13px] text-[var(--product-muted)]">확인 필요</span>
                   <strong className="mt-0.5 block text-[15px]">{unknown}건</strong>
-                  <p className="text-[13px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p>
+                  {/* 확인 필요 답변은 현재 차수 판정에만 붙는다. 기준 차수를 보는 중에는 질문 가능 건수도 0이다. */}
+                  <p className="text-[13px] text-[var(--product-muted)]">사용자 질문 가능 {viewingBaseline ? 0 : questions.filter((item) => item.askable).length}건</p>
                 </div>
               </div>
-              {pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} title={item.code} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">{DIAGNOSTIC_CODE_LABEL[item.code] ?? item.message}</p>)}</div> : null}
+              {/* 문구가 없는 코드는 줄 자체를 그리지 않는다. 백엔드 개발자용 message는 화면에 내보내지 않는다. */}
+              {shownDiagnostics.length ? <div className="mt-4 space-y-2">{shownDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} title={item.code} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">{item.text}</p>)}</div> : null}
             </section>
 
             {/* ── 9 공고 원본 정보 ── */}

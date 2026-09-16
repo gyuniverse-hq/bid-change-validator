@@ -19,7 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ...ai.contracts import Judgment, QualificationRequirement
-from .clause_safety import is_guard_assessed, unsafe_clause_reason
+from .clause_safety import GUARD_REASON_EXCEPTION, is_guard_assessed, unsafe_clause_reason
 
 
 RULE_VERSION = "qualification-rules-v0.3"
@@ -782,11 +782,31 @@ def judge_requirement(
     # 대안 묶음의 raw 에는 '또는' 이 있고, 그것을 여기서 또 읽으면 이미 구조로 표현된 대안을
     # 다시 막는다(J14: 1257 보유 회사가 적합이 아니라 확인 필요). 표시가 없는 요건(예전 저장
     # 행, 골든 고정본)은 예전처럼 raw 를 본다.
-    if requirement.condition_complexity == "composite" or (
+    #
+    # 예외 단서가 붙은 코드(scope.guard_reason == EXCEPTION_UNRESOLVED)는 "코드 OR 예외 사실"
+    # 이다(골든 J13~J16 transport). 코드를 실제로 가진 회사는 예외를 따질 것 없이 충족이고,
+    # 없는 회사만 예외 사실이 확인될 때까지 확인 필요다 — 미달로 확정하지 않는다. 그래서
+    # 이 원자는 보통 경로로 판정한 뒤 SATISFIED 가 아니면 UNKNOWN 으로 바꾼다.
+    exception_alternative = (
+        is_guard_assessed(requirement.scope)
+        and requirement.scope.get("guard_reason") == GUARD_REASON_EXCEPTION
+    )
+    if (requirement.condition_complexity == "composite" and not exception_alternative) or (
         not is_guard_assessed(requirement.scope) and unsafe_clause_reason(requirement.raw)
     ):
         return _unknown(requirement, preflight_case_id, unsupported=True)
+    if exception_alternative:
+        base = _judge_by_type(requirement, profile, preflight_case_id, reference_date)
+        return base if base.status == "SATISFIED" else _unknown(requirement, preflight_case_id)
+    return _judge_by_type(requirement, profile, preflight_case_id, reference_date)
 
+
+def _judge_by_type(
+    requirement: QualificationRequirement,
+    profile: CompanyProfileSnapshot,
+    preflight_case_id: str,
+    reference_date: date,
+) -> Judgment:
     # 공고별 확장 요건은 일반 유형보다 먼저 판정한다. 특히 SW기술자 등급은
     # `_judge_staff` 로도 흘러가면 안 된다 — 같은 요건을 두 번 판정하게 되고,
     # 역할 이름 매칭이라는 더 약한 기준이 결과를 뒤집을 수 있다.

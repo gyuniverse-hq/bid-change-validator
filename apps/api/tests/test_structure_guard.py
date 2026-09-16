@@ -104,16 +104,52 @@ def test_an_unassessed_requirement_still_gets_the_raw_guard() -> None:
     assert result.judgments[0].status == "UNKNOWN"
 
 
-def test_a_composite_exception_row_is_unknown_and_not_askable() -> None:
-    row = QualificationRequirement(
+def _exception_row() -> QualificationRequirement:
+    return QualificationRequirement(
         requirement_key="E", notice_version_id="NV-1", type="INDUSTRY", operator="MATCH",
         value="1227", raw="폐기물수집·운반업(1227) 등록업체", requirement_group_key="G",
         group_operator="ALL_OF", condition_complexity="composite",
         scope={"guard": GUARD_ASSESSED, "guard_reason": "EXCEPTION_UNRESOLVED"},
     )
-    result = judge_requirements([row], _profile_with("1227"), preflight_case_id="X", reference_date=date(2026, 9, 15))
-    assert result.judgments[0].status == "UNKNOWN"
 
-    decision = classify_askability(row)
+
+def test_an_exception_row_is_satisfied_when_the_code_is_held_and_unknown_otherwise() -> None:
+    """예외 단서 코드는 "코드 OR 예외 사실"이다(골든 J13~J16). 코드를 가진 회사는 충족(J13·J15),
+    없는 회사는 예외 사실이 확인될 때까지 확인 필요 — 미달로 확정하지 않는다(J16)."""
+    held = judge_requirements([_exception_row()], _profile_with("1227"), preflight_case_id="X", reference_date=date(2026, 9, 15))
+    assert held.judgments[0].status == "SATISFIED"
+
+    not_held = judge_requirements([_exception_row()], _profile_with("1257"), preflight_case_id="X", reference_date=date(2026, 9, 15))
+    assert not_held.judgments[0].status == "UNKNOWN"
+
+    decision = classify_askability(_exception_row())
     assert decision.askable is False
     assert decision.reason_code == "EXCEPTION_UNRESOLVED"
+
+
+def test_demo_j13_is_eligible_on_the_namwon_notice() -> None:
+    """[발표 시연 2026-09-17] J13(1257·1227 보유, 전북) × 남원글로컬. 1257 은 ANY_OF 로, 1227 은
+    예외 단서 코드로 담긴다. 둘 다 가진 J13 은 적합이어야 한다 — 전에는 1227 이 확인 필요로
+    남아 insufficient_data 였다."""
+    alternation, _ = adapt_legacy_slot(
+        {"유형": "업종요건", "raw": J14_ALTERNATION, "업종_raw": "폐기물중간처분업"},
+        notice_version_id="NV-1", key_prefix="A",
+    )
+    region = QualificationRequirement(
+        requirement_key="R", notice_version_id="NV-1", type="REGION", operator="MATCH",
+        value="전북특별자치도", raw="주된 영업소의 소재지가 전북특별자치도에 있는 업체",
+        requirement_group_key="RG", group_operator="ALL_OF", scope={"guard": GUARD_ASSESSED},
+    )
+    requirements = [*alternation, _exception_row(), region]
+    j13 = CompanyProfileSnapshot.model_validate({
+        "company_id": "J13", "region_name": "전북특별자치도",
+        "industries": [{"code": "1257", "name": "폐기물중간처분업", "verified": False},
+                       {"code": "1227", "name": "폐기물수집·운반업", "verified": False}],
+        "certifications": [],
+        "completeness": {"certifications": True, "company_size": True, "industries": True,
+                         "performances": True, "region": True, "staff_roles": True, "staff_total": True},
+    })
+
+    result = judge_requirements(requirements, j13, preflight_case_id="X", reference_date=date(2026, 9, 17))
+
+    assert result.overall_status == "eligible"

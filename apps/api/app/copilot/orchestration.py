@@ -8,8 +8,20 @@ from ..qualification.judgment import QualificationJudgmentError
 from .answer_validation import compose
 from .conversation_state import conversations
 from .model_gateway import ModelGateway
+from .job_catalog import QUESTIONS, get_question, guided_plan
 from .tool_adapters import ProductTools
-from .v31_contracts import AnswerEnvelope, Fact, Message, Processing, Source, Target, Task, TaskPlan
+from .v31_contracts import AnswerEnvelope, Fact, GuidedTurn, Message, Processing, Source, Target, Task, TaskPlan
+
+
+TASK_LABELS = {
+    'READ_JUDGMENT': '저장 판정',
+    'READ_PROFILE': '판정 당시 회사정보',
+    'READ_CHECKS': '남은 확인사항',
+    'READ_DOCUMENT': '현재 공고문',
+    'READ_CHANGES': '변경 공고 비교',
+    'REVIEW_ASSUMPTION': '검토용 가정',
+    'PROPOSE_ACTION': '변경 제안',
+}
 
 
 def fallback_plan(request):
@@ -21,7 +33,10 @@ def fallback_plan(request):
         kinds.append('READ_CHECKS')
     if any(t in text for t in ('원문', '근거', '공동', '실적', '예외', '병원', '전체', '참가자격')):
         kinds.append('READ_DOCUMENT')
-    if any(t in text for t in ('변경', '이전', '바뀌')):
+    compares_values = len(set(re.findall(r'(?<!\d)\d{3,}(?!\d)', text))) >= 2 and any(
+        term in text for term in ('차이', '비교', '다르', '달라')
+    )
+    if compares_values or any(t in text for t in ('변경', '이전', '바뀌', '차이', '비교', '다른 점', '다른점', '달라')):
         kinds.append('READ_CHANGES')
     if any(t in text for t in ('하면', '가정', '만약')):
         kinds.append('REVIEW_ASSUMPTION')
@@ -33,6 +48,9 @@ def fallback_plan(request):
 
 
 def plan_turn(request, state, gateway):
+    guided = get_question(request.job_id, request.question_id)
+    if guided is not None:
+        return guided_plan(guided), False
     from .chat import _action_control
     control = _action_control(request)
     if control in {'answer', 'revalidate', 'cancel', 'partial_scope'}:
@@ -113,6 +131,35 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
     if changed:
         state.targets, state.facts, state.sources, state.fingerprints = [], [], [], {}
     state.scope = tools.scope
+    guided = get_question(request.job_id, request.question_id)
+    if guided is not None:
+        tools.bundle.server_context['guided_question'] = {
+            'job': guided.job_label,
+            'question_id': guided.question_id,
+            'question': guided.label,
+            'answer_scope': guided.answer_scope,
+            'completion_criteria': list(guided.completion_criteria),
+            'response_rules': list(guided.response_rules),
+            'excluded': [
+                '회사나 사용자의 실제 제출 완료를 추정하지 않음',
+                '새 판정·저장·추가답변 실행을 완료 조건으로 요구하지 않음',
+                '내부 fact/source/검증 식별자를 사용자 문장에 노출하지 않음',
+            ],
+        }
+        if guided.question_id == 'next_checks':
+            policy_source = 'guided-next-checks-product-boundary'
+            policy_text = (
+                '앱에서 확인 가능한 범위는 현재 사례에 저장된 판정, 요건별 상태, 연결된 공고 원문이다. '
+                '회사의 실제 나라장터 등록, 허가, 현장 방문, 서류 제출 완료 여부는 외부 시스템과 회사 증빙으로 확인해야 한다.'
+            )
+            tools.bundle.sources.append(Source(
+                source_id=policy_source, kind='PRODUCT', quote=policy_text,
+                scope=tools.scope, location={'policy': 'guided-next-checks-boundary'},
+            ))
+            tools.bundle.facts.append(Fact(
+                fact_id='guided-next-checks-product-boundary', kind='SERVER_RESULT', text=policy_text,
+                source_ids=[policy_source], target_kind='DOCUMENT', scope=tools.scope,
+            ))
     target, clarification = resolve_target(request, state)
     plan, planner_fallback = plan_turn(request, state, gateway)
     if target:
@@ -150,10 +197,29 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
         except (QualificationJudgmentError, ValueError, RuntimeError) as error:
             tools.bundle = checkpoint
             tools.bundle.coverage[task.kind] = 'UNAVAILABLE'
-            tools.bundle.limitations.append(f'{task.kind}: 현재 기준의 자료를 확인하지 못했습니다 ({getattr(error, "code", type(error).__name__)}).')
+            tools.bundle.limitations.append(
+                f'{TASK_LABELS[task.kind]} 자료를 현재 기준으로 확인하지 못했습니다. '
+                '사례의 회사·공고 차수·저장 판정 기준을 다시 확인해 주세요.'
+            )
         tools.trace.append({'tool': task.kind, 'scope': str(tools.scope.notice_version_id),
                             'elapsed_ms': round((monotonic() - started) * 1000),
                             'coverage': tools.bundle.coverage.get(task.kind)})
+    if guided is not None and guided.question_id == 'unresolved':
+        missing_reads = [task.question for task in plan.tasks if tools.bundle.coverage.get(task.kind) != 'FOUND']
+        search_text = (
+            '이번 답변에 필요한 저장 확인사항과 공고 원문 조회는 모두 완료되었으며, 현재 조회 범위에서 별도의 검색 실패는 기록되지 않았다.'
+            if not missing_reads else
+            '이번 답변에서 자료를 확인하지 못한 조회 범위: ' + ' / '.join(missing_reads)
+        )
+        search_source = 'guided-unresolved-search-status'
+        tools.bundle.sources.append(Source(
+            source_id=search_source, kind='PRODUCT', quote=search_text,
+            scope=tools.scope, location={'policy': 'guided-unresolved-search-status'},
+        ))
+        tools.bundle.facts.append(Fact(
+            fact_id='guided-unresolved-search-status', kind='SERVER_RESULT', text=search_text,
+            source_ids=[search_source], target_kind='DOCUMENT', scope=tools.scope,
+        ))
     bundle = tools.bundle
     if changed:
         bundle.limitations.append('공고·회사·분석·판정 기준이 바뀌어 이전 항목 선택을 해제했습니다.')
@@ -203,23 +269,39 @@ def coordinate(request, owner, tools, *, repository=conversations, gateway=None)
                                   message_id=mid, ordinal=counters[fact.target_kind], fact_ids=[fid],
                                   source_ids=[s for s in fact.source_ids if s in used], requirement_key=fact.requirement_key))
     if fallback:
-        bundle.limitations.append('자동 설명 일부를 검증하지 못해 확인된 내용과 원문을 함께 표시합니다.')
+        bundle.limitations.append(
+            '자동 설명 일부를 검증하지 못해 검증된 내용만 표시합니다.'
+            if guided is not None else
+            '자동 설명 일부를 검증하지 못해 짧은 저장 사실만 표시합니다. 공고문은 원문 화면에서 직접 확인해 주세요.'
+        )
     uncovered = set(facts) - {fid for c in claims for fid in c.fact_ids}
-    if uncovered and not clarification:
+    if uncovered and not clarification and guided is None:
         bundle.limitations.append('조회한 근거 중 답변에서 다루지 못한 항목이 있습니다.')
         events.append({'stage': 'coverage', 'uncovered_fact_ids': sorted(uncovered)})
     complete = (bool(claims) and not fallback and not planner_fallback and not clarification
                 and all(bundle.coverage.get(t.kind) == 'FOUND' for t in plan.tasks)
-                and not uncovered and not bundle.limitations)
+                and (guided is not None or (not uncovered and not bundle.limitations)))
+    guided_turn = None
+    if guided is not None:
+        ordered = [item for item in QUESTIONS if item.job_id == guided.job_id]
+        next_id = next((item.question_id for item in ordered if item.order == guided.order + 1), None)
+        guided_turn = GuidedTurn(
+            job_id=guided.job_id,
+            question_id=guided.question_id,
+            status='COMPLETE' if complete else 'PARTIAL' if claims else 'BLOCKED',
+            next_question_id=next_id if claims else None,
+        )
     envelope = AnswerEnvelope(conversation_id=state.conversation_id, context_revision=revision + 1, message_id=mid,
                               status_card=tools.card, claims=claims, sources=[s for s in bundle.sources if s.source_id in used],
                               limitations=list(dict.fromkeys(bundle.limitations)), follow_up_targets=targets,
                               actions=actions, capabilities=bundle.capabilities, clarification=clarification,
+                              guided=guided_turn,
                               processing=Processing(model=gateway.model, fallback=fallback or planner_fallback,
                                                     task_status='PASS' if complete else 'PARTIAL' if claims or tools.card else 'FAIL',
                                                     elapsed_ms=round((monotonic() - gateway.started) * 1000),
                                                     calls=gateway.calls, validation_events=events, tools=tools.trace,
-                                                    plan=plan.model_dump(mode='json')))
+                                                    plan=plan.model_dump(mode='json'),
+                                                    deadline_seconds=round(getattr(gateway, 'deadline', gateway.started + 45) - gateway.started)))
     state.scope = bundle.scope
     state.targets = (state.targets + targets)[-100:]
     state.facts, state.sources, state.fingerprints = bundle.facts, envelope.sources, bundle.fingerprints
@@ -234,6 +316,9 @@ def chat_v31(db, request, user, case, semantic_processing):
     if user is None:
         raise ApiError(401, 'AUTH_REQUIRED', '대화를 저장하려면 로그인해 주세요.')
     gateway = ModelGateway()
+    if request.job_id and request.question_id:
+        gateway.allow_large_context = True
+        gateway.deadline = gateway.started + 60
     if not semantic_processing:
         # No model calls without explicit processing. Current source reads can still be extractive.
         gateway.enabled = False

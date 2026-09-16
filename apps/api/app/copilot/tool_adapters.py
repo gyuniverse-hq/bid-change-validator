@@ -1,6 +1,7 @@
 """Adapt existing domain reads; no alternate judgment engine and no writes."""
 import json
 import os
+import re
 
 from ..document_rag.readiness import digest, inspect_index, read_passages, snapshot_sources
 from ..document_rag.service import load_notice_version_for_rag
@@ -10,6 +11,57 @@ from . import product_tools
 from .actions import get_changed_notice
 from .narration import _profile_for_ai, STATUS_CONCLUSION
 from .v31_contracts import EvidenceBundle, Fact, Scope, Source, StatusCard
+
+
+def _looks_like_extraction_noise(line: str) -> bool:
+    compact = ''.join(line.split())
+    if not compact:
+        return False
+    hangul = len(re.findall(r'[가-힣]', compact))
+    cjk = len(re.findall(r'[\u3400-\u4dbf\u4e00-\u9fff]', compact))
+    return hangul == 0 and cjk >= 2 and cjk / len(compact) >= 0.6
+
+
+def _document_excerpt(text: str, question: str, limit: int = 1600) -> str:
+    """Return a query-focused exact excerpt while dropping obvious extractor noise."""
+    lines, seen = [], set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or _looks_like_extraction_noise(line) or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
+    if not lines:
+        return ''
+    cleaned = '\n'.join(lines)
+    if len(cleaned) <= limit:
+        return cleaned
+
+    terms = [
+        token for token in re.findall(r'\d{3,}|[가-힣A-Za-z]{2,}', question)
+        if token not in {'무슨', '어떤', '차이야', '알려줘', '보여줘', '설명해줘'}
+    ]
+    scores = [sum(term in line for term in terms) for line in lines]
+    center = max(range(len(lines)), key=lambda index: scores[index]) if any(scores) else 0
+    if len(lines[center]) >= limit:
+        positions = [lines[center].find(term) for term in terms if term in lines[center]]
+        focus = min((position for position in positions if position >= 0), default=0)
+        start = max(0, focus - limit // 3)
+        return lines[center][start:start + limit].strip()
+
+    selected = {center}
+    total = len(lines[center])
+    distance = 1
+    while total < limit and (center - distance >= 0 or center + distance < len(lines)):
+        for index in (center - distance, center + distance):
+            if index < 0 or index >= len(lines):
+                continue
+            addition = len(lines[index]) + 1
+            if total + addition <= limit:
+                selected.add(index)
+                total += addition
+        distance += 1
+    return '\n'.join(lines[index] for index in sorted(selected)).strip()
 
 
 class ProductTools:
@@ -99,7 +151,20 @@ class ProductTools:
                                         unanswerable_count=sum(not q.askable for q in checks.questions),
                                         manual_review_count=(len(scope.notice_facts) + len(scope.dropped_requirements)) if scope else 0)
         for q in checks.questions:
-            text = ('답변 입력 가능: ' if q.askable else '직접 확인 필요·현재 입력 불가: ') + q.question
+            reason = (
+                '현재 저장 판정에 이 회사 사실을 확정할 자료가 없다.'
+                if q.askable else
+                '현재 저장 회사정보만으로 판정할 수 없어 원문과 외부 증빙을 직접 대조해야 한다.'
+            )
+            action = (
+                '회사 보유 증빙과 실제 상태를 확인한다.'
+                if q.askable else
+                '공고 원문을 기준으로 관계 기관 시스템, 허가·등록증 또는 제출 기록을 확인한다.'
+            )
+            text = (
+                ('회사 확인 필요: ' if q.askable else '외부 확인 필요: ')
+                + q.question + ' 이유: ' + reason + ' 다음 행동: ' + action
+            )
             self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='REQUIREMENT', key=q.requirement_key)
         if scope:
             for item in scope.notice_facts:
@@ -123,37 +188,54 @@ class ProductTools:
         if not embeddings.available:
             readiness.index = None
         broad = any(s in question for s in ('전체', '참가자격', '준비', '확인할', '모든'))
+        from ..document_rag.langchain_pipeline import retrieve_current
         try:
-            passages, details = read_passages(readiness, question, broad=broad)
+            passages, details = retrieve_current(readiness, question, broad=broad)
         except Exception:
             readiness.index = None
-            passages, details = read_passages(readiness, question, broad=broad)
+            passages, details = retrieve_current(readiness, question, broad=broad)
             details['query_embedding_failed'] = True
         self.trace.append({'tool': 'READ_DOCUMENT', 'source_status': snapshot.source_status,
                            'index_status': readiness.index_status, 'generation': readiness.generation,
                            'fingerprint': snapshot.fingerprint, 'verification': snapshot.verification, **details})
         self.bundle.limitations.extend(snapshot.limitations)
-        self.bundle.coverage['READ_DOCUMENT'] = 'FOUND' if passages else 'NOT_FOUND'
         if snapshot.source_status != 'AVAILABLE':
             self.bundle.limitations.append('확인 가능한 문서 범위가 제한되어 전체 조건을 확인했다고 볼 수 없습니다.')
         from types import SimpleNamespace
+        found = False
         for passage in passages:
             m = passage.metadata
             if m.notice_version_id != str(self.scope.notice_version_id):
                 raise ValueError('DOCUMENT_SCOPE_MISMATCH')
+            quote = _document_excerpt(passage.text, question)
+            if not quote:
+                continue
             evidence = SimpleNamespace(document_id=m.document_id, source_sha256=m.source_sha256,
                                        extracted_text_sha256=m.extracted_text_sha256,
                                        location={'chunk_id': m.chunk_id, 'page': m.page, 'locations': m.source_locations})
-            sid = self._source('DOCUMENT', passage.text, evidence=evidence)
-            self._fact('NOTICE_FACT', passage.text, [sid])
+            sid = self._source('DOCUMENT', quote, evidence=evidence)
+            location = ', '.join(m.source_locations) or (f'p.{m.page}' if m.page is not None else m.chunk_id)
+            self._fact('NOTICE_FACT', f'현재 공고문 근거: {m.document_name} · {location}', [sid])
+            found = True
+        self.bundle.coverage['READ_DOCUMENT'] = 'FOUND' if found else 'NOT_FOUND'
+        if passages and not found:
+            self.bundle.limitations.append('추출 원문에서 읽을 수 있는 관련 문장을 확인하지 못했습니다. 원본 문서를 직접 확인해 주세요.')
 
-    def changes(self):
+    def changes(self, *, compare_document_sources=False):
         result = get_changed_notice(self.db, self.case.id)
         p = result.provenance
         if (p.case_id != self.scope.case_id or p.company_id != self.scope.company_id
                 or p.notice_id != self.scope.notice_id or p.current.notice_version_id != self.scope.notice_version_id):
             raise ValueError('CHANGE_SCOPE_MISMATCH')
         self.bundle.fingerprints['changes'] = digest(result.model_dump(mode='json'))
+        from .change_impact import impact_text, read_change_impact
+        impact = (read_change_impact(self.db, result)
+                  if all(hasattr(self.db, name) for name in ('no_autoflush', 'scalar', 'get'))
+                  else {'available': False, 'reason': '저장된 재검증 실행 기록을 이 조회 환경에서 확인하지 못했습니다.'})
+        self.bundle.server_context['change_impact'] = impact
+        impact_summary = impact_text(impact)
+        self._fact('SERVER_RESULT', impact_summary,
+                   [self._source('PRODUCT', impact_summary)], target='CHANGE')
         for change in result.changes:
             for label, version, requirement in [('이전', result.provenance.baseline, change.baseline), ('현재', result.provenance.current, change.current)]:
                 if requirement is None:
@@ -162,13 +244,26 @@ class ProductTools:
                                                       'analysis_run_id': version.analysis_run_id, 'judgment_run_id': version.judgment_run_id})
                 text = f'{label} 버전 {version.version_number}: {requirement.raw} ({change.change_type})'
                 self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text, scope=scope)], target='CHANGE', scope=scope)
+        if self.allow_documents and compare_document_sources:
+            from .source_changes import compare_sources
+            before = load_notice_version_for_rag(self.db, self.case.baseline_version_id)
+            after = load_notice_version_for_rag(self.db, self.case.current_version_id)
+            if before.notice_id != self.scope.notice_id or after.notice_id != self.scope.notice_id:
+                raise ValueError('CHANGE_DOCUMENT_SCOPE_MISMATCH')
+            fingerprint, observations, limitations = compare_sources(before, after)
+            self.bundle.fingerprints['change_sources'] = fingerprint
+            self.bundle.limitations.extend(limitations)
+            for text in observations:
+                self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], target='CHANGE')
 
     def execute(self, task):
         if task.kind == 'READ_JUDGMENT': self.judgment()
         elif task.kind == 'READ_PROFILE': self.profile()
         elif task.kind == 'READ_CHECKS': self.required_checks()
         elif task.kind == 'READ_DOCUMENT': self.documents(task.question)
-        elif task.kind == 'READ_CHANGES': self.changes()
+        elif task.kind == 'READ_CHANGES': self.changes(
+            compare_document_sources='원문 표현 차이' in task.question
+        )
         self.bundle.coverage.setdefault(task.kind, 'FOUND')
 
     def assert_fresh(self):
@@ -187,3 +282,11 @@ class ProductTools:
             current = get_changed_notice(self.db, self.case.id)
             if digest(current.model_dump(mode='json')) != self.bundle.fingerprints['changes']:
                 raise ValueError('CHANGE_SCOPE_CHANGED')
+        if 'change_sources' in self.bundle.fingerprints:
+            from .source_changes import compare_sources
+            fingerprint, _, _ = compare_sources(
+                load_notice_version_for_rag(self.db, self.case.baseline_version_id),
+                load_notice_version_for_rag(self.db, self.case.current_version_id),
+            )
+            if fingerprint != self.bundle.fingerprints['change_sources']:
+                raise ValueError('CHANGE_DOCUMENT_SCOPE_CHANGED')

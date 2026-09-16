@@ -21,7 +21,7 @@ function load(file) {
   return compiled.exports;
 }
 
-const { ConversationStore } = load(resolve(root, 'lib/copilot-conversation.ts'));
+const { ConversationStore, inferE1Intent } = load(resolve(root, 'lib/copilot-conversation.ts'));
 const { copilotMocks: m } = load(resolve(root, 'lib/copilot-mocks.ts'));
 const id = m.eligible.product_state.provenance.case_id;
 const calls = [];
@@ -76,6 +76,8 @@ try {
   for (const call of calls) assert.equal('document_processing' in call.body, false);
 
   assert.equal(calls[2].body.user_input, undefined);
+  assert.equal(inferE1Intent('1224와 1227은 무슨 차이야?'), 'CHANGED_NOTICE');
+  assert.equal(inferE1Intent('이전 내용과 비교해줘'), 'CHANGED_NOTICE');
   console.log('PASS v3.1 stays active while semantic and document-RAG consent remain separate');
 } finally {
   globalThis.fetch = originalFetch;

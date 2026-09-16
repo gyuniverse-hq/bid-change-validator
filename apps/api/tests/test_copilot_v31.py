@@ -12,8 +12,8 @@ from apps.api.app.copilot.answer_validation import compose, mechanical, verify
 from apps.api.app.copilot.chat import CopilotChatRequest
 from apps.api.app.copilot.conversation_state import ConversationRepository
 from apps.api.app.copilot.model_gateway import BudgetExceeded, ModelGateway
-from apps.api.app.copilot.orchestration import coordinate, resolve_target
-from apps.api.app.copilot.tool_adapters import ProductTools
+from apps.api.app.copilot.orchestration import coordinate, fallback_plan, resolve_target
+from apps.api.app.copilot.tool_adapters import ProductTools, _document_excerpt
 from apps.api.app.copilot.v31_contracts import (
     Claim, ConversationState, Draft, DraftClaim, EvidenceBundle, Fact, Scope, Source, Target, Task, TaskPlan, Verdicts,
 )
@@ -71,8 +71,7 @@ def test_contradicted_prose_never_published(text):
     claims, partial, _ = compose(b, TaskPlan(goal='설명', tasks=[Task(kind='READ_DOCUMENT', question='설명')]), state, gateway)
     assert text not in [c.text for c in claims]
     assert partial and len(gateway.calls) == 4
-    assert all(c.validation == 'SUPPORTED' for c in claims)
-    assert any('800식' in c.text and '병원' in c.text for c in claims)
+    assert claims == []
 
 
 def test_supported_paraphrase_is_preserved_and_does_not_repair():
@@ -83,13 +82,49 @@ def test_supported_paraphrase_is_preserved_and_does_not_repair():
     assert not partial and claims[0].text == text and len(gateway.calls) == 2
 
 
-def test_verifier_failure_keeps_exact_sources_not_unchecked_prose():
+def test_verifier_failure_does_not_promote_raw_document_to_answer_prose():
     gateway = FakeGateway({'generate': draft('검증하지 않은 문장'), 'validate': TimeoutError()})
     state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
     claims, partial, _ = compose(bundle(), TaskPlan(goal='실적', tasks=[Task(kind='READ_DOCUMENT', question='실적')]), state, gateway)
-    assert partial and claims
-    assert all(c.method in {'rule', 'extractive'} for c in claims)
+    assert partial and claims == []
     assert '검증하지 않은 문장' not in [c.text for c in claims]
+
+
+def test_code_difference_question_routes_to_changes_without_document_dump():
+    request = CopilotChatRequest(case_id=scope().case_id, message='1224와 1227은 무슨 차이야?')
+    plan = fallback_plan(request)
+    assert [task.kind for task in plan.tasks] == ['READ_CHANGES']
+
+    context = scope()
+    rows = [
+        ('impact', '현재 판정과 연결된 재검증 기록이 없어 전후 영향을 단정할 수 없습니다.'),
+        ('before', '이전 버전 1: 폐기물수집·운반업(1224) 등록업체 (MODIFIED)'),
+        ('after', '현재 버전 2: 폐기물수집·운반업(1227) 등록업체 (MODIFIED)'),
+        ('unchanged', '현재 버전 2: 폐기물중간처분업(1257) 등록업체 (UNCHANGED)'),
+    ]
+    evidence = EvidenceBundle(
+        scope=context,
+        facts=[Fact(fact_id=key, kind='SERVER_RESULT', text=text, source_ids=['s-' + key], target_kind='CHANGE', scope=context) for key, text in rows],
+        sources=[Source(source_id='s-' + key, kind='PRODUCT', quote=text, scope=context) for key, text in rows],
+    )
+    claims, partial, _ = compose(evidence, plan, ConversationState(conversation_id=uuid4(), owner='u', scope=context), FakeGateway())
+    assert partial
+    assert [claim.text for claim in claims] == [rows[1][1], rows[2][1], rows[0][1]]
+    assert all(claim.method == 'rule' for claim in claims)
+    assert all('1257' not in claim.text for claim in claims)
+
+
+def test_document_excerpt_removes_mojibake_duplicates_and_focuses_on_question():
+    noise = '捤獥汤捯湰灧湰灧桤灧湯湷湯湷湯湷氠瑢'
+    repeated = '입찰자는 공고문을 확인해야 합니다.'
+    filler = '\n'.join(f'일반 안내 문장 {index}' for index in range(200))
+    relevant = '폐기물수집·운반업 코드는 이전 1224에서 현재 1227로 변경되었습니다.'
+    text = f'{noise}\n氠瑢\n{repeated}\n{filler}\n{relevant}\n{repeated}'
+    excerpt = _document_excerpt(text, '1224와 1227은 무슨 차이야?')
+    assert relevant in excerpt
+    assert noise not in excerpt and '氠瑢' not in excerpt
+    assert excerpt.count(repeated) <= 1
+    assert len(excerpt) <= 1600
 
 
 def test_invalid_sources_and_cross_company_rejected():
@@ -102,6 +137,18 @@ def test_invalid_sources_and_cross_company_rejected():
     c.source_ids = ['s-exception']
     b.facts[1].scope = b.facts[1].scope.model_copy(update={'company_id': uuid4()})
     assert mechanical(c, b) == 'CROSS_SCOPE'
+
+
+def test_verifier_normalizes_model_source_pointer_from_server_fact_edges():
+    raw = draft().claims[0].model_copy(update={'source_ids': ['s-judgment']})
+    gateway = FakeGateway({'validate': {
+        'verdicts': [{'claim_id': 'c1', 'status': 'SUPPORTED', 'reason': 'fixture'}],
+    }})
+
+    claims, _ = verify(Draft(claims=[raw]), bundle(), gateway)
+
+    assert claims[0].validation == 'SUPPORTED'
+    assert claims[0].source_ids == ['s-exception']
 
 
 def test_manual_claim_has_no_requirement_but_keeps_source():
@@ -245,6 +292,34 @@ def test_supported_claim_survives_failed_sibling_repair():
     assert not any(c.claim_id == 'bad' for c in claims)
 
 
+def test_repair_ignores_echoed_supported_sibling_and_accepts_only_failed_claim():
+    good = draft().claims[0].model_copy(update={'claim_id': 'good'})
+    bad = draft('병원도 포함합니다.').claims[0].model_copy(update={'claim_id': 'bad'})
+    fixed = draft('병원 급식 실적은 제외됩니다.').claims[0].model_copy(update={'claim_id': 'bad'})
+    gateway = FakeGateway({
+        'generate': Draft(claims=[good, bad]),
+        'validate': {'verdicts': [
+            {'claim_id': 'good', 'status': 'SUPPORTED', 'reason': 'fixture'},
+            {'claim_id': 'bad', 'status': 'CONTRADICTED', 'reason': 'fixture'},
+        ]},
+        'repair': Draft(claims=[good.model_copy(update={'text': '검증된 문장을 바꾸려는 응답'}), fixed]),
+        'revalidate': {'verdicts': [
+            {'claim_id': 'bad', 'status': 'SUPPORTED', 'reason': 'fixed'},
+        ]},
+    })
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    claims, partial, _ = compose(
+        bundle(), TaskPlan(goal='실적', tasks=[Task(kind='READ_DOCUMENT', question='실적')]), state, gateway
+    )
+
+    assert not partial
+    assert {claim.claim_id: claim.text for claim in claims} == {
+        'good': good.text,
+        'bad': fixed.text,
+    }
+
+
 def test_assumptions_never_call_write_or_become_server_result():
     tools = ReplayTools()
     tools.db = SimpleNamespace(commit=lambda: pytest.fail('chat attempted a write'))
@@ -323,7 +398,8 @@ def test_long_extractive_source_is_preserved_without_schema_crash():
     state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
     claims, partial, _ = compose(b, TaskPlan(goal='원문', tasks=[Task(kind='READ_DOCUMENT', question='원문')]), state, FakeGateway())
     assert partial
-    assert ''.join(c.text for c in claims if c.fact_ids == ['exception']) == b.sources[1].quote
+    assert claims == []
+    assert len(b.sources[1].quote) > 2500
 
 
 def test_actual_asgi_v31_four_turn_route_and_serialization(monkeypatch):
@@ -368,6 +444,138 @@ def test_supported_fact_reference_does_not_prove_all_exceptions_covered():
     claims, partial, events = compose(bundle(), TaskPlan(goal='실적의 전체 조건', tasks=[Task(kind='READ_DOCUMENT', question='전체')]), state, gateway)
     assert partial and claims[0].text == '최근 2년 실적이 필요합니다.'
     assert any(e.get('missing_topics') == ['기관 제외', '식수', '운영기간'] for e in events)
+
+
+def test_guided_partial_keeps_verified_claims_without_dumping_uncovered_sources():
+    b = bundle()
+    b.server_context['guided_question'] = {
+        'answer_scope': '질문에 직접 필요한 내용',
+        'completion_criteria': ['핵심 조건을 설명'],
+        'excluded': ['원문 전체 나열'],
+    }
+    gateway = FakeGateway({'generate': draft('최근 2년 실적이 필요합니다.'),
+        'validate': {'verdicts': [{'claim_id': 'c1', 'status': 'SUPPORTED', 'reason': 'true but incomplete'}],
+                     'task_coverage': 'PARTIAL', 'missing_topics': ['기관 제외']}})
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    claims, partial, events = compose(
+        b, TaskPlan(goal='실적의 전체 조건', tasks=[Task(kind='READ_DOCUMENT', question='전체')]), state, gateway
+    )
+
+    assert partial
+    assert [claim.text for claim in claims] == ['최근 2년 실적이 필요합니다.']
+    assert all(claim.method == 'semantic' for claim in claims)
+    assert any(event.get('missing_topics') == ['기관 제외'] for event in events)
+
+
+def test_guided_complete_drops_failed_extra_when_supported_claims_cover_server_criteria():
+    b = bundle()
+    b.server_context['guided_question'] = {
+        'answer_scope': '질문에 직접 필요한 내용',
+        'completion_criteria': ['핵심 조건을 설명'],
+        'excluded': ['원문 전체 나열'],
+    }
+    good = draft().claims[0]
+    bad = DraftClaim(claim_id='bad', text='근거 없는 추가 문장', fact_ids=['missing'], source_ids=['missing'])
+    gateway = FakeGateway({'generate': Draft(claims=[good, bad]),
+        'validate': {'verdicts': [{'claim_id': 'c1', 'status': 'SUPPORTED', 'reason': 'criterion covered'}],
+                     'task_coverage': 'COMPLETE', 'missing_topics': []}})
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    claims, partial, _ = compose(
+        b, TaskPlan(goal='실적의 전체 조건', tasks=[Task(kind='READ_DOCUMENT', question='전체')]), state, gateway
+    )
+
+    assert not partial
+    assert [claim.claim_id for claim in claims] == ['c1']
+    assert [call['stage'] for call in gateway.calls] == ['generate', 'validate']
+
+
+def test_document_guided_question_uses_server_structural_coverage_when_verifier_overreaches():
+    b = bundle()
+    b.server_context['guided_question'] = {
+        'question_id': 'documents_deadlines_methods',
+        'answer_scope': '서류 기한 방법 제출처',
+        'completion_criteria': ['서류별 단계·기한·방법·제출처를 연결한다.'],
+        'excluded': ['실제 제출 완료 증명'],
+    }
+    text = (
+        '[필수] 현장 확인서를 준비하고 입찰서는 나라장터에 제출합니다. '
+        '[확인 필요] 산출내역서 제출처는 확인해야 합니다. '
+        '[조건부] 낙찰 시 청렴계약 서약서를 제출합니다.'
+    )
+    gateway = FakeGateway({'generate': draft(text),
+        'validate': {'verdicts': [{'claim_id': 'c1', 'status': 'SUPPORTED', 'reason': 'facts support prose'}],
+                     'task_coverage': 'PARTIAL', 'missing_topics': ['배치 방식']}})
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    claims, partial, events = compose(
+        b, TaskPlan(goal='서류', tasks=[Task(kind='READ_DOCUMENT', question='서류')]), state, gateway
+    )
+
+    assert not partial and claims
+    assert any(event.get('stage') == 'server_guided_coverage' for event in events)
+
+
+def test_next_checks_uses_server_boundary_and_action_coverage():
+    b = bundle()
+    boundary_source = Source(
+        source_id='guided-boundary-source', kind='PRODUCT', quote='앱과 외부 확인 범위를 구분한다.', scope=scope()
+    )
+    b.sources.append(boundary_source)
+    b.facts.append(Fact(
+        fact_id='guided-next-checks-product-boundary', kind='SERVER_RESULT',
+        text=boundary_source.quote, source_ids=[boundary_source.source_id], scope=scope()
+    ))
+    b.server_context['guided_question'] = {
+        'question_id': 'next_checks',
+        'completion_criteria': ['이유와 행동', '앱과 외부 구분'],
+        'excluded': ['실제 완료 추정'],
+    }
+    claims = [
+        DraftClaim(claim_id='boundary', text='앱과 외부 확인 범위를 구분합니다.',
+                   fact_ids=['guided-next-checks-product-boundary'], source_ids=['guided-boundary-source']),
+        DraftClaim(claim_id='one', text='등록 상태를 확인하고 증빙과 대조해야 합니다.', fact_ids=['exception'], source_ids=['s-exception']),
+        DraftClaim(claim_id='two', text='허가 여부를 확인해야 하며 원문과 대조해야 합니다.', fact_ids=['exception'], source_ids=['s-exception']),
+        DraftClaim(claim_id='three', text='제출 여부를 확인하고 담당 기록과 대조해야 합니다.', fact_ids=['exception'], source_ids=['s-exception']),
+    ]
+    gateway = FakeGateway({'generate': Draft(claims=claims), 'validate': {
+        'verdicts': [{'claim_id': claim.claim_id, 'status': 'SUPPORTED', 'reason': 'fixture'} for claim in claims],
+        'task_coverage': 'PARTIAL', 'missing_topics': ['배치 방식'],
+    }})
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    result, partial, events = compose(
+        b, TaskPlan(goal='확인', tasks=[Task(kind='READ_CHECKS', question='확인')]), state, gateway
+    )
+
+    assert not partial and len(result) == 4
+    assert any(event.get('reason') == 'SERVER_BOUNDARY_AND_CHECK_ACTIONS_PRESENT' for event in events)
+
+
+def test_preparation_order_uses_server_sequence_coverage():
+    b = bundle()
+    b.server_context['guided_question'] = {
+        'question_id': 'preparation_order',
+        'completion_criteria': ['제안 순서와 원문상 강제 순서를 구분한다.'],
+        'excluded': ['완료 추정'],
+    }
+    text = (
+        '권장 순서는 자격 확인부터 계약까지입니다. 입찰서 제출 전 현장을 방문하고 '
+        '업종 등록은 마감일 전일까지 마칩니다. 낙찰 시 계약하며, 지난 기한은 완료를 추정하지 않습니다.'
+    )
+    gateway = FakeGateway({'generate': draft(text), 'validate': {
+        'verdicts': [{'claim_id': 'c1', 'status': 'SUPPORTED', 'reason': 'fixture'}],
+        'task_coverage': 'PARTIAL', 'missing_topics': ['표현 배치'],
+    }})
+    state = ConversationState(conversation_id=uuid4(), owner='u', scope=scope())
+
+    claims, partial, events = compose(
+        b, TaskPlan(goal='순서', tasks=[Task(kind='READ_DOCUMENT', question='순서')]), state, gateway
+    )
+
+    assert not partial and claims
+    assert any(event.get('reason') == 'SERVER_RECOMMENDED_AND_MANDATORY_SEQUENCE_PRESENT' for event in events)
 
 
 def test_empty_reference_sibling_does_not_drop_supported_prose():

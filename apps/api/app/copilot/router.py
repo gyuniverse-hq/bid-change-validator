@@ -1,5 +1,7 @@
 """Additive Copilot endpoints. Chat never calls action execution."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Header
 from openai import OpenAIError
 from sqlalchemy.orm import Session
@@ -17,20 +19,25 @@ from .context import compact
 from .contracts import ConfirmAction
 from .document_qa import answer_grounded_document_question
 from .intent_resolver import ResolvedIntent, resolve_intent
+from .job_catalog import GuidedJobCatalog, catalog_for_case, ensure_question_available, get_question
 from .narration import apply_product_narration
 from .semantic_router import SemanticRouter
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
 
 
-def semantic_recheck_candidate(payload: CopilotChatRequest, deterministic: str) -> bool:
-    """Return True only for weak free-text deterministic reads.
+@router.get("/jobs", response_model=GuidedJobCatalog)
+def copilot_jobs(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    user: AppUser | None = Depends(get_optional_current_user),
+):
+    case = authorize_case_access(db, user, case_id)
+    return catalog_for_case(case)
 
-    E2 must not override an explicit UI route, a payload-backed write, or a clear
-    deterministic command. It may however re-check keyword-heavy read matches
-    that are known to produce false positives, such as `확인서` being mistaken for
-    REQUIRED_CHECKS or `어떻게 적용되는지 설명` being mistaken for a write.
-    """
+
+def semantic_recheck_candidate(payload: CopilotChatRequest, deterministic: str) -> bool:
+    """Return True only for weak free-text deterministic reads."""
     if payload.intent is not None and payload.intent != "UNKNOWN":
         return False
     if payload.user_input is not None:
@@ -54,14 +61,6 @@ def resolve_chat_payload(
     semantic_processing: bool,
     classifier=None,
 ) -> tuple[CopilotChatRequest, ResolvedIntent]:
-    """Resolve a chat route while preserving explicit/write safety boundaries.
-
-    Without semantic opt-in the deterministic result is unchanged. With opt-in,
-    E2 fills UNKNOWN reads and may re-check only the weak deterministic read
-    matches identified by `semantic_recheck_candidate`. If semantic routing is
-    unavailable, low-confidence, UNKNOWN, or attempts ACTION_REQUEST escalation,
-    a previously known deterministic result is restored.
-    """
     deterministic = route_intent(payload)
     semantic_classifier = classifier
     if semantic_processing and semantic_classifier is None:
@@ -80,9 +79,6 @@ def resolve_chat_payload(
         visible_targets=context.visible_requirement_keys if context else None,
     )
 
-    # A weak deterministic read is only replaced by a trusted semantic read.
-    # Provider failure / UNKNOWN / blocked action escalation falls back to the
-    # original deterministic behavior rather than degrading an existing route.
     if recheck and deterministic != "UNKNOWN" and resolved.route_source == "FALLBACK":
         resolved = ResolvedIntent(
             intent=deterministic,
@@ -96,7 +92,6 @@ def resolve_chat_payload(
 
 
 def _sync_visible_targets(result: CopilotChatResponse) -> CopilotChatResponse:
-    """Keep conversation ordinals aligned with requirements actually rendered."""
     if result.reply_context is None or result.presentation is None:
         return result
     result.reply_context.visible_requirement_keys = list(dict.fromkeys(
@@ -115,6 +110,10 @@ def copilot_chat(
     user: AppUser | None = Depends(get_optional_current_user),
 ):
     case = authorize_case_access(db, user, payload.case_id)
+    guided = get_question(payload.job_id, payload.question_id)
+    if guided is not None:
+        ensure_question_available(case, guided)
+        payload = payload.model_copy(update={"message": guided.label})
     if payload.response_version == '3.1':
         from .orchestration import chat_v31
         return chat_v31(db, payload, user, case, semantic_processing)

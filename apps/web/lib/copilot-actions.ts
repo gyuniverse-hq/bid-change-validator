@@ -27,7 +27,8 @@ export function currentRevalidation(result: ConfirmActionResult | null, context:
 type Read = (request: CopilotChatRequest) => Promise<CopilotChatResponse>;
 type Confirm = (request: ConfirmAction) => Promise<ConfirmActionResult>;
 
-// ponytail: one pending action per case in layout memory; durable outcome recovery needs a server execution ID.
+// A safe, non-running action may cross one native page navigation. In-flight
+// writes still require a server execution ID and are deliberately not restored.
 export class ActionController {
   private states = new Map<string, ActionState>();
   private listeners = new Set<() => void>();
@@ -41,6 +42,17 @@ export class ActionController {
   }
   private update(caseId: string, patch: Partial<ActionState>) {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
+    this.listeners.forEach(fn => fn());
+  }
+  snapshot(caseId: string): ActionState | null {
+    const state = this.get(caseId);
+    return isLocked(state) ? null : structuredClone(state);
+  }
+  restore(caseId: string, state: ActionState) {
+    if (!caseId || isLocked(state)) return;
+    const safeStages: Execution[] = ['IDLE', 'DRAFT', 'PROPOSAL_READY', 'COMPLETED', 'STALE', 'FAILED', 'AUTH_REQUIRED'];
+    if (!safeStages.includes(state.stage)) return;
+    this.states.set(caseId, { ...structuredClone(state), busy: false, externalBusy: false });
     this.listeners.forEach(fn => fn());
   }
   // A full review uses existing APIs, but shares the in-tab mutation lock.

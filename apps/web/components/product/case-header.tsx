@@ -1,7 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-
+import { CopilotNavigationLink } from '@/components/copilot/navigation-link';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import type { CaseWorkspace } from '@/lib/case-workspace';
@@ -24,7 +23,7 @@ export function CaseHeader({ workspace }: { workspace: CaseWorkspace }) {
       </div>
       <div className="flex flex-wrap gap-2">
         {notice.latest.detail_url && <Button variant="outline" size="sm" render={<a href={notice.latest.detail_url} target="_blank" rel="noreferrer" aria-label="공고문 원본" />}>공고문 원본</Button>}
-        <Link href={workspaceHref('/qualification', caseItem.id)} className={buttonVariants({ variant: 'outline', size: 'sm' })}>검토로 돌아가기</Link>
+        <CopilotNavigationLink caseId={caseItem.id} href={workspaceHref('/qualification', caseItem.id)} className={buttonVariants({ variant: 'outline', size: 'sm' })}>검토로 돌아가기</CopilotNavigationLink>
       </div>
     </section>
   );
@@ -42,7 +41,7 @@ export function CaseTabs({ caseId, active }: { caseId: string; active: 'qualific
   return (
     <nav className="mt-5 flex flex-wrap gap-2 border-b border-[var(--product-line)] pb-3" aria-label="입찰 검토 화면">
       {items.map(([key, href, label]) => (
-        <Link key={key} href={workspaceHref(href, caseId)} className={`rounded-full px-5 py-2 text-[13px] font-semibold ${active === key ? 'bg-[var(--product-ink)] text-white' : 'border border-[var(--product-line)] bg-white text-[var(--product-body)]'}`}>{label}</Link>
+        <CopilotNavigationLink caseId={caseId} key={key} href={workspaceHref(href, caseId)} className={`rounded-full px-5 py-2 text-[13px] font-semibold ${active === key ? 'bg-[var(--product-ink)] text-white' : 'border border-[var(--product-line)] bg-white text-[var(--product-body)]'}`}>{label}</CopilotNavigationLink>
       ))}
     </nav>
   );

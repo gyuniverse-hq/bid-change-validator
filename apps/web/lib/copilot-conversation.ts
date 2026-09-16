@@ -137,7 +137,8 @@ export function validateSources(response: CopilotChatResponse) {
   }
 }
 
-// ponytail: layout-memory only; refresh discards conversation, never restores or retries writes.
+// Conversation normally lives in layout memory. A native navigation may hand a
+// completed read state to the next product page, but never an in-flight request.
 export class ConversationStore {
   private states = new Map<string, Conversation>();
   private listeners = new Set<() => void>();
@@ -150,6 +151,16 @@ export class ConversationStore {
   }
   private update(caseId: string, patch: Partial<Conversation>) {
     this.states.set(caseId, { ...this.get(caseId), ...patch });
+    this.listeners.forEach(fn => fn());
+  }
+  snapshot(caseId: string): Conversation | null {
+    const state = this.get(caseId);
+    return state.busy ? null : structuredClone(state);
+  }
+  restore(caseId: string, state: Conversation) {
+    if (!caseId || state.busy || !Array.isArray(state.turns)) return;
+    this.states.set(caseId, { ...structuredClone(state), busy: false });
+    this.failed.delete(caseId);
     this.listeners.forEach(fn => fn());
   }
   focus(caseId: string, key: string | null, reply?: ReplyContext | null) {

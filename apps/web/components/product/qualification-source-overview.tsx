@@ -1,5 +1,4 @@
-import Link from 'next/link';
-
+import { NavigationLink } from '@/components/navigation-link';
 import { buttonVariants } from '@/components/ui/button';
 import type { BidNoticeSummary, BidNoticeVersion, PreflightCase } from '@/lib/api';
 import { BUSINESS_TYPE_LABEL, EXTRACTION_STATUS_LABEL, VIEWER_TYPE_LABEL, labelOf } from '@/lib/status-copy';
@@ -47,7 +46,7 @@ export function QualificationSourceOverview({ caseItem, notice, version }: Props
         <div className="rounded-[20px] border border-[var(--product-line-2)] bg-white p-6">
           <div className="flex items-baseline justify-between gap-3"><div><h2 className="text-[21px] font-extrabold">제출·첨부 서류</h2><p className="mt-1 text-[13px] text-[var(--product-muted)]">현재 차수에서 실제 수집된 문서입니다.</p></div><span className="text-[13px] text-[var(--product-muted)]">{version?.documents.length ?? 0}종</span></div>
           <div className="mt-4 divide-y divide-[var(--product-line-2)]">
-            {version?.documents.length ? version.documents.map((document) => <div key={document.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{document.name}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{labelOf(VIEWER_TYPE_LABEL, document.viewer_type)} · {labelOf(EXTRACTION_STATUS_LABEL, document.extraction_status)}{document.extracted_char_count != null ? ` · ${document.extracted_char_count.toLocaleString()}자` : ''}</span></div><Link href={`/evidence?caseId=${caseItem.id}`} className={buttonVariants({ variant: 'outline', size: 'sm', className: 'rounded-full' })}>원문 대조</Link></div>) : <p className="py-6 text-center text-[15px] text-[var(--product-muted)]">현재 차수에 수집된 문서가 없습니다.</p>}
+            {version?.documents.length ? version.documents.map((document) => <div key={document.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><strong className="block truncate text-[15px]">{document.name}</strong><span className="mt-1 block text-[12px] text-[var(--product-muted)]">{labelOf(VIEWER_TYPE_LABEL, document.viewer_type)} · {labelOf(EXTRACTION_STATUS_LABEL, document.extraction_status)}{document.extracted_char_count != null ? ` · ${document.extracted_char_count.toLocaleString()}자` : ''}</span></div><NavigationLink href={`/evidence?caseId=${caseItem.id}`} className={buttonVariants({ variant: 'outline', size: 'sm', className: 'rounded-full' })}>원문 대조</NavigationLink></div>) : <p className="py-6 text-center text-[15px] text-[var(--product-muted)]">현재 차수에 수집된 문서가 없습니다.</p>}
           </div>
         </div>
       </section>

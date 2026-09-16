@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -10,6 +9,7 @@ import type { EvidenceLocation } from '@/lib/qualification-api';
 import { REQUIREMENT_TYPE_LABEL, labelOf } from '@/lib/status-copy';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionCard } from '@/components/copilot/action-card';
+import { CopilotNavigationLink } from '@/components/copilot/navigation-link';
 import { useActions } from '@/components/copilot/provider';
 import { isLocked } from '@/lib/copilot-actions';
 
@@ -159,7 +159,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
                 <p className="mt-2 text-[13.5px] text-[var(--product-muted)]">{question.askability_reason}</p>
                 {evidence && <div className="mt-4"><EvidenceQuote quote={evidence.quote} location={evidence.location} /></div>}
                 {evidence && (
-                  <Link href={`${workspaceHref('/evidence', workspace.caseItem.id)}&evidence=${encodeURIComponent(evidence.key)}`} className={buttonVariants({ variant: 'outline', className: 'mt-4 rounded-full' })}>근거 원문에서 확인</Link>
+                  <CopilotNavigationLink caseId={workspace.caseItem.id} href={`${workspaceHref('/evidence', workspace.caseItem.id)}&evidence=${encodeURIComponent(evidence.key)}`} className={buttonVariants({ variant: 'outline', className: 'mt-4 rounded-full' })}>근거 원문에서 확인</CopilotNavigationLink>
                 )}
               </section>
             );
@@ -169,7 +169,7 @@ function AskBackWorkspace({ caseId }: { caseId: string | null }) {
             <section className="rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-12 text-center">
               <h3 className="text-[19px] font-bold">{workspace.displayJudgment ? '지금 답할 확인 필요 항목이 없습니다' : '아직 분석과 판정이 필요합니다'}</h3>
               <p className="mt-2 text-[13.5px] text-[var(--product-muted)]">판정 결과에서 사용자 확인이 필요한 항목이 생기면 이 화면에 표시합니다</p>
-              <Link href={workspaceHref('/qualification', workspace.caseItem.id)} className={buttonVariants({ variant: 'outline', className: 'mt-5 rounded-full' })}>참가자격 검토로 돌아가기</Link>
+              <CopilotNavigationLink caseId={workspace.caseItem.id} href={workspaceHref('/qualification', workspace.caseItem.id)} className={buttonVariants({ variant: 'outline', className: 'mt-5 rounded-full' })}>참가자격 검토로 돌아가기</CopilotNavigationLink>
             </section>
           )}
         </div>

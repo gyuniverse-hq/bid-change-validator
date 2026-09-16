@@ -1,7 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-
+import { NavigationLink } from '@/components/navigation-link';
 import { PageContainer } from '@/components/product/page-container';
 import type { AuthUser } from '@/lib/auth';
 
@@ -56,7 +55,7 @@ export function AppHeader({
                 <button type="button" className="app-utility-action" onClick={onLogout}>로그아웃</button>
               </>
             ) : (
-              <Link href="/login" className="app-utility-action">로그인</Link>
+              <NavigationLink href="/login" className="app-utility-action">로그인</NavigationLink>
             )}
           </div>
         </PageContainer>
@@ -64,7 +63,7 @@ export function AppHeader({
 
       <div className="app-gnb">
         <PageContainer className="flex h-full items-center gap-5">
-          <Link href="/notices" className="app-brand" aria-label="비드체크 공고 찾기">
+          <NavigationLink href="/notices" className="app-brand" aria-label="비드체크 공고 찾기">
             {/*
               마크. 이름의 「체크」를 그대로 그린다.
               30px 안에서는 요소 하나가 가장 잘 읽힌다 — 줄·문서를 같이 넣으면 뭉개진다.
@@ -79,7 +78,7 @@ export function AppHeader({
               <strong className="app-brand-name">비드체크</strong>
               <span className="app-brand-subtitle">입찰 참가자격 확인</span>
             </span>
-          </Link>
+          </NavigationLink>
 
           <nav className="app-primary-nav" aria-label="주요 메뉴">
             {PRIMARY_NAV.map((item) => (

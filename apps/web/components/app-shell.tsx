@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -13,6 +13,7 @@ import { AppHeader } from '@/components/product/app-header';
 import { TitleBand, type TitleBandProps } from '@/components/product/title-band';
 import { ApiError, NETWORK_ERROR_MESSAGE } from '@/lib/api';
 import { getCurrentUser, logout, type AuthUser } from '@/lib/auth';
+import { replaceWith } from '@/lib/navigation';
 
 type PageInfo = TitleBandProps & {
   showTitleBand?: boolean;
@@ -106,7 +107,6 @@ function pageInfoFor(pathname: string): PageInfo {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const page = pageInfoFor(pathname);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(pathname !== '/login');
@@ -126,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         if (cause instanceof ApiError && cause.status === 401) {
           window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
           setUser(null);
-          router.replace('/login');
+          replaceWith('/login');
           return;
         }
         setAuthFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);
@@ -137,7 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [authAttempt, pathname, router]);
+  }, [authAttempt, pathname]);
 
   if (pathname === '/login') return children;
 
@@ -177,12 +177,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       await logout();
       window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
       setUser(null);
-      router.replace('/login');
+      replaceWith('/login');
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
         window.sessionStorage.removeItem(LEGACY_ACTIVE_CASE_KEY);
         setUser(null);
-        router.replace('/login');
+        replaceWith('/login');
         return;
       }
       setLogoutFailure(cause instanceof ApiError ? cause.message : NETWORK_ERROR_MESSAGE);

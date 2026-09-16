@@ -100,6 +100,9 @@ function load(file) {
       await page.getByRole('button',{name:'AI Copilot',exact:true}).click();
       await page.locator('#copilot-panel[open]').waitFor();
     };
+    const waitForCopilotAfterNavigation = async()=>{
+      await page.locator('#copilot-panel[open]').waitFor();
+    };
     const shoot=async name=>page.locator('#copilot-panel').screenshot({path:path.join(out,`${name}.png`)});
     await open();await shoot('01-empty');assert.equal(await page.locator('.copilot-mascot').count(),3);
     await page.getByRole('button',{name:'우리 회사, 참여 가능해?',exact:true}).click();
@@ -107,7 +110,8 @@ function load(file) {
     assert.equal(await page.locator('.copilot-header-badges').getByText('조회 v2',{exact:true}).count(),1);
     assert.equal(await page.locator('.copilot-header-badges').getByText('확인 필요',{exact:true}).count(),1);
     await page.locator('.copilot-evidence-chip').first().click();await page.waitForURL('**/evidence?**');
-    assert(await page.locator('.copilot-conclusion').isVisible());
+    await waitForCopilotAfterNavigation();
+    await page.locator('.copilot-conclusion').waitFor();
     assert.equal(await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).count(),0,'Evidence page must not show the changes suggestion');
     assert.equal(await page.getByRole('button',{name:'내가 물어볼 수 있는 질문이 뭐야?',exact:true}).count(),1,'Evidence page should show the contextual help suggestion');
     await page.goto(`${origin}/changes?caseId=${id}`);
@@ -116,6 +120,7 @@ function load(file) {
     await page.locator('#copilot-panel[open]').waitFor();
     await page.getByRole('button',{name:'변경된 요건 보여줘',exact:true}).click();await page.locator('[data-state=CHANGED_NOTICE]').waitFor();await shoot('05-changed');
     await page.getByRole('link',{name:'변경사항 상세 보기 · 06'}).click();await page.waitForURL('**/changes?**');
+    await waitForCopilotAfterNavigation();
     await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#copilot-panel').matches(':modal'));
     await shoot('08-mobile');assert((await page.locator('#copilot-panel').boundingBox()).width<=390);
     await page.setViewportSize({width:1440,height:1000});
@@ -127,6 +132,7 @@ function load(file) {
     assert.equal(confirms,0,'Every read/design state performs zero confirms');
     mode='summary';await open();await page.getByRole('button',{name:'무엇을 확인해야 해?',exact:true}).click();await page.locator('[data-state=NEEDS_CHECK]').waitFor();
     await page.locator('#copilot-panel').getByRole('button',{name:/· 답변 입력$/}).click();await page.waitForURL('**/ask-back?**');
+    await waitForCopilotAfterNavigation();
     assert.equal(await page.locator('#copilot-panel').getByRole('button',{name:'내용 확인 후 실행'}).count(),0,'Panel summarizes, detail confirms');
     await page.getByRole('button',{name:'도우미 닫기'}).click();
     const card=page.locator('.app-shell-content .copilot-action-card').first();

@@ -1,34 +1,8 @@
-'use client';
+import type { ReactNode } from 'react';
 
-import { useEffect, useState, type ReactNode } from 'react';
-
-import { ProfileRecordsManager } from '@/components/product/profile-records-manager';
-import { listCompanies, type CompanyProfile } from '@/lib/qualification-api';
-
+// 수행 실적·인증 관리는 회사 프로필 페이지가 직접 원하는 자리에 렌더한다.
+// 예전에는 이 레이아웃이 children 뒤에 붙였는데, 그러면 화면 순서를 페이지에서 정할 수 없고
+// 레이아웃이 회사 목록을 한 번 더 조회해 페이지가 고른 회사와 어긋날 수 있었다.
 export default function CompanyLayout({ children }: { children: ReactNode }) {
-  const [company, setCompany] = useState<CompanyProfile | null>(null);
-
-  async function reload() {
-    try {
-      const companies = await listCompanies();
-      setCompany(companies[0] ?? null);
-    } catch {
-      setCompany(null);
-    }
-  }
-
-  useEffect(() => {
-    void reload();
-  }, []);
-
-  return (
-    <>
-      {children}
-      {company && (
-        <div className="app-shell-container pb-12">
-          <ProfileRecordsManager company={company} onChanged={reload} />
-        </div>
-      )}
-    </>
-  );
+  return <>{children}</>;
 }

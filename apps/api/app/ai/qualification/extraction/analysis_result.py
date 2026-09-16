@@ -37,10 +37,17 @@ class AnalysisDiagnostic(BaseModel):
 
 
 class DroppedRequirement(BaseModel):
-    """An extracted candidate rejected by deterministic source validation."""
+    """An extracted candidate rejected by deterministic source validation.
+
+    `detail_field`·`detail_value` 는 DETAIL_NOT_FOUND_IN_SOURCE 일 때만 채워진다.
+    "세부 조건을 못 찾았다" 만으로는 모델이 지어낸 것인지 우리 대조가 못 따라간 것인지
+    가릴 수 없고, 둘은 고칠 자리가 다르다 — 앞엣것은 프롬프트, 뒤엣것은 대조 규칙이다.
+    """
 
     raw: str
     reason_code: DroppedReasonCode
+    detail_field: str | None = None
+    detail_value: str | None = None
 
 
 class RequirementAnalysisResult(BaseModel):
@@ -110,9 +117,30 @@ _DIAGNOSTIC_MESSAGES = {
     "UNMAPPED_REGISTRATION_CERTIFICATION": "등록·면허·인증 요건의 명칭을 구조화하지 못했습니다.",
     "UNMAPPED_COMPANY_SIZE": "기업규모 요건의 비교값을 구조화하지 못했습니다.",
     "UNKNOWN_LEGACY_TYPE": "지원하지 않는 슬롯 유형이라 판정하지 않고 근거와 함께 기록합니다.",
+    "DUPLICATE_REQUIREMENT": "같은 유형·값·원문의 요건이 여러 번 나와 하나만 남겼습니다.",
+    "MERGED_INDUSTRY_REGISTRATION": "같은 조항을 업종 등록과 등록·인증 보유로 이중 분류해 업종코드 쪽으로 합쳤습니다.",
+    "INDUSTRY_CODE_SALVAGED_FROM_SOURCE": "모델이 올리지 않은 업종코드 조항을 원문에서 직접 채웠습니다.",
+    "INDUSTRY_ALTERNATION": "업종코드가 '또는' 로 갈린 조항을 ANY_OF 묶음으로 담았습니다.",
+    "SALVAGED_CLOSED_IDENTIFIER": "분류가 기타요건이었으나 원문의 닫힌 식별자(업종코드·세부품명번호)로 유형을 되살렸습니다.",
+    "INDUSTRY_CODE_EXCEPTION_UNRESOLVED": "업종코드 조항 다음 줄에 갈음·대체·예외 단서가 있어 무조건 필수로 확정하지 않았습니다.",
+    "COMPANY_SIZE_FROM_CERTIFICATE": "규모 확인서(중소기업·소기업·소상공인확인서)는 인증이 아니라 회사 규모의 증빙이라 기업규모 요건으로 담았습니다.",
 }
 
 _NOTICE_FACT_CODES = {"UNMAPPED_REQUIREMENT", "UNKNOWN_LEGACY_TYPE"}
+
+# 요건을 하나 **살려낸** 기록이다. 무엇이 안 된 기록이 아니므로 분석을 PARTIAL 로
+# 내리지 않는다. 그래도 남기는 이유는 모델 분류가 틀렸다는 신호이기 때문이다.
+_INFORMATIONAL_PIPELINE_CODES = {
+    "COMPANY_SIZE_FROM_CERTIFICATE",
+    # 예외 단서가 붙은 코드는 요건 행 자체가 composite(확인 필요)로 남는다 — 불확실성은
+    # 구조가 들고 있으므로 분석을 PARTIAL 로 내릴 이유가 없다.
+    "INDUSTRY_CODE_EXCEPTION_UNRESOLVED",
+    "SALVAGED_CLOSED_IDENTIFIER",
+    "INDUSTRY_ALTERNATION",
+    "INDUSTRY_CODE_SALVAGED_FROM_SOURCE",
+    "DUPLICATE_REQUIREMENT",
+    "MERGED_INDUSTRY_REGISTRATION",
+}
 
 
 def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
@@ -120,7 +148,9 @@ def _canonical_diagnostic(raw: dict[str, Any]) -> AnalysisDiagnostic:
     is_notice_fact = code in _NOTICE_FACT_CODES
     return AnalysisDiagnostic(
         code=code,
-        severity="INFO" if is_notice_fact else "WARNING",
+        severity="INFO"
+        if is_notice_fact or code in _INFORMATIONAL_PIPELINE_CODES
+        else "WARNING",
         message=_DIAGNOSTIC_MESSAGES.get(code, "Canonical 변환 과정에서 확인이 필요합니다."),
         details={
             key: value
@@ -165,7 +195,9 @@ def build_requirement_analysis_result(
             ),
         )
         status: AnalysisStatus = "PARTIAL" if requirements or evidence else "FAILED"
-    elif any(item.kind == "PIPELINE" for item in diagnostics):
+    elif any(
+        item.kind == "PIPELINE" and item.severity != "INFO" for item in diagnostics
+    ):
         status = "PARTIAL"
     else:
         status = "SUCCEEDED"

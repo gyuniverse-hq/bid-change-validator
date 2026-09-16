@@ -646,6 +646,7 @@ class NoticeCollectionRunRead(ApiModel):
     created_count: int
     new_version_count: int
     unchanged_count: int
+    failed_item_count: int
     error_message: str | None
     started_at: datetime
     completed_at: datetime | None

@@ -12,7 +12,12 @@ type QualificationRowProps = {
   condition: string;
   companyValue: string;
   evidenceLabel: string;
-  actionLabel: string;
+  /**
+   * 「조치」 열에 쓸 말. 할 일이 없는 행(판정이 끝난 행)은 null을 준다.
+   * 예전에는 판정이 끝나면 「판정 완료」를 넣었는데, 조치 열은 무엇을 하라는 자리라
+   * 미달 행 아래에 「판정 완료」가 붙으면 뭘 하라는 건지 알 수 없었다. 판정 배지는 이미 왼쪽에 있다.
+   */
+  actionLabel?: string | null;
   onEvidence?: () => void;
   onAction?: () => void;
 };
@@ -89,9 +94,9 @@ export function QualificationRow({
           <Button size="sm" variant={status === 'UNKNOWN' ? 'default' : 'outline'} onClick={onAction} className="rounded-full">
             {actionLabel}
           </Button>
-        ) : (
+        ) : actionLabel ? (
           <span className="text-[12px] text-[var(--product-faint)]">{actionLabel}</span>
-        )}
+        ) : null}
       </div>
     </div>
   );

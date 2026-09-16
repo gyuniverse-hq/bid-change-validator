@@ -25,6 +25,7 @@ node scripts/check-copilot.mjs 2>&1 | tee "$ROOT/.ci-results/client.log"
 node scripts/check-copilot-actions.mjs 2>&1 | tee "$ROOT/.ci-results/actions.log"
 node scripts/check-copilot-integration.mjs 2>&1 | tee "$ROOT/.ci-results/integration.log"
 node scripts/check-copilot-semantic.mjs 2>&1 | tee "$ROOT/.ci-results/semantic-optin.log"
+node scripts/check-copilot-target-memory.mjs 2>&1 | tee "$ROOT/.ci-results/target-memory.log"
 mapfile -t changed < <(git -C "$ROOT" diff --name-only "${COPILOT_BASE_SHA:?Pinned baseline is required}" -- apps/web | grep -E '\.(ts|tsx|mjs|cjs)$' | sed 's#^apps/web/##')
 if [ "${#changed[@]}" -gt 0 ]; then pnpm exec oxlint "${changed[@]}" 2>&1 | tee "$ROOT/.ci-results/changed-lint.log"; fi
 # Existing unrelated debt remains visible, never counted as a clean repository.
@@ -42,4 +43,10 @@ for n in $(seq 1 60); do
   sleep 2
 done
 if [ "$READY" != 1 ]; then cat "$ROOT/.ci-results/web-server.log"; echo 'UI did not become ready'; exit 1; fi
+mkdir -p "$ROOT/.ci-results/screenshots"
 COPILOT_UI_URL=http://localhost:3000 COPILOT_SCREENSHOT_DIR="$ROOT/.ci-results/screenshots" PLAYWRIGHT_MODULE="$RUNNER_TEMP/copilot-browser/node_modules/playwright" node scripts/check-copilot-design-browser.cjs 2>&1 | tee "$ROOT/.ci-results/browser.log"
+COPILOT_UI_URL=http://localhost:3000 \
+COPILOT_REPLAY_FILE="$ROOT/docs/07_handoff/ai-copilot-v3.1/implementation-evidence/copilot-v31-20260913T194111Z/replay.json" \
+COPILOT_SCREENSHOT_FILE="$ROOT/.ci-results/screenshots/copilot-v31.png" \
+PLAYWRIGHT_MODULE="$RUNNER_TEMP/copilot-browser/node_modules/playwright" \
+node scripts/check-copilot-v31-browser.mjs 2>&1 | tee "$ROOT/.ci-results/browser-v31.log"

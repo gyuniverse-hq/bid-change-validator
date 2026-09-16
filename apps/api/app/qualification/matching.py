@@ -11,7 +11,7 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from .rules.judgment import judge_requirements
 from ..analysis_models import QualificationAnalysisRun
@@ -37,30 +37,33 @@ def match_cached_notices(
     profile = build_company_profile_snapshot(company, completeness)
     ref_date = reference_date or date.today()
 
-    current_versions = db.execute(
-        select(BidNotice, BidNoticeVersion)
+    latest_run = aliased(QualificationAnalysisRun)
+    latest_run_id = (
+        select(latest_run.id)
+        .where(latest_run.notice_version_id == BidNoticeVersion.id)
+        .order_by(latest_run.created_at.desc(), latest_run.id.desc())
+        .limit(1)
+        .correlate(BidNoticeVersion)
+        .scalar_subquery()
+    )
+
+    analyzed_versions = db.execute(
+        select(BidNotice, BidNoticeVersion, QualificationAnalysisRun)
         .join(BidNoticeVersion, BidNoticeVersion.notice_id == BidNotice.id)
-        .where(BidNoticeVersion.is_current.is_(True))
+        .join(QualificationAnalysisRun, QualificationAnalysisRun.id == latest_run_id)
+        .where(
+            BidNoticeVersion.is_current.is_(True),
+            QualificationAnalysisRun.status != "FAILED",
+        )
+        .options(
+            selectinload(QualificationAnalysisRun.requirements),
+            selectinload(QualificationAnalysisRun.evidence),
+        )
         .order_by(BidNotice.last_seen_at.desc())
     ).all()
 
     items: list[NoticeMatchRead] = []
-    for notice, version in current_versions:
-        run = db.scalar(
-            select(QualificationAnalysisRun)
-            .where(
-                QualificationAnalysisRun.notice_version_id == version.id,
-            )
-            .options(
-                selectinload(QualificationAnalysisRun.requirements),
-                selectinload(QualificationAnalysisRun.evidence),
-            )
-            .order_by(QualificationAnalysisRun.created_at.desc())
-            .limit(1)
-        )
-        if run is None or run.status == "FAILED":
-            continue
-
+    for notice, version, run in analyzed_versions:
         analysis = analysis_run_response(run)
         evaluation = judge_requirements(
             analysis.requirements,

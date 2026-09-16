@@ -23,6 +23,8 @@ from .document_storage import NoticeDocumentDownloader
 from .document_extraction import copy_extraction
 from .notice_change_history import upsert_notice_change_history
 from .notice_facts import upsert_g2b_notice_facts
+from .notice_history_backfill import enqueue_notice_history_backfill
+from .json_safety import sanitize_json_value
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -70,6 +72,7 @@ def _decimal(value: Any) -> Decimal | None:
 
 
 def _payload_hash(item: dict[str, Any]) -> str:
+    item = sanitize_json_value(item)
     canonical = json.dumps(
         item,
         ensure_ascii=False,
@@ -178,10 +181,12 @@ def save_notice_snapshot(
     collected_at: datetime | None = None,
     document_downloader: NoticeDocumentDownloader | None = None,
 ) -> tuple[SaveResult, BidNotice, BidNoticeVersion]:
+    item = sanitize_json_value(item)
     collected_at = collected_at or datetime.now(KST)
     notice_no = _required_text(item, "bidNtceNo")
     title = _required_text(item, "bidNtceNm")
     payload_hash = _payload_hash(item)
+    bid_notice_order = _text(item.get("bidNtceOrd")) or "00"
 
     notice = db.scalar(
         select(BidNotice)
@@ -212,6 +217,16 @@ def save_notice_snapshot(
                 BidNoticeVersion.payload_hash == payload_hash,
             )
         )
+        if existing is None:
+            # G2B's published order is the business identity of a revision.
+            # The same order can be returned with harmless response-shape drift
+            # from another inquiry operation; it must not become a fake version.
+            existing = db.scalar(
+                select(BidNoticeVersion).where(
+                    BidNoticeVersion.notice_id == notice.id,
+                    BidNoticeVersion.bid_notice_order == bid_notice_order,
+                )
+            )
         notice.last_seen_at = collected_at
         if existing is not None:
             _resolve_pending_notice_relations(
@@ -273,7 +288,7 @@ def save_notice_snapshot(
     version = BidNoticeVersion(
         notice_id=notice.id,
         version_number=version_number,
-        bid_notice_order=_text(item.get("bidNtceOrd")) or "00",
+        bid_notice_order=bid_notice_order,
         is_current=True,
         notice_kind=_text(item.get("ntceKindNm")),
         registration_type=_text(item.get("rgstTyNm")),
@@ -330,6 +345,37 @@ def save_notice_snapshot(
     return result, notice, version
 
 
+def _notice_order_sort_key(version: BidNoticeVersion) -> tuple[int, str, int]:
+    raw_order = _text(version.bid_notice_order) or ""
+    return (
+        int(raw_order) if raw_order.isdigit() else 2_147_483_647,
+        raw_order,
+        version.version_number,
+    )
+
+
+def _resequence_notice_versions(db: Session, *, notice_id) -> None:
+    """Make version_number/current follow G2B order after historical backfill."""
+
+    versions = db.scalars(
+        select(BidNoticeVersion).where(BidNoticeVersion.notice_id == notice_id)
+    ).all()
+    if not versions:
+        return
+
+    ordered = sorted(versions, key=_notice_order_sort_key)
+    offset = max(version.version_number for version in ordered) + len(ordered) + 1
+    db.execute(
+        update(BidNoticeVersion)
+        .where(BidNoticeVersion.notice_id == notice_id)
+        .values(version_number=BidNoticeVersion.version_number + offset)
+    )
+    for number, version in enumerate(ordered, start=1):
+        version.version_number = number
+        version.is_current = number == len(ordered)
+    db.flush()
+
+
 def run_notice_sync(
     db: Session,
     *,
@@ -362,8 +408,9 @@ def run_notice_sync(
                 queued_previous_numbers.add(previous_notice_no)
                 pending_previous_numbers.append(previous_notice_no)
 
+        item_errors: list[str] = []
+
         def count_result(result: SaveResult) -> None:
-            run.fetched_count += 1
             if result == "CREATED":
                 run.created_count += 1
             elif result == "NEW_VERSION":
@@ -371,7 +418,35 @@ def run_notice_sync(
             else:
                 run.unchanged_count += 1
 
+        def save_item(item: dict[str, Any], *, source_endpoint: str) -> None:
+            run.fetched_count += 1
+            try:
+                with db.begin_nested():
+                    result, notice, version = save_notice_snapshot(
+                        db,
+                        item=item,
+                        business_type=request.business_type,
+                        source_endpoint=source_endpoint,
+                        document_downloader=document_downloader,
+                    )
+                    count_result(result)
+                    queue_previous_notice(item)
+                    if (
+                        result == "CREATED"
+                        and request.inquiry_type != NoticeInquiryType.NOTICE_NUMBER
+                    ):
+                        enqueue_notice_history_backfill(db, notice_id=notice.id)
+                    if request.inquiry_type == NoticeInquiryType.CHANGED:
+                        change_history_targets[notice.bid_notice_no] = (notice, version)
+            except Exception as error:
+                run.failed_item_count += 1
+                notice_no = _text(item.get("bidNtceNo")) or "UNKNOWN"
+                item_errors.append(
+                    f"{notice_no}:{type(error).__name__}:{str(error)[:300]}"
+                )
+
         page_number = 1
+        notice_number_items: list[tuple[dict[str, Any], str]] = []
         while page_number <= request.max_pages:
             page = client.fetch_page(
                 business_type=request.business_type,
@@ -384,21 +459,64 @@ def run_notice_sync(
             )
             run.api_calls += 1
             for item in page.items:
-                result, notice, version = save_notice_snapshot(
-                    db,
-                    item=item,
-                    business_type=request.business_type,
-                    source_endpoint=page.endpoint,
-                    document_downloader=document_downloader,
-                )
-                count_result(result)
-                queue_previous_notice(item)
-                if request.inquiry_type == NoticeInquiryType.CHANGED:
-                    change_history_targets[notice.bid_notice_no] = (notice, version)
+                if request.inquiry_type == NoticeInquiryType.NOTICE_NUMBER:
+                    notice_number_items.append((item, page.endpoint))
+                else:
+                    save_item(item, source_endpoint=page.endpoint)
             db.commit()
             if not page.items or page_number * request.page_size >= page.total_count:
                 break
             page_number += 1
+
+        if notice_number_items:
+            def notice_order(values: tuple[dict[str, Any], str]) -> tuple[int, str]:
+                raw_order = _text(values[0].get("bidNtceOrd")) or ""
+                return (
+                    int(raw_order) if raw_order.isdigit() else 2_147_483_647,
+                    raw_order,
+                )
+
+            # A full-history lookup is one logical unit.  Keeping 000~004 while
+            # 005 failed could make 004 look current and permanently complete
+            # the backfill job.  Retain item savepoints for diagnostics, but
+            # roll back every version written by this lookup when any item
+            # fails.  The durable backfill job will retry the whole notice.
+            history_transaction = db.begin_nested()
+            try:
+                for item, source_endpoint in sorted(
+                    notice_number_items,
+                    key=notice_order,
+                ):
+                    save_item(item, source_endpoint=source_endpoint)
+
+                if item_errors:
+                    history_transaction.rollback()
+                    db.refresh(run)
+                    run.fetched_count = len(notice_number_items)
+                    run.failed_item_count = len(item_errors)
+                    run.status = "FAILED"
+                    run.error_message = (
+                        f"{len(item_errors)}개 항목 저장 실패: "
+                        + " | ".join(item_errors[:10])
+                    )[:2000]
+                    run.completed_at = datetime.now(KST)
+                    db.commit()
+                    db.refresh(run)
+                    return run
+
+                target_notice = db.scalar(
+                    select(BidNotice).where(
+                        BidNotice.bid_notice_no == request.bid_notice_no
+                    )
+                )
+                if target_notice is not None:
+                    _resequence_notice_versions(db, notice_id=target_notice.id)
+                history_transaction.commit()
+            except Exception:
+                if history_transaction.is_active:
+                    history_transaction.rollback()
+                raise
+            db.commit()
 
         # Reannouncements use a different notice number. Fetch direct predecessors
         # immediately and follow a bounded chain so the relation works at once.
@@ -424,15 +542,7 @@ def run_notice_sync(
             for previous_item in previous_page.items:
                 if _text(previous_item.get("bidNtceNo")) != previous_notice_no:
                     continue
-                result, _, _ = save_notice_snapshot(
-                    db,
-                    item=previous_item,
-                    business_type=request.business_type,
-                    source_endpoint=previous_page.endpoint,
-                    document_downloader=document_downloader,
-                )
-                count_result(result)
-                queue_previous_notice(previous_item)
+                save_item(previous_item, source_endpoint=previous_page.endpoint)
             db.commit()
 
         if (
@@ -474,7 +584,14 @@ def run_notice_sync(
                 history_page_number += 1
             db.commit()
 
-        run.status = "COMPLETED"
+        # Partial polling runs keep successfully isolated items, but must not
+        # advance the next polling checkpoint.  Only COMPLETED runs are used by
+        # the worker when calculating its next window.
+        run.status = "FAILED" if item_errors else "COMPLETED"
+        if item_errors:
+            run.error_message = (
+                f"{len(item_errors)}개 항목 저장 실패: " + " | ".join(item_errors[:10])
+            )[:2000]
         run.completed_at = datetime.now(KST)
         db.commit()
         db.refresh(run)

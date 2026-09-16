@@ -83,10 +83,10 @@ def create_preflight_case(db: Session, payload: PreflightCaseCreate) -> Prefligh
             "NOTICE_VERSION_NOT_FOUND",
             "기준 공고 버전을 찾을 수 없습니다.",
         )
-    if baseline_version is not None and baseline_version.version_number > current_version.version_number:
+    if baseline_version is not None and baseline_version.version_number >= current_version.version_number:
         raise PreflightValidationError(
             "INVALID_VERSION_RANGE",
-            "기준 공고 버전은 현재 공고 버전보다 앞서야 합니다.",
+            "기준 공고 버전은 현재 공고 버전보다 앞선 차수여야 합니다.",
         )
 
     case = PreflightCase(

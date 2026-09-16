@@ -17,6 +17,7 @@ import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-wo
 */
 import { fetchLatestRevalidation, type QualificationRequirement, type RevalidationResult } from '@/lib/copilot-api';
 import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
+import { sameStructuredValue } from '@/lib/requirement-diff';
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -37,30 +38,6 @@ function requirementValue(requirement: QualificationRequirement) {
   const unit = requirement.unit ? ` ${requirement.unit}` : '';
   const period = requirement.period_months ? ` · 최근 ${requirement.period_months}개월` : '';
   return `${requirement.value}${unit}${period}`;
-}
-
-/*
-  구조화된 값이 같은지 본다. 비교할 필드를 우리가 고르지 않고 백엔드
-  requirement_diff.py의 decision_payload()를 그대로 따른다 — 백엔드가 MODIFIED/UNCHANGED를
-  가르는 기준이 그 목록이라, 우리가 따로 정하면 두 기준이 조용히 어긋난다. (#132 리뷰)
-  거기서 raw(원문)만 뺀다. 여기서 말하려는 것이 「구조화 값은 같고 원문만 다르다」이기 때문이다.
-  원문 차이가 단순 표기인지 뜻이 바뀐 걸 추출기가 놓친 건지는 여기서 판정하지 않는다 — 그래서 배지도 「표기 차이」라 하지 않는다. (#132 리뷰)
-  raw는 판정 전 조항 안전성 검사에도 쓰이므로 「판정 영향 없음」이라고는 쓰지 않는다.
-*/
-const STRUCTURED_FIELDS = [
-  'type', 'operator', 'value', 'unit', 'period_months',
-  'required', 'requirement_role', 'condition_complexity', 'group_operator',
-] as const;
-
-/** scope는 객체라 키 순서에 흔들리지 않게 정렬해서 비교한다. */
-function scopeKey(scope: Record<string, unknown> | null | undefined) {
-  if (!scope) return '';
-  return JSON.stringify(Object.keys(scope).sort().map((key) => [key, scope[key]]));
-}
-
-function sameStructuredValue(before: QualificationRequirement | null, after: QualificationRequirement | null) {
-  if (!before || !after) return false;
-  return STRUCTURED_FIELDS.every((field) => before[field] === after[field]) && scopeKey(before.scope) === scopeKey(after.scope);
 }
 
 /** 재검증 결과 한 줄의 한쪽 차수. 요건이 없으면 왜 없는지를 적는다. */
@@ -230,7 +207,7 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
                           <strong className="text-[15px]">{typeCode ? labelOf(REQUIREMENT_TYPE_LABEL, typeCode) : (item.current_key ?? item.baseline_key ?? item.identity)}</strong>
                           <span className="rounded-full bg-[#fbf0dc] px-2.5 py-0.5 text-[13px] font-bold text-[#8a5a00]">{CHANGE_TYPE_LABEL[item.change_type]}</span>
                           {comparable && (sameStructured
-                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[13px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문 차이 있음</span>
+                            ? <span className="rounded-full bg-[#f6f7f9] px-2.5 py-0.5 text-[13px] font-semibold text-[var(--product-muted)]">구조화 값 동일 · 원문·근거 차이</span>
                             : <span className="rounded-full bg-[#fbe9e9] px-2.5 py-0.5 text-[13px] font-bold text-[#9a2b2b]">구조화 값 변경</span>)}
                         </span>
                         <span className="mt-1 block truncate text-[13px] text-[var(--product-muted)]">{summary}</span>

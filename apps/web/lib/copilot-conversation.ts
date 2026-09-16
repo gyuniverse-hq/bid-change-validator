@@ -142,6 +142,7 @@ export class ConversationStore {
   private states = new Map<string, Conversation>();
   private listeners = new Set<() => void>();
   private failed = new Map<string, FailedRead>();
+  private publicationId = -1;
   constructor(private transport: Transport = sendConversationMessage) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   get(caseId: string) {
@@ -166,6 +167,15 @@ export class ConversationStore {
   publish(caseId: string, response: CopilotChatResponse) {
     validateSources(response);
     const state = this.get(caseId), revision = state.revision + 1;
+    if (state.busy) {
+      // A passive action readback is not a new user request. Keep the pending
+      // request's revision so its already-running response cannot be discarded.
+      const pending = state.turns.findIndex(turn => turn.id === state.revision && !turn.response);
+      const index = pending < 0 ? state.turns.length : pending;
+      const publication = { id: this.publicationId--, question: '반영 후 현재 결과', response };
+      this.update(caseId, { turns: [...state.turns.slice(0, index), publication, ...state.turns.slice(index)] });
+      return;
+    }
     this.update(caseId, { revision, busy: false, focus: null, reply: conversationReply(response.reply_context ?? undefined, state.reply),
       error: '', errorCode: '', turns: [...state.turns, { id: revision, question: '반영 후 현재 결과', response }] });
   }

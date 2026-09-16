@@ -63,8 +63,52 @@ class ProductTools:
         self.bundle.server_context = {**self.bundle.server_context, 'overall_status': summary.overall_status,
                                       'judgment_counts': summary.judgment_counts,
                                       'provenance': p.model_dump(mode='json')}
+        # The same causal context accompanies document follow-ups as well as
+        # judgment reads. RULE_MATCH alone does not mean a license was checked.
+        self.bundle.server_context['judgment_basis'] = [self._judgment_basis(j,summary.profile_snapshot) for j in summary.judgments]
+        if any(str(j.evaluated_condition.get('source_group',{}).get('review_scope','')).startswith('LOCAL_')
+               for j in summary.judgments):
+            self.bundle.limitations.append('업종군 결합 관계는 이 로컬 검수 자료의 가정으로만 적용했습니다. 실제 공고의 법적 해석을 확정한 것이 아닙니다.')
         self.bundle.fingerprints['product'] = digest(summary.model_dump(mode='json'))
         return summary
+
+    @staticmethod
+    def _judgment_basis(item, snapshot=None):
+        from ..qualification.rules.source_contracts import confirmation_fields
+        profile=_profile_for_ai(snapshot or {})
+        def comparison_values(value):
+            # The rule engine uses verified only for evidence_held, never for
+            # status. Do not present that flag as a comparison operand.
+            if isinstance(value, dict):
+                return {k:comparison_values(v) for k,v in value.items() if k != 'verified'}
+            if isinstance(value, list):return [comparison_values(v) for v in value]
+            return value
+        keys={'INDUSTRY':['industries'],'REGION':['region_code','region_name'],
+              'COMPANY_SIZE':['company_size'],'STAFF':['staff'],'EXPERIENCE_FIELD':['performances'],
+              'PERFORMANCE_AMOUNT':['performances'],'PERFORMANCE_COUNT':['performances'],
+              'REGISTRATION_CERTIFICATION':['certifications']}.get(item.type,[])
+        contract=item.evaluated_condition.get('source_contract')
+        fields=confirmation_fields(contract) if contract else []
+        answer_meaning = (' / '.join(label for _,label in fields)
+            + (' 조건 전체를 충족한다는 사용자 확인 답변으로 저장한 결과' if item.status=='SATISFIED'
+               else ' 조건 전체를 충족하지 않는다는 사용자 확인 답변으로 저장한 결과')) if fields else '사용자 답변에 따른 판정'
+        if contract and contract.get('kind')=='WASTE_TRANSPORT' and item.basis_type=='USER_ANSWER':
+            answer_meaning += '. 운반업 코드 등록을 인정한 결과가 아니라 별도 등록 예외의 복합 확인 답변이다'
+        comparison_semantics = (
+            '실적 후보의 날짜 범위를 확인한 뒤 저장 실적명 또는 분야와 요건 비교값을 문자열 대조한다. '
+            '운영기간·식수·기관유형을 각각 계산한 판정이 아니다. 그 상세 정보의 누락을 RULE_MISMATCH의 직접 원인으로 추론하지 않는다. '
+            '실제 복합 실적 조건을 입증할 추가 자료와 현재 저장 규칙의 비교 결과는 구분해야 한다.'
+        ) if item.type == 'EXPERIENCE_FIELD' and item.basis_type == 'PROFILE' else None
+        return {'requirement': item.raw, 'status': item.status, 'basis_type': item.basis_type,
+                'value_source': item.value_source, 'evidence_status': item.evidence_status,
+                'unknown_reason': item.unknown_reason, 'condition': item.evaluated_condition,
+                'stored_profile_inputs':{k:comparison_values(profile[k]) for k in keys} if snapshot else {},
+                'verification_flags_affect_status':False,
+                'comparison_semantics':comparison_semantics,
+                'evidence_meaning':'verified/증빙 보유 표시는 근거 기록이며 충족·미달을 정하는 비교값이 아님. 미검증 또는 증빙 없음 자체를 미달 원인으로 설명하지 않는다. 실제 증빙 검증이나 회사의 실제 미보유를 뜻하지 않음',
+                'meaning': answer_meaning + '. 실제 증빙 검증이 아님' if item.basis_type == 'USER_ANSWER'
+                           else '저장된 회사정보를 규칙과 비교한 판정이며 실제 증빙 검증이 아님' if item.basis_type == 'PROFILE'
+                           else '판정 근거가 부족하거나 조건이 불확실하여 자동 비교를 확정하지 못함'}
 
     def judgment(self):
         summary = self._summary()
@@ -80,6 +124,7 @@ class ProductTools:
         by_key = {e.requirement.requirement_key: e.evidence for e in evidence}
         for item in summary.judgments:
             text = f'저장된 요건 상태: {item.status}. 요건: {item.raw}. 사유 코드: {item.reason_code}.'
+            text += '\n판정에 사용된 기준: ' + json.dumps(self._judgment_basis(item,summary.profile_snapshot), ensure_ascii=False)
             ids = [self._source('PRODUCT', text)]
             ids += [self._source('DOCUMENT', e.quote, evidence=e) for e in by_key[item.requirement_key] if e.quote.strip()]
             self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=item.requirement_key, origin='READ_JUDGMENT')
@@ -113,7 +158,8 @@ class ProductTools:
             text = ('답변 입력 가능: ' if q.askable else '직접 확인 필요·현재 입력 불가: ') + q.question
             ids = [self._source('PRODUCT', text)]
             ids += [self._source('DOCUMENT', e.quote, evidence=e) for e in by_key[q.requirement_key] if e.quote.strip()]
-            self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=q.requirement_key, origin='READ_CHECKS')
+            fid=self._fact('SERVER_RESULT', text, ids, target='REQUIREMENT', key=q.requirement_key, origin='READ_CHECKS')
+            self.bundle.server_context.setdefault('check_guidance',{})[fid]={'input_allowed':q.askable,'text':text}
         if answerable_only and not questions:
             text = '현재 저장된 판정에서 추가 답변을 입력할 수 있는 확인 질문은 없습니다. 모든 참가조건이 충족됐다는 뜻은 아닙니다.'
             self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text)], origin='READ_CHECKS', entity='checks_empty')
@@ -124,8 +170,12 @@ class ProductTools:
                 if ids:
                     manual = '직접 원문 검토 대상입니다. 이 항목은 저장 판정의 답변 입력 대상이 아니며 회사의 실제 충족 여부를 확정한 결과가 아닙니다.'
                     ids.append(self._source('PRODUCT', manual))
-                    self._fact('NOTICE_FACT', manual + '\n' + '\n'.join(e.quote for e in cited), ids, target='MANUAL', origin='READ_CHECKS',
-                               entity='manual-' + digest([item.code, ids])[:20])
+                    fid=self._fact('NOTICE_FACT', manual + '\n' + '\n'.join(e.quote for e in cited), ids, target='MANUAL', origin='READ_CHECKS',
+                                   entity='manual-' + digest([item.code, ids])[:20])
+                    self.bundle.server_context.setdefault('check_guidance',{})[fid]={'input_allowed':False,
+                        'text':'직접 확인할 조건: '
+                        + '\n'.join(dict.fromkeys(e.quote for e in cited))
+                        + '\n앱의 답변 입력 대상이 아닙니다.'}
             for item in scope.dropped_requirements:
                 # Raw dropped requirement alone has no original locator; never invent a citation.
                 self.bundle.limitations.append('구조화에서 제외된 항목은 참가자격 화면에서 원문을 확인해 주세요: ' + item.raw)
@@ -146,17 +196,24 @@ class ProductTools:
         # A list of documents and their deadlines spans notice sections.
         # Lexical top-k can match only generic '공고' and miss inflected words.
         broad = full_source_request(question) or notice_documents_deadlines_request(question)
+        from ..document_rag.langchain_pipeline import retrieve_current
         try:
-            passages, details = read_passages(readiness, question, broad=broad)
+            passages, details = retrieve_current(readiness, question, broad=broad)
         except Exception:
             readiness.index = None
-            passages, details = read_passages(readiness, question, broad=broad)
+            passages, details = retrieve_current(readiness, question, broad=broad)
             details['query_embedding_failed'] = True
         target = getattr(self, 'selected_target', None)
+        from ..document_rag.readiness import pack_current_passages
+        if broad:
+            passages = pack_current_passages(passages)
+            details['model_passages'] = len(passages)
+            details['packing'] = 'adjacent_source_text_no_omissions'
         if target and target.origin_tool == 'READ_DOCUMENT' and target.entity_ref:
             # The target stores the original chunk identity. Do not search using
             # generated answer prose to locate an already selected source.
-            passages = [r for r in snapshot.records if r.metadata.chunk_id == target.entity_ref]
+            candidates = pack_current_passages(snapshot.records) if target.entity_ref.startswith('packet-') else snapshot.records
+            passages = [r for r in candidates if r.metadata.chunk_id == target.entity_ref]
             details['strategy'] = 'selected_current_chunk'
         self.trace.append({'tool': 'READ_DOCUMENT', 'source_status': snapshot.source_status,
                            'index_status': readiness.index_status, 'generation': readiness.generation,
@@ -195,13 +252,22 @@ class ProductTools:
                       'source_judgment_id': impact.get('source_judgment_id'),
                       'result_judgment_id': impact.get('result_judgment_id')})],
             target='CHANGE', origin='READ_CHANGES', entity='saved_change_impact')
+        from collections import Counter
+        from .change_impact import structured_change_kind
+        classifications = Counter(structured_change_kind(c) for c in result.changes if c.change_type != 'UNCHANGED')
+        text = (f"저장 분석 변경 감지 {sum(classifications.values())}건: 구조화된 판정 값 변경 {classifications['STRUCTURED_VALUE_CHANGED']}건, "
+                f"구조화 값 동일 {classifications['STRUCTURED_VALUE_SAME']}건, 요건 추가 {classifications['ADDED']}건, 삭제 {classifications['REMOVED']}건. "
+                'MODIFIED 표시는 원문·출처의 차이도 포함하므로 구조화 값 변경과 같지 않습니다. 실제 공고 조항의 변경 여부는 별도 원문 대조로 확인합니다.')
+        self._fact('SERVER_RESULT',text,[self._source('PRODUCT',text)],target='CHANGE',origin='READ_CHANGES',entity='structured_change_classification')
+        labels={'ADDED':'저장 분석 요건 추가','REMOVED':'저장 분석 요건 삭제',
+                'STRUCTURED_VALUE_CHANGED':'구조화된 판정 값 변경','STRUCTURED_VALUE_SAME':'구조화된 판정 값 동일'}
         for change in result.changes:
             for label, version, requirement in [('이전', result.provenance.baseline, change.baseline), ('현재', result.provenance.current, change.current)]:
                 if requirement is None:
                     continue
                 scope = self.scope.model_copy(update={'notice_version_id': version.notice_version_id,
                                                       'analysis_run_id': version.analysis_run_id, 'judgment_run_id': version.judgment_run_id})
-                text = f'저장 분석 요건의 차이 — {label} 버전 {version.version_number}: {requirement.raw} ({change.change_type}). 원문 변경 여부와 회사 판정 변화는 별도 확인해야 합니다.'
+                text = f'저장 분석 요건 대조 — {label} 버전 {version.version_number}: {requirement.raw} ({labels[structured_change_kind(change)]}). 구조화 값이 동일하면 원문 표기·출처 정보 차이를 실제 판정 값 변경으로 설명하지 않습니다. 원문 변경 여부와 회사 판정 변화는 별도 확인해야 합니다.'
                 self._fact('SERVER_RESULT', text, [self._source('PRODUCT', text, scope=scope)], target='CHANGE', scope=scope,
                            origin='READ_CHANGES', entity=str(version.notice_version_id) + ':' + requirement.raw)
         if self.allow_documents:

@@ -48,9 +48,35 @@ def allowed_evaluation_request(payload, semantic_header=None):
             and semantic_header in {None, '', 'false', '0'})
 
 
+def owns_evaluation_workspace(labels, container_id):
+    """Keep the same owned DB after the explicit nested-worktree -> root move."""
+    if labels.get('copilot.workspace') == str(ROOT):
+        return True
+    receipt = STATE / 'workspace-migration.json'
+    try:
+        migration = json.loads(receipt.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(migration, dict):
+        return False
+    previous = str(ROOT / '.ci-results' / 'evaluation-ready')
+    return (migration.get('version') == 1
+            and migration.get('from_workspace') == previous
+            and migration.get('to_workspace') == str(ROOT)
+            and migration.get('container') == NAME
+            and migration.get('container_id') == container_id
+            and labels.get('copilot.workspace') == previous)
+
+
 def configure():
     """Verify ownership, socket, storage, binding and database identity first."""
-    docker = shutil.which('docker') or 'C:/Program Files/Docker/Docker/resources/bin/docker.exe'
+    docker = shutil.which('docker')
+    if not docker:
+        candidates = [Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs/DockerDesktop/resources/bin/docker.exe',
+                      Path('C:/Program Files/Docker/Docker/resources/bin/docker.exe')]
+        docker = next((str(p) for p in candidates if p.is_file()), None)
+    if not docker:
+        raise RuntimeError('Local Docker executable not found')
     def command(*parts, check=True):
         result = subprocess.run([docker, *parts], capture_output=True, text=True, encoding='utf-8')
         if check and result.returncode:
@@ -68,7 +94,7 @@ def configure():
                 '--env', 'POSTGRES_PASSWORD=' + secrets.token_hex(24), IMAGE)
     info = json.loads(command('inspect', NAME).stdout)[0]
     labels = info['Config'].get('Labels') or {}
-    if labels.get(LABEL) != 'true' or labels.get('copilot.workspace') != str(ROOT) or info['Config']['Image'] != IMAGE:
+    if labels.get(LABEL) != 'true' or not owns_evaluation_workspace(labels, info['Id']) or info['Config']['Image'] != IMAGE:
         raise RuntimeError('Container ownership mismatch; nothing changed')
     if any(m['Type'] != 'volume' or len(m.get('Name', '')) != 64 for m in info.get('Mounts', [])):
         raise RuntimeError('Unexpected shared storage')
@@ -195,6 +221,7 @@ def install_budgeted_model(key):
     from apps.api.app.copilot.model_gateway import ModelGateway, BudgetExceeded
     from openai import OpenAI
     lock = threading.RLock()
+    from scripts.local_model_budget import reserve, finish
     path = STATE / 'model-budget.json'
     if not path.exists():
         save(path, {'cap_estimate_usd':1.0, 'reserved_estimate_usd':0.0, 'calls':[],
@@ -205,16 +232,13 @@ def install_budgeted_model(key):
             self.reserved = 0.0
         def call(self, stage, system, body, schema):
             with lock:
-                ledger = json.loads(path.read_text(encoding='utf-8'))
+                if schema is not None:
+                    self.prepare_call(stage,system,body,schema)
                 amount = self.call_cost_upper(stage)
-                if ledger['reserved_estimate_usd'] + amount > min(16.03, ledger['cap_estimate_usd']) or self.reserved + amount > .25:
+                if self.reserved + amount > .25:
                     raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
+                index = reserve(path,stage,amount)
                 self.reserved += amount
-                ledger['reserved_estimate_usd'] += amount
-                index = len(ledger['calls'])
-                ledger['calls'].append({'stage':stage,'status':'reserved','reserved_estimate_usd':amount,
-                                        'time':datetime.now(timezone.utc).isoformat()})
-                save(path, ledger)
             started = time.monotonic()
             previous_calls = len(self.calls)
             try:
@@ -225,15 +249,23 @@ def install_budgeted_model(key):
                 status = 'failed'
                 raise
             finally:
-                with lock:
-                    ledger = json.loads(path.read_text(encoding='utf-8'))
-                    ledger['calls'][index]['status'] = status
-                    ledger['calls'][index]['elapsed_ms'] = round((time.monotonic() - started) * 1000)
-                    if len(self.calls) > previous_calls:
-                        ledger['calls'][index]['usage'] = self.calls[-1].get('usage')
-                    save(path, ledger)
+                finish(path,index,status=status,elapsed_ms=round((time.monotonic()-started)*1000),
+                       usage=self.calls[-1].get('usage') if len(self.calls)>previous_calls else None)
         def embed_query(self, text):
-            raise BudgetExceeded('LOCAL_EVALUATION_NO_EMBEDDING; use lexical retrieval or full document')
+            amount = (len(text.encode('utf-8'))+64)*.02/1_000_000
+            with lock:
+                if self.reserved+amount > .25:
+                    raise BudgetExceeded('LOCAL_EVALUATION_BUDGET_EXHAUSTED')
+                index = reserve(path,'query_embedding',amount)
+                self.reserved += amount
+            started, previous_calls, status = time.monotonic(),len(self.calls),'failed'
+            try:
+                result = super().embed_query(text)
+                status = 'succeeded'
+                return result
+            finally:
+                finish(path,index,status=status,elapsed_ms=round((time.monotonic()-started)*1000),
+                       usage=self.calls[-1].get('usage') if len(self.calls)>previous_calls else None)
     orchestration.ModelGateway = EvaluationGateway
 
 
@@ -307,7 +339,9 @@ def serve(args, identity):
         response = await call_next(request)
         response.headers['X-Copilot-Evaluation'] = 'local-q009-pending'
         return response
+    from scripts.prepare_copilot_pipeline import source_receipt
     save(STATE / 'server.json', {'pid':os.getpid(),'api_port':API_PORT,'web_port':WEB_PORT,
+        'database':identity,'source':source_receipt(),
         'model_enabled':bool(args.model_env),'conversation_storage':'process-memory; restart clears chat; DB answers persist'})
     uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=API_PORT, log_level='warning')).run(sockets=[sock])
 

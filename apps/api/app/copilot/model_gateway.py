@@ -41,6 +41,15 @@ class ModelGateway:
     def remaining(self):
         return max(0, self.deadline - monotonic())
 
+    def prepare_call(self,stage,system,body,schema):
+        from ..document_rag.langchain_pipeline import structured_messages
+        payload=json.dumps(body,ensure_ascii=False,default=str)
+        prompt=structured_messages(system,payload,examples=stage in {'generate','repair'})
+        upper=len((''.join(str(m.content) for m in prompt.to_messages())+json.dumps(schema.model_json_schema())).encode('utf-8'))+512
+        if stage in QUALITY_STAGES and self.allow_large_context and upper>16000:
+            self.large_context=True
+        return prompt,upper
+
     def call(self, stage, system, body, schema):
         if not self.enabled:
             raise RuntimeError('MODEL_PROCESSING_DISABLED')
@@ -56,11 +65,19 @@ class ModelGateway:
             raise BudgetExceeded('TURN_BUDGET')
         if stage == 'plan' and any(c['stage'] == 'plan' for c in self.calls):
             raise BudgetExceeded('PLAN_BUDGET')
+        if stage == 'parse_answer' and any(c['stage'] == 'parse_answer' for c in self.calls):
+            raise BudgetExceeded('ANSWER_PARSE_BUDGET')
         if stage == 'repair' and self.remaining() < 8:
             raise BudgetExceeded('REPAIR_AND_VALIDATION_BUDGET')
-        payload = json.dumps(body, ensure_ascii=False, default=str)
+        from ..document_rag.langchain_pipeline import invoke_structured, PROMPT_VERSION
+        restore = lambda result: result
+        from .v31_contracts import Verdicts
+        if schema is Verdicts and 'claims' in body:
+            from .verification_contract import fixed_verification_contract
+            body, schema, restore = fixed_verification_contract(body)
+            system += '\n출력 verdicts는 C 번호별 필수 객체이고 criteria는 K 번호별 필수 객체이다. 각 슬롯을 빠짐없이 평가한다. S 번호는 이미 검증한 문장으로 criteria 근거로만 선택한다. 상태는 근거에 따라 판단하며 누락 내용을 MET으로 만들지 않는다.'
+        prompt_value,upper=self.prepare_call(stage,system,body,schema)
         # UTF-8 bytes is a conservative token upper bound; include the response schema.
-        upper = len((system + payload + json.dumps(schema.model_json_schema())).encode('utf-8')) + 512
         input_limit, output_limit = self.call_limits(stage)
         if upper > input_limit:
             raise BudgetExceeded('INPUT_BUDGET')
@@ -71,14 +88,13 @@ class ModelGateway:
             self.client = OpenAI(max_retries=0)
         entry = {'stage': stage, 'model': self.model, 'input_token_upper_bound': upper,
                  'reserved_cost_upper_usd': self.call_cost_upper(stage), 'output_token_limit': output_limit,
-                 'usage': None, 'status': 'started'}
+                 'usage': None, 'status': 'started', 'pipeline': 'langchain',
+                 'prompt_version': PROMPT_VERSION, 'few_shot': stage in {'generate', 'repair'}}
         self.calls.append(entry)
         start = monotonic()
         try:
-            response = self.client.with_options(max_retries=0, timeout=self.remaining()).chat.completions.parse(
-                model=self.model, messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': payload}],
-                response_format=schema, max_completion_tokens=output_limit,
-            )
+            response = invoke_structured(self.client, model=self.model, prompt=prompt_value, schema=schema,
+                                         output_limit=output_limit, timeout=self.remaining())
             entry['usage'] = response.usage.model_dump() if response.usage else None
             if self.remaining() <= 0:
                 raise BudgetExceeded('LATE_MODEL_RESULT')
@@ -86,7 +102,7 @@ class ModelGateway:
             if parsed is None:
                 raise RuntimeError('MODEL_REFUSAL')
             entry['status'] = 'succeeded'
-            return schema.model_validate(parsed)
+            return restore(schema.model_validate(parsed))
         except Exception as error:
             entry['status'] = 'failed'
             entry['error'] = type(error).__name__

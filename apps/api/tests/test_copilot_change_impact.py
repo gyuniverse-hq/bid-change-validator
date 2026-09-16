@@ -5,6 +5,23 @@ from apps.api.app.copilot.change_impact import compare_saved_impact, impact_text
 from apps.api.app.qualification.rules.judgment import RULE_VERSION
 
 
+def test_provenance_only_modification_is_not_a_structured_condition_change():
+    from copy import deepcopy
+    from apps.api.app.copilot.change_impact import structured_change_kind
+    before=NS(type='INDUSTRY',operator='MATCH',value='1224',scope={'source_contract':{'raw_sha256':'old','kind':'WASTE_TRANSPORT'},'source_group':{'relation':'AND','source_fingerprint':'old'}})
+    after=deepcopy(before);after.scope['source_contract']['raw_sha256']='new';after.scope['source_group']['source_fingerprint']='new'
+    change=NS(baseline=before,current=after)
+    assert structured_change_kind(change)=='STRUCTURED_VALUE_SAME'
+    after.value='1227'
+    assert structured_change_kind(change)=='STRUCTURED_VALUE_CHANGED'
+    after.value='1224';after.scope['source_group']['relation']='OR'
+    assert structured_change_kind(change)=='STRUCTURED_VALUE_CHANGED'
+    after.scope=deepcopy(before.scope);after.scope['unknown_decision_field']=True
+    assert structured_change_kind(change)=='STRUCTURED_VALUE_CHANGED'
+    assert before.scope['source_contract']['raw_sha256']=='old'
+    assert structured_change_kind(NS(baseline=before,current=None))=='REMOVED'
+
+
 def sample():
     p = NS(case_id='case', company_id='company',
            baseline=NS(judgment_run_id='j1', analysis_run_id='a1', notice_version_id='v1', analysis_status='PARTIAL'),

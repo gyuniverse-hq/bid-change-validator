@@ -51,3 +51,16 @@ def test_receipt_wrong_basis_is_not_promoted_to_saved_visit_fact():
 
 def test_no_receipt_does_not_invent_recent_change():
     assert '찾지 못했습니다' in receipt_text('receipt',fixture()[0],None,None,None)
+
+
+def test_transport_receipt_preserves_exception_values_and_other_failure():
+    from apps.api.tests.test_source_condition_contracts import RAW
+    from apps.api.app.qualification.rules.source_contracts import transport_contract
+    contract=transport_contract(RAW)
+    requirement=QualificationRequirement(requirement_key='transport',notice_version_id='v2',type='INDUSTRY',operator='MATCH',value='1227',raw=RAW,evidence_keys=['ev'],condition_complexity='composite',scope={'source_contract':contract})
+    values={key:True for key in ('disposal_permit','legal_transport_permission','required_equipment')}
+    answer=NS(requirement_key='transport',normalized_value=json.dumps({'basis':contract['raw_sha256'],'answers':values}),answer_json={'satisfies_requirement':True})
+    summary=NS(judgments=[NS(requirement_key='transport',status='SATISFIED',raw=RAW),NS(requirement_key='registration',status='UNSATISFIED',raw='나라장터 등록 요건')],judgment_counts={'SATISFIED':4,'UNKNOWN':0,'UNSATISFIED':1},overall_status='ineligible')
+    text=receipt_text('receipt',summary,answer,NS(judgments=[NS(requirement_key='transport',status='UNKNOWN')]),requirement)
+    assert '확인 필요에서 충족' in text and '법적 허가' in text and '나라장터 등록' in text
+    assert '확인서' not in text and '실제 증빙 확인을 뜻하지 않습니다' in text

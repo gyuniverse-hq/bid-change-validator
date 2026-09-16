@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const source=fs.readFileSync(new URL('../lib/requirement-diff.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
+const {sameStructuredValue}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const before={type:'INDUSTRY',operator:'MATCH',value:'1257',scope:{source_contract:{kind:'INDUSTRY_ANY',codes:['1257','6770'],raw_sha256:'old'},source_group:{relation:'AND',workbook_sha256:'old',source_fingerprint:'old'}},raw:'원문'};
+const after=structuredClone(before);after.raw='원문 표현';after.scope.source_contract.raw_sha256='new';after.scope.source_group.workbook_sha256='new';after.scope.source_group.source_fingerprint='new';
+assert(sameStructuredValue(before,after),'provenance-only difference');
+after.value='1227';assert(!sameStructuredValue(before,after),'code change');after.value=before.value;
+after.scope.source_group.relation='OR';assert(!sameStructuredValue(before,after),'group relation');after.scope.source_group.relation='AND';
+after.scope.unknown_condition='new';assert(!sameStructuredValue(before,after),'unknown semantic field cannot be ignored');
+assert(!sameStructuredValue(null,before),'added/removed condition');
+console.log('Requirement display: provenance, code, relation, unknown field, addition/removal PASS');

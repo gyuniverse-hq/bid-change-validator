@@ -2,6 +2,8 @@
 import json
 from .v31_contracts import Fact, Source
 
+MAX_MEMORY_BYTES = 512 * 1024
+
 
 def restore_documents(state, bundle):
     record = state.document_memory
@@ -10,6 +12,10 @@ def restore_documents(state, bundle):
         return 0  # Opt-out/unavailable reads never receive old public document data.
     if record.get('scope') != bundle.scope.model_dump(mode='json') or record.get('fingerprint') != fingerprint:
         state.document_memory = {}
+        return 0
+    if record.get('status') == 'OVERFLOW':
+        bundle.server_context['document_memory'] = {'status': 'OVERFLOW', 'limit_bytes': MAX_MEMORY_BYTES}
+        bundle.limitations.append('이전 원문 보관 한도를 넘어 현재 원문을 다시 조회했습니다. 이전 설명 전체가 유지되었다고 볼 수 없습니다.')
         return 0
     sources = [Source.model_validate(s) for s in record.get('sources', [])]
     facts = [Fact.model_validate(f) for f in record.get('facts', [])]
@@ -26,6 +32,7 @@ def restore_documents(state, bundle):
     bundle.sources.extend(s for s in sources if s.source_id not in existing_sources)
     bundle.facts.extend(added)
     bundle.server_context['retained_document_facts'] = [f.fact_id for f in facts]
+    bundle.server_context['document_memory'] = {'status': 'RESTORED', 'facts': len(facts), 'added': len(added)}
     return len(added)
 
 
@@ -43,7 +50,9 @@ def remember_documents(state, bundle, claims):
     facts = [f for f in facts if set(f.source_ids) <= ids]
     record = {'scope': bundle.scope.model_dump(mode='json'), 'fingerprint': fingerprint,
               'facts': [f.model_dump(mode='json') for f in facts], 'sources': [s.model_dump(mode='json') for s in sources]}
-    if len(json.dumps(record, ensure_ascii=False).encode()) > 160000:
-        state.document_memory = {}  # Never silently present a truncated ledger as complete.
+    if len(json.dumps(record, ensure_ascii=False).encode()) > MAX_MEMORY_BYTES:
+        # A typical full notice can exceed 160 kB including source locations.
+        # Keep a bounded ledger; explicitly report overflow on the next read.
+        state.document_memory = {'scope': record['scope'], 'fingerprint': fingerprint, 'status': 'OVERFLOW'}
         return
     state.document_memory = record

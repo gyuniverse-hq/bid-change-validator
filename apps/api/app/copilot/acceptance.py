@@ -158,6 +158,23 @@ def freeze_acceptance(plan, bundle):
                 '복합 조건이나 필요한 근거가 부족하면 조건부 결론의 한계를 설명한다.')
         else:
             add('request', 'EXPLANATION', ' / '.join(t.question for t in tasks))
+    if 'READ_DOCUMENT' in kinds:
+        from .submission_obligations import explicit_stage_obligations, explicit_validity_conditions, referenced_stage_obligations
+        for anchor in explicit_validity_conditions(bundle, plan.goal):
+            identity = anchor['document'] + ':' + anchor['term']
+            criteria.append(AcceptanceCriterion(
+                criterion_id='READ_DOCUMENT:validity-' + hashlib.sha256(identity.encode()).hexdigest()[:12],
+                task_kind='READ_DOCUMENT', mode='EXPLANATION',
+                requirement=f"제출자료 '{anchor['document']}'에 붙은 원문 조건 '{anchor['term']}'을 해당 자료와 함께 설명한다. 제출마감과 자료 유효기간을 혼동하지 않는다.",
+                fact_ids=tuple(anchor['fact_ids']), source_required_terms=(anchor['document'],anchor['term'],)))
+        stages=explicit_stage_obligations(bundle, plan.goal)
+        for anchor in [*stages,*referenced_stage_obligations(bundle,stages)]:
+            identity = anchor['stage'] + ':' + re.sub(r'\s+', '', anchor['document'])
+            criteria.append(AcceptanceCriterion(
+                criterion_id='READ_DOCUMENT:stage-' + hashlib.sha256(identity.encode()).hexdigest()[:12],
+                task_kind='READ_DOCUMENT', mode='EXPLANATION',
+                requirement=f"원문에 명시된 {anchor['stage']} 단계의 {anchor['document']} 제출 의무를 별도 submission으로 설명한다. 다른 단계에 같은 서류를 나열한 것으로 대체하지 않는다.",
+                fact_ids=tuple(anchor['fact_ids']), submission_document=anchor['document'], submission_stage=anchor['stage']))
     if len(kinds) > 1:
         # Tool selection is model-authored and can omit part of the user's goal.
         # Completing the chosen reads alone therefore cannot finish a compound job.
@@ -177,8 +194,10 @@ def assess_acceptance(criteria, result, claims):
         return {'task_coverage': 'PARTIAL', 'reason': 'CRITERION_SET_MISMATCH', 'criteria': [r.model_dump() for r in rows]}
     supported = {c.claim_id: c for c in claims if c.validation == 'SUPPORTED'}
     missing = []
+    assessed_rows = []
     for row in rows:
         criterion = expected[row.criterion_id]
+        server_reasons = []
         valid = row.status == 'MET' and bool(row.claim_ids) and bool(criterion.fact_ids)
         cited_facts = set()
         for cid in row.claim_ids:
@@ -191,7 +210,36 @@ def assess_acceptance(criteria, result, claims):
         # Every sentence must be supported and their combined proof must still
         # contain the criterion's actual evidence.
         valid = valid and bool(cited_facts & set(criterion.fact_ids))
+        if criterion.source_required_terms:
+            normalize = lambda value: re.sub(r'\s+', '', value)
+            text = ' '.join(claim.text for cid in row.claim_ids
+                            if (claim := supported.get(cid)) is not None
+                            and set(claim.fact_ids) & set(criterion.fact_ids))
+            terms_present = all(normalize(term) in normalize(text) for term in criterion.source_required_terms)
+            if not terms_present:
+                server_reasons.append('원문 필수 표현을 같은 근거 문장에 보존해야 함: ' + ' / '.join(criterion.source_required_terms))
+            valid = valid and terms_present
+        if criterion.criterion_id.startswith('REPAIR:'):
+            valid = valid and any(cid in supported and not cid.startswith(('reviewed-', 'obligation-receipt-'))
+                                  for cid in row.claim_ids)
+        if criterion.submission_stage:
+            normalize = lambda value: re.sub(r'\s+', '', value)
+            stage_present = any(
+                claim.submission is not None
+                and claim.submission.stage_kind == criterion.submission_stage
+                and (not criterion.submission_document or normalize(criterion.submission_document) in normalize(claim.submission.document))
+                for cid in row.claim_ids if (claim := supported.get(cid)) is not None)
+            if not stage_present:
+                server_reasons.append('별도 제출 항목 필요: stage_kind=' + criterion.submission_stage
+                    + ', document=' + (criterion.submission_document or '해당 서류')
+                    + '. 다른 단계와 한 항목으로 묶으면 이 단계의 제출 의무를 완료할 수 없음.')
+            valid = valid and stage_present
         if not valid:
             missing.append(row.criterion_id)
+        item = row.model_dump()
+        if not valid and row.status == 'MET':
+            item.update(status='MISSING', reason=' '.join(server_reasons) or
+                '해당 기준의 근거와 연결된 검증 통과 문장이 부족합니다. ' + row.reason)
+        assessed_rows.append(item)
     return {'task_coverage': 'PARTIAL' if missing else 'COMPLETE', 'missing_criterion_ids': missing,
-            'criteria': [r.model_dump() for r in rows]}
+            'criteria': assessed_rows}

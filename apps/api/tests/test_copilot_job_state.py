@@ -36,6 +36,49 @@ def test_new_question_does_not_erase_unresolved_goal_and_resume_only_reads():
     assert [t.requirement_id for t in plan.tasks]==[first.requirement_id]
 
 
+def test_resume_schedules_each_pending_deliverable_even_when_tools_match():
+    state=fixture()
+    first=turn(state,'원문 제출조건',partial=True)
+    checklist=turn(state,'필수와 협조를 구분한 체크리스트',partial=True)
+    action=turn(state,'입력 반영',kind='PROPOSE_ACTION',proposed=True)
+    plan=TaskPlan(goal='미완료 부분을 이어서',resume_unresolved=True,
+        tasks=[Task(kind='READ_DOCUMENT',question=first.request,requirement_id=first.requirement_id)])
+    bindings=bind_plan(state,plan)
+    assert {r.requirement_id for _,r in bindings}=={first.requirement_id,checklist.requirement_id}
+    assert any(t.question==checklist.request for t in plan.tasks)
+    assert action.requirement_id not in {r.requirement_id for _,r in bindings}
+    assert first.status==checklist.status=='OPEN'
+
+
+def test_planner_refs_are_short_typed_and_restored_without_exposing_goal_ids():
+    from pydantic import ValidationError
+    from apps.api.app.copilot.job_state import model_planner_contract
+    from apps.api.app.copilot.v31_contracts import JobRequirement
+    from apps.api.app.copilot.orchestration import plan_turn
+    from apps.api.app.copilot.chat import CopilotChatRequest
+    state=fixture();doc=turn(state,'원문 해석',partial=True)
+    check=turn(state,'입력 가능한 항목',kind='READ_CHECKS',partial=True)
+    state.job.requirements.append(JobRequirement(requirement_id='goal-'+str(uuid4()),
+        request='최초 목적',tool='GOAL',basis=state.scope))
+    context,schema,mapping=model_planner_contract(state)
+    assert mapping=={'R1':doc.requirement_id,'R2':check.requirement_id}
+    assert 'goal-' not in str(context) and doc.requirement_id not in str(context)
+    valid=dict(goal='남은 해석',tasks=[dict(kind='READ_DOCUMENT',question='원문 해석',requirement_id='R1')],resume_unresolved=True)
+    assert schema.model_validate(valid).tasks[0].requirement_id=='R1'
+    for ref in ('R2','R99',doc.requirement_id,state.job.requirements[-1].requirement_id):
+        with pytest.raises(ValidationError):
+            schema.model_validate({**valid,'tasks':[dict(kind='READ_DOCUMENT',question='원문',requirement_id=ref)]})
+    class Gateway:
+        def call(self,stage,prompt,body,output):
+            assert body['job']['requirements'][0]['requirement_id']=='R1'
+            return output.model_validate(valid)
+    plan,fallback=plan_turn(CopilotChatRequest(case_id=state.scope.case_id,
+        message='처음 요청의 미완료 원문 해석을 이어서 검토해줘'),state,Gateway())
+    assert not fallback and plan.tasks[0].requirement_id==doc.requirement_id
+    bind_plan(state,plan)
+    assert {t.requirement_id for t in plan.tasks}=={doc.requirement_id,check.requirement_id}
+
+
 def test_followup_resolves_original_requirement_without_duplicating_or_changing_goal():
     state=fixture();r=turn(state,'참가자격을 검토해줘',partial=True)
     turn(state,'빠진 예외까지 포함해 설명해줘',rid=r.requirement_id)
@@ -102,3 +145,28 @@ def test_execution_receipt_does_not_complete_different_proposal_or_new_read():
     apply_execution_receipts(state, {pending.action_keys[0]: str(uuid4())})
     reconcile_basis(state, state.scope)
     assert pending.status == 'EXECUTED' and reading.status == 'OPEN' and state.job.status == 'OPEN'
+
+
+def test_followup_tool_success_cannot_erase_original_compound_goal_failure():
+    from apps.api.tests.test_copilot_answer_progress import setup, Gateway
+    from apps.api.app.copilot.answer_validation import _compose_basic
+    state, bundle, plan = setup()
+    bindings = bind_plan(state, plan)
+    claims, _, events = _compose_basic(bundle, plan, state, Gateway())
+    finish_turn(state, bindings, bundle, claims, events, complete=False, turn_id='first', actions=[])
+    goal = next(r for r in state.job.requirements if r.tool == 'GOAL')
+    assert goal.status == 'OPEN'
+    turn(state, '새 확인 항목만 알려줘', kind='READ_CHECKS')
+    assert state.job.status == 'OPEN' and goal.reason in state.job.remaining
+
+
+def test_contradicted_explanation_with_met_criteria_has_visible_remaining_work():
+    from apps.api.tests.test_copilot_answer_progress import setup, Gateway
+    from apps.api.app.copilot.answer_validation import _compose_basic
+    state, bundle, plan = setup()
+    bindings = bind_plan(state, plan)
+    claims, _, events = _compose_basic(bundle, plan, state, Gateway())
+    events.append({'validation': 'CONTRADICTED', 'reason': '제출 뒤에 제출물을 준비하도록 안내함'})
+    finish_turn(state, bindings, bundle, claims, events, complete=True, turn_id='bad', actions=[])
+    assert state.job.status == 'OPEN'
+    assert any('제출물을 준비' in r for r in state.job.remaining)

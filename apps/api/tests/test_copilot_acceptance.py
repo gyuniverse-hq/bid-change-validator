@@ -154,6 +154,15 @@ def test_check_request_label_cannot_disguise_an_assertion():
     assert claims[0].validation != 'SUPPORTED'
 
 
+def test_supported_check_is_downgraded_instead_of_published_as_assertion():
+    d = draft('실적 증빙은 실제 자료와 대조해 확인하세요.')
+    gateway = FakeGateway({'validate': {'verdicts': [{'claim_id':'c1','status':'SUPPORTED',
+        'reason':'source-backed check request','observed_act':'CHECK_REQUEST'}]}})
+    claims, _ = verify(d, bundle(), gateway)
+    assert claims[0].validation == 'SUPPORTED'
+    assert claims[0].speech_act == 'CHECK_REQUEST'
+
+
 @pytest.mark.parametrize('failure', ['extra_id', 'duplicate', 'missing_id', 'bad_claim', 'rejected_claim'])
 def test_coverage_cannot_change_rubric_or_use_rejected_claim(failure):
     criteria = freeze_acceptance(plan(), bundle())

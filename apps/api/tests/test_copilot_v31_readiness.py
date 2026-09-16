@@ -78,6 +78,29 @@ def test_missing_legacy_and_current_direct_read_never_build(tmp_path):
     assert inspect_index(s, tmp_path, embed).index_status == 'UNVERIFIED'
 
 
+def test_langchain_broad_retrieval_uses_ready_vectors_without_dropping_exception(tmp_path):
+    from apps.api.app.document_rag.langchain_pipeline import retrieve_current
+    source = snapshot_sources(version(), dimensions=2)
+    embed = Embeddings()
+    generation = publish_index(source,tmp_path,embed,expected_fingerprint=source.fingerprint,max_embedding_tokens=10000)
+    records, details = retrieve_current(inspect_index(source,tmp_path,embed),'전체 참가 준비',broad=True)
+    assert records == source.records and '병원은 제외' in records[0].text
+    assert details['query_hit_ids'] and details['retriever'] == 'langchain.CurrentVersionRetriever'
+    assert publish_index(source,tmp_path,embed,expected_fingerprint=source.fingerprint,max_embedding_tokens=10000) == generation
+    assert embed.document_calls == 1
+
+
+def test_packing_keeps_all_text_and_never_crosses_source_identity():
+    from apps.api.app.document_rag.readiness import pack_current_passages
+    records = snapshot_sources(version(),dimensions=2).records
+    a = records[0]
+    b = a.model_copy(deep=True); b.text = '단, 병원·학교 실적은 제외'; b.metadata.chunk_id = 'b'
+    c = b.model_copy(deep=True); c.metadata.document_id = 'other'; c.metadata.chunk_id = 'c'
+    packets = pack_current_passages([a,b,c])
+    assert len(packets) == 2 and packets[0].text == a.text+'\n\n'+b.text and packets[1] == c
+    assert packets[0].metadata.chunk_id == pack_current_passages([a,b])[0].metadata.chunk_id
+
+
 @pytest.mark.parametrize('change', ['source', 'extracted', 'blocks', 'add', 'remove', 'model', 'dimensions', 'extractor'])
 def test_same_version_changes_invalidate_fingerprint(tmp_path, change):
     v, embed = version(), Embeddings()
@@ -183,3 +206,7 @@ def test_building_without_ready_generation_reads_current_source(tmp_path):
     assert ready.index_status == 'BUILDING'
     result, _ = read_passages(ready, '전체', broad=True)
     assert result == source.records
+def test_consolidated_checklist_reads_full_source_not_only_new_top_hits():
+    from apps.api.app.document_rag.readiness import full_source_request
+    assert full_source_request('지금까지 내용을 바탕으로 실행할 체크리스트를 만들어줘')
+    assert not full_source_request('발표장소는 어디야?')

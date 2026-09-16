@@ -137,6 +137,13 @@ def get_qualification_summary(db: Session, case_id: UUID) -> QualificationSummar
     with db.no_autoflush:
         provenance, analysis, judgment = _load_context(db, case_id)
         requirements = {item.requirement_key: item for item in analysis.requirements}
+        from ..qualification.rules.source_contracts import valid_contract
+        def condition(key):
+            requirement = requirements[key]
+            group = requirement.scope.get('source_group', {})
+            return {'operator': requirement.operator, 'value': requirement.value,
+                    'source_contract': valid_contract(requirement),
+                    'source_group': {k: group[k] for k in ('key', 'relation', 'review_scope') if k in group}}
         return QualificationSummary(
             provenance=provenance, overall_status=judgment.overall_status,
             analysis_status=provenance.analysis_status, analysis_scope=analysis_scope(analysis),
@@ -144,8 +151,9 @@ def get_qualification_summary(db: Session, case_id: UUID) -> QualificationSummar
                              for status in ("SATISFIED", "UNSATISFIED", "UNKNOWN")},
             judgments=[RequirementJudgmentSummary(
                 **item.model_dump(), type=requirements[item.requirement_key].type,
-                raw=requirements[item.requirement_key].raw,
+                raw=requirements[item.requirement_key].raw, evaluated_condition=condition(item.requirement_key),
             ) for item in judgment.judgments],
+            profile_snapshot=judgment.profile_snapshot,
         )
 
 

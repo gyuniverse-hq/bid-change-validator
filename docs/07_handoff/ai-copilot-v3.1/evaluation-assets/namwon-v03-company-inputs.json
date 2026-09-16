@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "notice_no": "R26BK01684863",
+  "orders": [
+    "000",
+    "001"
+  ],
+  "source": "synthetic Golden v03 inputs; no real company credentials",
+  "workbook_sha256": "32e967df7c4de101231282dc872c2f045e8a0f94e2bba688fdfaed1587f0aca5",
+  "source_snapshot_sha256": "52cb91a7da8661949ecb38b5903337274febbf88b3f20b4d76ba12f7118102f0",
+  "reference_date": "2026-08-18",
+  "synthetic_scenario_date": "2026-08-24",
+  "interpretation_scope": "LOCAL_GOLDEN_V03_ONLY; disposal/recycling group OR within group, transport exception includes legal permission plus equipment. Do not publish the local reviewed AND interpretation globally without original-source review.",
+  "profiles": [
+    {
+      "case": "J13",
+      "profile": {
+        "industry_codes": [
+          "1227",
+          "1257"
+        ],
+        "region_name": "전북특별자치도",
+        "region_code": "52",
+        "company_size": "SMALL",
+        "staff_total": 8,
+        "performances": [],
+        "certifications": [],
+        "company_evidence_verified": false,
+        "visit": {
+          "site_visited": true,
+          "visit_certificate": true
+        },
+        "transport_exception": {
+          "disposal_permit": true,
+          "legal_transport_permission": false,
+          "required_equipment": false
+        }
+      },
+      "completeness": {
+        "region": true,
+        "industries": true,
+        "staff_roles": false,
+        "staff_total": true,
+        "company_size": true,
+        "performances": true,
+        "certifications": true
+      },
+      "local_mapping": {
+        "case_id": "a238c278-fa46-4d79-935e-a70457c33263",
+        "company_id": "de67b41e-b1d8-4021-8226-56ecaa460b9b"
+      },
+      "four_condition_results": [
+        {
+          "order": "000",
+          "status": "UNSATISFIED",
+          "full_product_status": "ineligible"
+        },
+        {
+          "order": "001",
+          "status": "SATISFIED",
+          "full_product_status": "ineligible"
+        }
+      ]
+    },
+    {
+      "case": "J14",
+      "profile": {
+        "industry_codes": [
+          "1224",
+          "1257"
+        ],
+        "region_name": "전북특별자치도",
+        "region_code": "52",
+        "company_size": "SMALL",
+        "staff_total": 8,
+        "performances": [],
+        "certifications": [],
+        "company_evidence_verified": false,
+        "visit": {
+          "site_visited": true,
+          "visit_certificate": true
+        },
+        "transport_exception": {
+          "disposal_permit": true,
+          "legal_transport_permission": false,
+          "required_equipment": false
+        }
+      },
+      "completeness": {
+        "region": true,
+        "industries": true,
+        "staff_roles": false,
+        "staff_total": true,
+        "company_size": true,
+        "performances": true,
+        "certifications": true
+      },
+      "local_mapping": {
+        "case_id": "3dcba80e-2fc6-4f06-a148-ac0c9c37840c",
+        "company_id": "2d82fb2a-652e-4f90-be47-202a7b6b3d86"
+      },
+      "four_condition_results": [
+        {
+          "order": "000",
+          "status": "SATISFIED",
+          "full_product_status": "ineligible"
+        },
+        {
+          "order": "001",
+          "status": "UNSATISFIED",
+          "full_product_status": "ineligible"
+        }
+      ]
+    },
+    {
+      "case": "J15",
+      "profile": {
+        "industry_codes": [
+          "1257"
+        ],
+        "region_name": "전북특별자치도",
+        "region_code": "52",
+        "company_size": "SMALL",
+        "staff_total": 8,
+        "performances": [],
+        "certifications": [],
+        "company_evidence_verified": false,
+        "visit": {
+          "site_visited": true,
+          "visit_certificate": true
+        },
+        "transport_exception": {
+          "disposal_permit": true,
+          "legal_transport_permission": true,
+          "required_equipment": true
+        }
+      },
+      "completeness": {
+        "region": true,
+        "industries": true,
+        "staff_roles": false,
+        "staff_total": true,
+        "company_size": true,
+        "performances": true,
+        "certifications": true
+      },
+      "local_mapping": {
+        "case_id": "02e89308-b88d-4933-993c-fccdd963a6e7",
+        "company_id": "5a7f09ea-91eb-4dca-bbd3-49b1a2dbc5e0"
+      },
+      "four_condition_results": [
+        {
+          "order": "000",
+          "status": "SATISFIED",
+          "full_product_status": "ineligible"
+        },
+        {
+          "order": "001",
+          "status": "SATISFIED",
+          "full_product_status": "ineligible"
+        }
+      ]
+    },
+    {
+      "case": "J16",
+      "profile": {
+        "industry_codes": [
+          "1257"
+        ],
+        "region_name": "전북특별자치도",
+        "region_code": "52",
+        "company_size": "SMALL",
+        "staff_total": 8,
+        "performances": [],
+        "certifications": [],
+        "company_evidence_verified": false,
+        "visit": {
+          "site_visited": true,
+          "visit_certificate": true
+        },
+        "transport_exception": null
+      },
+      "completeness": {
+        "region": true,
+        "industries": true,
+        "staff_roles": false,
+        "staff_total": true,
+        "company_size": true,
+        "performances": true,
+        "certifications": true
+      },
+      "local_mapping": {
+        "case_id": "a620f71c-2726-44e1-b555-c54c1292cd98",
+        "company_id": "32b00662-6323-401d-86ad-73c728e3777f"
+      },
+      "four_condition_results": [
+        {
+          "order": "000",
+          "status": "UNKNOWN",
+          "full_product_status": "ineligible"
+        },
+        {
+          "order": "001",
+          "status": "UNKNOWN",
+          "full_product_status": "ineligible"
+        }
+      ]
+    }
+  ],
+  "application_rules": [
+    "Create distinct test companies and case links; do not overwrite an existing company.",
+    "Company fields and case-only confirmation answers are separate. Never mark synthetic evidence as verified.",
+    "Recompute confirmation basis from each target version and use normal answer/rejudge services. Do not copy local UUIDs, stored verdicts or expected results into another DB.",
+    "The four-condition oracle is not an overall eligibility oracle. Procurement registration remains a separate failed condition in the current product.",
+    "Before shared DB application: read-only mapping/diff, validate source fingerprints and reviewed interpretation, review exact write plan. This file authorizes no shared DB writes."
+  ]
+}

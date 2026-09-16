@@ -65,11 +65,14 @@ def test_current_summary_and_exact_snapshot(state):
     assert result.overall_status == run.overall_status
     assert result.analysis_status == 'SUCCEEDED'
     assert sum(result.judgment_counts.values()) == len(run.judgments) == 4
+    assert result.profile_snapshot == run.profile_snapshot
     reqs = {r.requirement_key: r for r in analysis.requirements}
     persisted = {r.requirement_key: r for r in run.judgments}
     for item in result.judgments:
         assert item.raw == reqs[item.requirement_key].raw
         assert item.type == reqs[item.requirement_key].type
+        assert item.evaluated_condition['operator'] == reqs[item.requirement_key].operator
+        assert item.evaluated_condition['value'] == reqs[item.requirement_key].value_json
         for field in ['status', 'basis_type', 'reason_code', 'requires_evidence', 'requirement_evidence_keys']:
             assert getattr(item, field) == getattr(persisted[item.requirement_key], field)
     snapshot = deepcopy(run.profile_snapshot)

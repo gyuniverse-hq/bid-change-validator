@@ -28,6 +28,14 @@ def scope():
     return Scope(**{k: REPLAY[k] for k in ('case_id', 'company_id', 'notice_id', 'notice_version_id', 'analysis_run_id', 'judgment_run_id')})
 
 
+def test_first_question_can_introduce_its_own_referent_but_not_an_ordinal():
+    state=ConversationState(conversation_id=uuid4(),owner='owner',scope=scope())
+    req=CopilotChatRequest(case_id=scope().case_id,message='운반업 등록이 없는데 그 요건이 충족된 이유가 뭐야?')
+    assert resolve_target(req,state)==(None,None)
+    req.message='첫 번째 요건을 설명해줘'
+    assert resolve_target(req,state)[1]
+
+
 def bundle():
     context = scope()
     return EvidenceBundle(scope=context,
@@ -50,6 +58,9 @@ class FakeGateway:
         if isinstance(response, Exception) or response is None:
             raise response or RuntimeError('fake unavailable')
         if callable(response): response = response(body)
+        # Providers return JSON, not an instance of the previous response schema.
+        # Keep the fixture faithful when the planner uses a scoped task schema.
+        if hasattr(response, 'model_dump'): response = response.model_dump(mode='json')
         if schema is Verdicts and isinstance(response, dict):
             response = {'task_coverage': 'COMPLETE', **response}
             # Existing scripted tests model a verifier that honors the new server
@@ -225,7 +236,10 @@ def test_gateway_deadline_input_and_attempt_caps():
     gateway.deadline = monotonic() - 1
     with pytest.raises(BudgetExceeded): gateway.call('generate', '', {}, Draft)
     gateway.deadline = monotonic() + 45
+    gateway.allow_large_context = False
     with pytest.raises(BudgetExceeded): gateway.call('generate', 'x' * 17000, {}, Draft)
+    gateway.allow_large_context = True
+    with pytest.raises(BudgetExceeded): gateway.call('generate', 'x' * 241000, {}, Draft)
     gateway.calls = [{'stage': 'generate'}] * 4
     with pytest.raises(BudgetExceeded): gateway.call('validate', '', {}, Verdicts)
 
@@ -324,6 +338,41 @@ def test_real_sdk_transport_enforces_one_attempt_usage_and_late_discard():
     gateway.client = OpenAI(api_key='synthetic-test-key', http_client=httpx.Client(transport=httpx.MockTransport(late)))
     with pytest.raises(BudgetExceeded, match='LATE_MODEL_RESULT'):
         gateway.call('repair', 'fixture', {}, Draft)
+
+
+def test_real_sdk_verification_has_every_slot_and_preserves_negative_verdicts():
+    import httpx
+    from openai import OpenAI
+    from apps.api.app.copilot.verification_contract import fixed_verification_contract
+    body = {'claims': [dict(claim_id='long-generated-id', text='a'), dict(claim_id='other-id', text='b')],
+        'supported_siblings': [dict(claim_id='prior-id', text='prior')],
+        'acceptance': [dict(criterion_id='READ_DOCUMENT:request', requirement='both') ]}
+    wire, schema, restore = fixed_verification_contract(body)
+    answer = {'verdicts': {
+        'C1': dict(status='CONTRADICTED', observed_act='ASSERTION', reason='source says otherwise'),
+        'C2': dict(status='SUPPORTED', observed_act='CHECK_REQUEST', reason='valid check')},
+        'criteria': {'K1': dict(status='MISSING', claim_ids=['C2','S1'], reason='missing condition')}}
+    assert wire['claims'][0]['claim_id']=='C1'
+    assert wire['supported_siblings'][0]['claim_id']=='S1'
+    assert schema.model_json_schema()['$defs']['EverySentenceReview']['required']==['C1','C2']
+    broken = deepcopy(answer); del broken['verdicts']['C2']
+    with pytest.raises(ValueError): schema.model_validate(broken)
+    broken = deepcopy(answer); broken['criteria']['K1']['claim_ids']=['C99']
+    with pytest.raises(ValueError): schema.model_validate(broken)
+    received=[]
+    def handler(request):
+        received.append(json.loads(request.content))
+        return httpx.Response(200,json={'id':'test','object':'chat.completion','created':0,'model':'fixture',
+            'choices':[{'index':0,'message':{'role':'assistant','content':json.dumps(answer)},'finish_reason':'stop'}],
+            'usage':{'prompt_tokens':20,'completion_tokens':10,'total_tokens':30}})
+    gateway=ModelGateway(client=OpenAI(api_key='synthetic-test-key',
+        http_client=httpx.Client(transport=httpx.MockTransport(handler))))
+    result=gateway.call('validate','verify',body,Verdicts)
+    assert len(received)==1 and result.verdicts[0].status=='CONTRADICTED'
+    assert result.verdicts[0].claim_id=='long-generated-id'
+    assert result.criteria[0].criterion_id=='READ_DOCUMENT:request'
+    assert result.criteria[0].claim_ids==['other-id','prior-id']
+    assert result.criteria[0].status=='MISSING'
 
 
 def test_cross_version_source_rejected_even_when_fact_is_current():

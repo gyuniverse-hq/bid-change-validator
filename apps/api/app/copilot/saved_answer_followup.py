@@ -4,12 +4,16 @@ import re
 from sqlalchemy import select
 from ..ask_back_models import QualificationAnswer
 from ..judgment_models import QualificationJudgmentRun
-from ..qualification.rules.source_contracts import valid_contract, validate_confirmation_input
+from ..qualification.rules.source_contracts import valid_contract, validate_confirmation_input, confirmation_fields
 from . import product_tools
 
 
 def followup_kind(message):
     text = re.sub(r'[\s.!?。？]', '', message)
+    if (re.search(r'(?:방금|최근)(?:반영|저장)한(?:내용|답변)', text)
+            and re.search(r'설명|알려|요약', text)
+            and not re.search(r'가정|만약|제안|수정|정정|(?:저장|실행|반영|삭제)(?:해|하)(?:줘|주세요|자)', text)):
+        return 'receipt'
     if re.fullmatch(r'방금저장한답변때문에어떤요건이바뀌었어전체판정이그대로라면그이유도짧게설명해줘', text):
         return 'receipt'
     if re.fullmatch(r'(?:방금|최근)(?:반영|저장)한(?:내용|답변)(?:과현재판정)?(?:을)?(?:설명해줘|알려줘|요약해줘)', text):
@@ -30,8 +34,8 @@ def receipt_text(kind, summary, answer, source_run, requirement):
     if item is None:
         raise ValueError('ANSWER_REQUIREMENT_MISMATCH')
     contract = valid_contract(requirement)
-    if not contract or contract['kind'] != 'SITE_VISIT':
-        return '최근 저장 답변의 현장 방문 조건을 확인하지 못했습니다. 대상 요건을 지정해 주세요. 답변을 수정하거나 재판정하지 않았습니다.'
+    if not contract or not confirmation_fields(contract):
+        return '최근 저장 답변의 원문 조건을 확인하지 못했습니다. 대상 요건을 지정해 주세요. 답변을 수정하거나 재판정하지 않았습니다.'
     validate_confirmation_input(contract, answer.normalized_value, answer.answer_json['satisfies_requirement'])
     values = json.loads(answer.normalized_value)['answers']
     counts = summary.judgment_counts
@@ -43,14 +47,18 @@ def receipt_text(kind, summary, answer, source_run, requirement):
                 '어떤 값을 잘못 입력했는지 알려주면 저장하지 않고 변경 영향을 설명할 수 있습니다. 입찰서 수정 금지 조항과는 다른 문제입니다.')
     others = [j.raw for j in summary.judgments if j.requirement_key != answer.requirement_key and j.status == 'UNSATISFIED']
     if kind == 'assumption':
+        if contract['kind'] != 'SITE_VISIT':
+            return '최근 저장 답변은 현장 방문 항목이 아닙니다. 가정할 요건을 지정해 주세요. 저장하거나 재판정하지 않았습니다.'
         assumption = ('저장된 방문 완료 답변이 맞고 공고의 현장 방문 조건을 충족했다는 전제에서, 확인서도 제출했다고 가정하면 이 현장 방문 요건은 충족될 수 있습니다.'
                       if values['site_visited'] else '저장된 답변은 현장 방문 미완료입니다. 확인서 제출만 가정해서는 방문 완료 조건까지 충족했다고 볼 수 없습니다.')
         return (assumption + (' 다른 미달 요건은 그대로 남습니다: ' + ' / '.join(others) + ' 따라서 이 가정만으로 전체 참가 가능이라고 할 수 없습니다.' if others else ' 다른 요건과 분석 보류 범위도 확인해야 하므로 전체 참가 가능으로 확정하지 않습니다.')
                 + ' 가정 설명일 뿐 답변 저장이나 재판정은 하지 않았습니다. ' + current_text)
     prior = next((j.status for j in source_run.judgments if j.requirement_key == answer.requirement_key), None)
     labels = {'UNKNOWN':'확인 필요','SATISFIED':'충족','UNSATISFIED':'미달'}
-    return ('저장한 답변은 현장 방문 ' + ('완료' if values['site_visited'] else '미완료')
-            + ', 확인서 ' + ('제출' if values['visit_certificate'] else '미제출') + '입니다. 사용자 답변이며 실제 증빙 확인을 뜻하지 않습니다. '
+    inputs = ('현장 방문 ' + ('완료' if values['site_visited'] else '미완료')
+              + ', 확인서 ' + ('제출' if values['visit_certificate'] else '미제출')) if contract['kind'] == 'SITE_VISIT' else ' / '.join(
+                  label + ': ' + ('예' if values[key] else '아니요') for key,label in confirmation_fields(contract))
+    return ('저장한 답변은 ' + inputs + '입니다. 사용자 답변이며 실제 증빙 확인을 뜻하지 않습니다. '
             + (f"해당 요건은 {labels[prior]}에서 {labels[item.status]}로 바뀌었습니다. " if prior in labels else '')
             + current_text + (' 다른 미달 요건: ' + ' / '.join(others) if others else '')
             + ' 이는 사용자 답변 반영 내역이며 공고 v1→v2 변경 설명이 아닙니다.')
@@ -75,9 +83,9 @@ def read_followup(kind, tools):
         text = receipt_text(kind, summary, answer, source, details[0].requirement)
         labels = {'SATISFIED': '충족', 'UNSATISFIED': '미달', 'UNKNOWN': '확인 필요'}
         values = json.loads(answer.normalized_value).get('answers', {}) if answer.normalized_value else {}
+        contract = valid_contract(details[0].requirement)
         inputs = ' / '.join(label + ': ' + ('예' if values[key] else '아니요')
-                            for key, label in [('site_visited', '현장 방문 완료'),
-                                               ('visit_certificate', '확인서 제출')]
+                            for key, label in (confirmation_fields(contract) if contract else [])
                             if isinstance(values.get(key), bool))
         proof = ('저장된 사용자 답변: ' + (inputs or '입력 내용의 별도 확인 필요')
                  + '\n사용자 입력이며 실제 증빙 검증을 뜻하지 않습니다.'

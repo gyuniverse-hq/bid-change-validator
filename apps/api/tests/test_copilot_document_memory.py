@@ -41,3 +41,27 @@ def test_extractive_fallback_and_unverified_prose_do_not_enter_memory():
     remember_documents(state, bundle, [NS(validation='SUPPORTED', method='extractive', fact_ids=['document']),
                                       NS(validation='INSUFFICIENT', method='semantic', fact_ids=['document'])])
     assert not state.document_memory['facts']
+
+
+def test_full_notice_above_old_cap_preserves_deadline_and_reports_actual_overflow():
+    from apps.api.app.copilot.document_memory import MAX_MEMORY_BYTES
+    state, bundle, _ = setup()
+    bundle.fingerprints['document'] = 'current-whole-source'
+    # Source and fact contain the same public excerpt, including its deadline.
+    text = '제안서 마감 7월 27일 15시. ' + '제출 원문 조항. ' * 5000
+    bundle.facts[1].text = bundle.sources[1].quote = text
+    claim = NS(validation='SUPPORTED', method='semantic', fact_ids=['document'])
+    remember_documents(state, bundle, [claim])
+    import json
+    size = len(json.dumps(state.document_memory, ensure_ascii=False).encode())
+    assert 160000 < size < MAX_MEMORY_BYTES
+    bundle.facts = []; bundle.sources = []
+    assert restore_documents(state, bundle) == 1
+    assert bundle.facts[0].text == bundle.sources[0].quote == text
+    bundle.facts[0].text = bundle.sources[0].quote = text * 4
+    remember_documents(state, bundle, [claim])
+    assert state.document_memory['status'] == 'OVERFLOW'
+    bundle.facts = []; bundle.sources = []
+    assert restore_documents(state, bundle) == 0
+    assert bundle.server_context['document_memory']['status'] == 'OVERFLOW'
+    assert any('보관 한도' in line for line in bundle.limitations)

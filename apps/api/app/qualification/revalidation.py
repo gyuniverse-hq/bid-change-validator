@@ -64,6 +64,21 @@ def _copy_judgment(record: QualificationJudgmentRecord, *, notice_version_id: UU
     )
 
 
+def reusable_current_answers(run, *, case, analysis, profile, reference_date):
+    """Keep explicit current-version answers only on the exact unchanged basis.
+
+    A baseline answer never proves a changed clause. A current answer already
+    accepted against this same analysis/profile remains valid on revalidation.
+    """
+    if (run is None or run.preflight_case_id != case.id or run.company_id != case.company_id
+            or run.notice_version_id != case.current_version_id or run.analysis_run_id != analysis.id
+            or run.analysis_status != analysis.status or run.rule_version != RULE_VERSION
+            or run.reference_date != reference_date or run.profile_snapshot != profile.model_dump(mode='json')):
+        return {}
+    return {j.requirement_key:j for j in run.judgments
+            if j.basis_type=='USER_ANSWER' and j.value_source=='askback' and j.status in {'SATISFIED','UNSATISFIED'}}
+
+
 def latest_qualification_revalidation(db: Session, *, case_id: UUID) -> QualificationRevalidationRead | None:
     """Read saved lineage only; never re-execute a mutation during recovery."""
     lineage = db.scalar(select(QualificationRevalidationRun).where(
@@ -123,6 +138,12 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
     source_by_key = {item.requirement_key: item for item in source.judgments}
     change_by_current = {item.current_key: item for item in changes if item.current_key is not None}
     reference_date = payload.reference_date or source.reference_date or date.today()
+    current_run = db.scalar(select(QualificationJudgmentRun).where(
+        QualificationJudgmentRun.preflight_case_id == case_id,
+        QualificationJudgmentRun.notice_version_id == case.current_version_id,
+    ).order_by(QualificationJudgmentRun.created_at.desc(),QualificationJudgmentRun.id.desc()).limit(1))
+    current_answers = reusable_current_answers(current_run,case=case,analysis=current_analysis,
+                                               profile=current_profile,reference_date=reference_date)
     judgments: list[Judgment] = []
     revalidated_keys: list[str] = []
 
@@ -139,7 +160,13 @@ def run_qualification_revalidation(db: Session, *, case_id: UUID, payload: Quali
                     current_evidence_keys=list(requirement.evidence_keys),
                 ))
                 continue
-        judgments.append(judge_requirement(requirement, current_profile, preflight_case_id=str(case.id), reference_date=reference_date))
+        judgment = judge_requirement(requirement, current_profile, preflight_case_id=str(case.id), reference_date=reference_date)
+        from .rules.source_contracts import valid_contract
+        saved = current_answers.get(requirement.requirement_key)
+        if judgment.status == 'UNKNOWN' and saved is not None and valid_contract(requirement):
+            judgment = _copy_judgment(saved,notice_version_id=case.current_version_id,case_id=case.id,
+                requirement_key=requirement.requirement_key,current_evidence_keys=list(requirement.evidence_keys))
+        judgments.append(judgment)
         revalidated_keys.append(requirement.requirement_key)
 
     overall_status = derive_overall_status(current.requirements, judgments, analysis_status=current_analysis.status)

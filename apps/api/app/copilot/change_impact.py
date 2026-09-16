@@ -10,6 +10,26 @@ from ..revalidation_models import QualificationRevalidationRun
 from ..qualification.rules.judgment import RULE_VERSION
 
 
+def structured_change_kind(change):
+    """Explain value changes separately from source/provenance edits; never skip revalidation."""
+    before, after = change.baseline, change.current
+    if before is None:
+        return 'ADDED'
+    if after is None:
+        return 'REMOVED'
+    def decision(item):
+        from copy import deepcopy
+        fields = ('type','operator','value','unit','period_months','required',
+                  'requirement_role','condition_complexity','group_operator')
+        values = {key:getattr(item,key,None) for key in fields}
+        scope = deepcopy(getattr(item,'scope',None) or {})
+        for key, field in [('source_contract','raw_sha256'),('source_group','workbook_sha256'),('source_group','source_fingerprint')]:
+            if isinstance(scope.get(key),dict):scope[key].pop(field,None)
+        values['scope']=scope
+        return json.dumps(values,ensure_ascii=False,sort_keys=True,default=str)
+    return 'STRUCTURED_VALUE_SAME' if decision(before)==decision(after) else 'STRUCTURED_VALUE_CHANGED'
+
+
 def change_impact_request(message):
     text = re.sub(r'\s+', '', message)
     return (any(word in text for word in ('변경', '바뀌', '전후', '기준공고', '이전공고'))

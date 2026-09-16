@@ -26,6 +26,7 @@ class ProductProvenance(BaseModel):
 class RequirementJudgmentSummary(Judgment):
     type: RequirementType
     raw: str
+    evaluated_condition: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalysisNoticeFact(BaseModel):
@@ -49,6 +50,7 @@ class QualificationSummary(BaseModel):
     judgment_counts: dict[JudgmentStatus, int]
     judgments: list[RequirementJudgmentSummary]
     analysis_scope: AnalysisScope | None = None
+    profile_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class RequirementEvidenceResult(BaseModel):

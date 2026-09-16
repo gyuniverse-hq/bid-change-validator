@@ -364,7 +364,9 @@ def test_changed_notice_golden_and_revalidation_replay():
             saved_run = db.get(QualificationJudgmentRun, result.result_judgment_run_id)
             saved_run.profile_snapshot = {**saved_run.profile_snapshot, 'region_name':'changed profile'}
             db.flush()
-            with pytest.raises(ValueError, match='CHANGE_IMPACT_CHANGED'):
+            # Snapshot is now part of product provenance, so the same mutation can be
+            # rejected before the more specific change-impact boundary is reached.
+            with pytest.raises(ValueError, match='CHANGE_IMPACT_CHANGED|PRODUCT_SCOPE_CHANGED'):
                 tools.assert_fresh()
             db.rollback()
             with pytest.raises(QualificationJudgmentError, match='제안 이후') as error:

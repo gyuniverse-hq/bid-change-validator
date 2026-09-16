@@ -162,7 +162,7 @@ def publish_index(snapshot, root, embeddings, *, expected_fingerprint, max_embed
 
 
 def full_source_request(question):
-    return any(word in question for word in ('전체', '참가자격', '준비', '확인할', '모든', '모두', '전부', '빠짐없이'))
+    return any(word in question for word in ('전체', '참가자격', '준비', '확인할', '모든', '모두', '전부', '빠짐없이', '체크리스트'))
 
 
 def read_passages(readiness, question, *, broad=False, query_limit=2):
@@ -173,8 +173,14 @@ def read_passages(readiness, question, *, broad=False, query_limit=2):
         # A full-scope request must not lose requirements before generation.
         # compose() separately records omissions and returns PARTIAL if its
         # evidence budget cannot cover the verified source set.
-        return records, {'strategy': 'all_verified_current_sections', 'supplements': 0,
-                         'returned_chunks': len(records), 'source_chunks': len(records)}
+        hits = []
+        if readiness.index is not None:
+            from .retrieval import retrieve
+            hits = retrieve(readiness.index, question, method='hybrid', k=8, fetch_k=24)
+        return records, {'strategy': 'hybrid_with_full_scope_supplement' if hits else 'all_verified_current_sections',
+                         'supplements': 1 if hits else 0, 'query_hit_ids': [h.metadata.chunk_id for h in hits],
+                         'returned_chunks': len(records), 'source_chunks': len(records),
+                         'coverage': 'ALL_VERIFIED_CURRENT_RECORDS'}
     if readiness.index is not None and not broad:
         from .retrieval import retrieve
         hits = retrieve(readiness.index, question, method='hybrid', k=4, fetch_k=12)
@@ -219,3 +225,39 @@ def read_passages(readiness, question, *, broad=False, query_limit=2):
                             and any(t in r.text for t in ('제외', '예외', '불가', '금지', '한함', '허용', '단,')))
     return [records[i] for i in sorted(selected)], {'strategy': strategy, 'supplements': supplements,
                                                   'returned_chunks': len(selected), 'source_chunks': len(records)}
+
+
+def pack_current_passages(records, *, max_chars=1800):
+    """Coalesce adjacent records without dropping text or crossing document hashes.
+
+    The immutable retrieval index keeps its original records. This presentation
+    view reduces repeated fact/source envelopes for broad jobs, not coverage.
+    Chunk IDs are derived from every member and can be reconstructed on follow-up.
+    """
+    from .store import DocumentChunkRecord
+    packets, group = [], []
+    def flush():
+        if not group:
+            return
+        if len(group) == 1:
+            packets.append(group[0])
+            return
+        metadata = group[0].metadata.model_copy(deep=True)
+        metadata.chunk_id = 'packet-' + digest([r.metadata.chunk_id for r in group])[:32]
+        metadata.source_locations = list(dict.fromkeys(p for r in group for p in r.metadata.source_locations))
+        for start, end in [('block_start','block_end'), ('paragraph_start','paragraph_end'), ('source_line_start','source_line_end')]:
+            starts = [getattr(r.metadata,start) for r in group if getattr(r.metadata,start) is not None]
+            ends = [getattr(r.metadata,end) for r in group if getattr(r.metadata,end) is not None]
+            setattr(metadata,start,min(starts) if starts else None)
+            setattr(metadata,end,max(ends) if ends else None)
+        for field in ('page','section_index','clause_label'):
+            if len({getattr(r.metadata,field) for r in group}) > 1:
+                setattr(metadata,field,None)
+        packets.append(DocumentChunkRecord(text='\n\n'.join(r.text for r in group),metadata=metadata))
+    for record in records:
+        boundary = lambda r: (r.metadata.notice_version_id,r.metadata.document_id,r.metadata.source_sha256,r.metadata.extracted_text_sha256)
+        if group and (boundary(group[0]) != boundary(record) or sum(len(r.text)+2 for r in group)+len(record.text)>max_chars):
+            flush(); group=[]
+        group.append(record)
+    flush()
+    return packets

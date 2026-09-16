@@ -24,6 +24,8 @@ DATABASE = 'copilot_test'
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--full-regression', action='store_true', help='Run the existing complete backend suite on the owned local test DB, without external services')
+parser.add_argument('--test', action='append', help='Existing backend test filename for an affected-scope rerun')
 parser.add_argument('--live-model', action='store_true', help='Explicit opt-in: real API/model on synthetic test DB data')
 parser.add_argument('--model-env', type=Path, default=ROOT / '.env', help='Read only OPENAI_API_KEY from this file for explicit live tests')
 parser.add_argument('--browser', action='store_true', help='Real browser/UI + login/API/DB; add --live-model for budgeted model calls; UI on port 5179')
@@ -39,6 +41,10 @@ parser.add_argument('--core-profiles-only', action='store_true', help='DB/rule o
 parser.add_argument('--workflow', action='store_true', help='Change/assumption/proposal/explicit-confirmation flow; requires --live-model')
 parser.add_argument('--namwon-bundle', type=Path, help='Read J13-J16 from a Golden ZIP and verify product judgment in a rolled-back local DB transaction')
 args = parser.parse_args()
+if args.test and (args.full_regression or any(Path(t).name!=t or not t.startswith('test_') or not t.endswith('.py') for t in args.test)):
+    parser.error('--test accepts only existing test filenames, separately from --full-regression')
+if args.full_regression and (args.live_model or args.browser or args.snapshot or args.core_snapshots or args.namwon_bundle):
+    parser.error('--full-regression is a DB-only suite')
 if args.core_notice and not args.core_snapshots:
     parser.error('--core-notice requires --core-snapshots')
 if args.core_profiles_only and (not args.core_snapshots or args.live_model):
@@ -121,7 +127,7 @@ password = values['POSTGRES_PASSWORD']
 if not password.isalnum():
     raise SystemExit('Unexpected credential format in test container.')
 url = f'postgresql://{DATABASE}:{password}@127.0.0.1:{port}/{DATABASE}'
-os.environ.update(DATABASE_URL=url, MIGRATION_DATABASE_URL=url, DATABASE_POOL_MODE='queue',
+os.environ.update(DATABASE_URL=url, MIGRATION_DATABASE_URL=url, DATABASE_POOL_MODE='auto',
                   APP_ENVIRONMENT='test', AUTH_REQUIRED='false', OPENAI_API_KEY='', G2B_SERVICE_KEY='',
                   PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONDONTWRITEBYTECODE='1')
 stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -206,16 +212,18 @@ with (output / 'run.log').open('w', encoding='utf-8') as logfile:
             tests = ['test_copilot_v31_workflow_live_db.py']
         if args.namwon_bundle:
             tests = ['test_copilot_namwon_snapshot_db.py' if args.snapshot else 'test_copilot_namwon_db.py']
-        code = pytest.main(['-v', '-p', 'no:cacheprovider', '--tb=short', '--junitxml=' + str(output / 'tests.xml'),
+        if args.test:
+            tests = args.test
+        code = pytest.main(['-v', '-p', 'no:cacheprovider', '--tb=short', '--basetemp=' + str(output / 'pytest-tmp'), '--junitxml=' + str(output / 'tests.xml'),
                             *(['-k', args.core_notice] if args.core_notice else []),
-                            *['apps/api/tests/' + t for t in tests]])
+                            *(['apps/api/tests'] if args.full_regression else ['apps/api/tests/' + t for t in tests])])
     finally:
         sys.stdout, sys.stderr = old_out, old_err
 metadata = {'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
             'source_sha256_at_start': source_hashes,
             'container': NAME, 'container_id': info['Id'], 'image_id': info['Image'],
             'database': DATABASE, 'host': '127.0.0.1', 'port': port, 'server_version_num': identity[2],
-            'tests': tests, 'exit_code': int(code), 'model': 'gpt-5.6-luna' if args.live_model else 'disabled / mocked',
+            'tests': ['apps/api/tests'] if args.full_regression else tests, 'exit_code': int(code), 'model': 'gpt-5.6-luna' if args.live_model else 'disabled / mocked',
             'finished_utc': datetime.now(timezone.utc).isoformat()}
 (output / 'metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
 print('EVIDENCE_DIR=' + str(output))

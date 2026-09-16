@@ -50,3 +50,24 @@ def test_unresolved_relation_never_silently_aggregates_as_and_or(statuses):
     independent = transport().model_copy(update={'requirement_key': 'independent'})
     failure = judge(independent, []).model_copy(update={'status': 'UNSATISFIED'})
     assert derive_overall_status([*requirements, independent], [*judgments, failure]) == 'ineligible'
+def test_revalidation_preserves_only_exact_current_answer_basis():
+    from types import SimpleNamespace as NS
+    from datetime import date
+    from uuid import uuid4
+    from apps.api.app.qualification.revalidation import reusable_current_answers
+    from apps.api.app.qualification.rules.judgment import RULE_VERSION,CompanyProfileSnapshot
+    case=NS(id=uuid4(),company_id=uuid4(),current_version_id=uuid4())
+    analysis=NS(id=uuid4(),status='PARTIAL')
+    profile=CompanyProfileSnapshot(company_id=str(case.company_id))
+    reference=date(2026,8,18)
+    saved=NS(requirement_key='transport',basis_type='USER_ANSWER',value_source='askback',status='SATISFIED')
+    run=NS(preflight_case_id=case.id,company_id=case.company_id,notice_version_id=case.current_version_id,
+        analysis_run_id=analysis.id,analysis_status=analysis.status,rule_version=RULE_VERSION,
+        reference_date=reference,profile_snapshot=profile.model_dump(mode='json'),judgments=[saved])
+    args=dict(case=case,analysis=analysis,profile=profile,reference_date=reference)
+    assert reusable_current_answers(run,**args)=={'transport':saved}
+    for field,value in [('preflight_case_id',uuid4()),('company_id',uuid4()),('notice_version_id',uuid4()),
+        ('analysis_run_id',uuid4()),('analysis_status','SUCCEEDED'),('rule_version','old'),
+        ('reference_date',date(2026,9,1)),('profile_snapshot',{})]:
+        modified=NS(**{**vars(run),field:value})
+        assert reusable_current_answers(modified,**args)=={}

@@ -1,5 +1,6 @@
 """Run existing/new no-DB tests with explicit guards and timestamped evidence."""
 import hashlib
+import argparse
 import importlib.metadata
 import json
 import os
@@ -45,7 +46,13 @@ tests = ['test_copilot_answer_progress.py', 'test_copilot_answer_integration.py'
 tests.append('test_copilot_change_impact.py')
 tests.append('test_copilot_document_memory.py')
 tests.append('test_copilot_submission_obligations.py')
+tests.append('test_copilot_pipeline_runner.py')
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--test', action='append', choices=tests, help='Run only a changed contract; omit for the final full suite')
+args = parser.parse_args()
+tests = list(dict.fromkeys(args.test or tests))
 code = pytest.main(['-v', '--noconftest', '-p', 'no:cacheprovider', '--tb=short',
+                    '--basetemp=' + str(output / 'pytest-tmp'),
                     '--junitxml=' + str(output / 'tests.xml'),
                     *['apps/api/tests/' + t for t in tests]])
 from apps.api.tests.test_copilot_v31 import replay, FIXTURE_PATH

@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .contracts import ActionProposal, ProductProvenance
+from .submission_obligations import SubmissionObligation
 
 
 class Contract(BaseModel):
@@ -71,6 +72,7 @@ class JobRequirement(Contract):
     remaining: list[str] = Field(default_factory=list)
     action_keys: list[str] = Field(default_factory=list)
     execution_result_ids: list[str] = Field(default_factory=list)
+    required_reads: list[Task] = Field(default_factory=list)
 
 
 class JobState(Contract):
@@ -103,6 +105,7 @@ class Claim(Contract):
     method: Literal['rule', 'extractive', 'semantic'] = 'semantic'
     reason: str = ''
     speech_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
+    submission: SubmissionObligation | None = None
 
 
 class DraftClaim(Contract):
@@ -111,6 +114,7 @@ class DraftClaim(Contract):
     fact_ids: list[str]
     source_ids: list[str]
     speech_act: Literal['ASSERTION', 'CHECK_REQUEST', 'ASSUMPTION'] = 'ASSERTION'
+    submission: SubmissionObligation | None = None
 
 
 class Draft(Contract):
@@ -149,6 +153,9 @@ class AcceptanceCriterion(Contract):
     mode: Literal['CHECKLIST', 'PROFILE_SUMMARY', 'EXPLANATION']
     requirement: str
     fact_ids: tuple[str, ...]
+    submission_document: str | None = None
+    source_required_terms: tuple[str, ...] = ()
+    submission_stage: str | None = None
 
 
 class CriterionVerdict(Contract):

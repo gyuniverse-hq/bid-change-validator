@@ -27,6 +27,18 @@ if (!chromium) throw Error('Playwright chromium export not found');
   const item = { id: s.case_id, company_id: s.company_id, notice_id: s.notice_id, bid_notice_no: 'V31-FIXTURE',
     notice_title: 'v3.1 합성 검토 공고', title: 'v3.1 합성 검토 공고', status: 'DRAFT', baseline_version_number: 1, current_version_number: 1, documents: [] };
   const version = { id: s.notice_version_id, version_number: 1, documents: [], is_current: true };
+  const catalog = { contract_version: 'copilot-guided-jobs-v1', jobs: [
+    { job_id: 'changed_notice', label: '변경 공고 대응', order: 1, questions: [
+      { question_id: 'what_changed', label: '무엇이 바뀌었나요?', order: 1, answer_scope: '변경 설명', completion_criteria: ['변경 확인'], required_tools: ['READ_CHANGES'], availability: 'AVAILABLE', unavailable_reason: null },
+      { question_id: 'company_impact', label: '우리 회사에 어떤 영향이 있나요?', order: 2, answer_scope: '회사 영향', completion_criteria: ['영향 확인'], required_tools: ['READ_CHANGES'], availability: 'AVAILABLE', unavailable_reason: null },
+      { question_id: 'next_checks', label: '무엇을 확인해야 하나요?', order: 3, answer_scope: '확인사항', completion_criteria: ['다음 행동'], required_tools: ['READ_CHECKS'], availability: 'AVAILABLE', unavailable_reason: null },
+    ] },
+    { job_id: 'bid_preparation', label: '입찰 참여 준비', order: 2, questions: [
+      { question_id: 'documents_deadlines_methods', label: '필요한 서류·기한·방법은?', order: 1, answer_scope: '서류', completion_criteria: ['서류 확인'], required_tools: ['READ_DOCUMENT'], availability: 'AVAILABLE', unavailable_reason: null },
+      { question_id: 'preparation_order', label: '준비 순서는?', order: 2, answer_scope: '순서', completion_criteria: ['순서 확인'], required_tools: ['READ_DOCUMENT'], availability: 'AVAILABLE', unavailable_reason: null },
+      { question_id: 'unresolved', label: '아직 확인하지 못한 것은?', order: 3, answer_scope: '미확인', completion_criteria: ['미확인 확인'], required_tools: ['READ_CHECKS'], availability: 'AVAILABLE', unavailable_reason: null },
+    ] },
+  ] };
   const requests = [], semanticHeaders = [], errors = [], outbound = [];
   const browser = await chromium.launch({ headless: true, channel: process.env.COPILOT_BROWSER_CHANNEL || 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -39,11 +51,17 @@ if (!chromium) throw Error('Playwright chromium export not found');
         'access-control-allow-headers': 'Content-Type,X-Copilot-Semantic-Processing', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
       const reply = body => route.fulfill({ status: 200, headers, contentType: 'application/json', body: JSON.stringify(body) });
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      if (p.endsWith('/copilot/jobs')) return reply(catalog);
       if (p.endsWith('/copilot/chat')) {
-        requests.push(request.postDataJSON());
+        const payload = request.postDataJSON();
+        requests.push(payload);
         semanticHeaders.push(request.headers()['x-copilot-semantic-processing']);
         const response = structuredClone(envelope);
         response.context_revision = requests.length;
+        response.guided = payload.job_id && payload.question_id ? {
+          job_id: payload.job_id, question_id: payload.question_id, status: 'COMPLETE',
+          next_question_id: payload.question_id === 'what_changed' ? 'company_impact' : null,
+        } : null;
         return reply({ answer: response.claims.map(c => c.text).join('\n'), intent: 'UNKNOWN', envelope: response,
           product_state: null, actions: [], citations: [], sources: [], warnings: [], external_processing_used: false, external_processing_scope: null });
       }
@@ -66,22 +84,28 @@ if (!chromium) throw Error('Playwright chromium export not found');
     await page.getByRole('button', { name: 'AI Copilot', exact: true }).click();
     await page.locator('#copilot-panel[open]').waitFor();
     assert.equal(await page.locator('#copilot-semantic-processing').isChecked(), false, 'AI detail processing must be opt-in');
-    await page.getByRole('button', { name: '우리 회사, 참여 가능해?', exact: true }).click();
+    await page.getByRole('button', { name: '1. 무엇이 바뀌었나요?', exact: true }).click();
     await page.locator('[data-copilot-version="3.1"]').waitFor();
     assert.equal(requests[0].response_version, '3.1');
+    assert.equal(requests[0].job_id, 'changed_notice');
+    assert.equal(requests[0].question_id, 'what_changed');
     assert.equal(semanticHeaders[0], undefined, 'v3.1 must not imply semantic/model processing consent');
     assert(await page.getByText('공고일 기준 2년 내 2개 이상', { exact: false }).first().isVisible());
-    await page.locator('[data-copilot-version="3.1"] details summary').first().click();
+    assert.equal(await page.getByText('답변 검토 상태:', { exact: false }).count(), 0);
+    await page.locator('[data-copilot-version="3.1"] .copilot-evidence-toggle').first().click();
     assert(await page.locator('[data-copilot-version="3.1"] blockquote').first().isVisible());
-    const target = envelope.follow_up_targets.find(t => t.kind === 'MANUAL');
-    await page.getByRole('button', { name: '직접 확인할 공고 항목 1 · 이 항목 근거 보기', exact: true }).click();
+    assert(await page.getByRole('button', { name: '추천 질문 6개 보기', exact: true }).isVisible());
+    await page.locator('#copilot-question').fill('1224와 1227은 무슨 차이야?');
+    await page.locator('#copilot-question').press('Enter');
     await page.waitForFunction(() => document.querySelectorAll('[data-copilot-version="3.1"]').length === 2);
     assert.equal(requests[1].response_version, '3.1');
-    assert.equal(semanticHeaders[1], undefined, 'Target follow-up must preserve semantic opt-out');
-    assert.equal(requests[1].target_id, target.target_id);
+    assert.equal(requests[1].message, '1224와 1227은 무슨 차이야?');
+    assert.equal(requests[1].job_id, undefined, 'Free text must not impersonate a guided question');
+    assert.equal(requests[1].question_id, undefined, 'Free text must not impersonate a guided question');
+    assert.equal(semanticHeaders[1], undefined, 'Free text must preserve semantic opt-out');
     assert.equal(requests[1].conversation_id, envelope.conversation_id);
     assert.equal(requests[1].context_revision, 1);
-    assert.equal(requests[1].allow_external_processing, undefined, 'Target click must not silently enable document processing');
+    assert.equal(requests[1].allow_external_processing, undefined, 'Free text must not silently enable document processing');
     await page.locator('#copilot-panel').screenshot({ path: process.env.COPILOT_SCREENSHOT_FILE });
     await page.getByRole('button', { name: '새 대화', exact: true }).click();
     assert.equal(await page.locator('[data-copilot-version="3.1"]').count(), 0);

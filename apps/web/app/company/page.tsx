@@ -178,8 +178,33 @@ export default function CompanyPage() {
     setBasicsDraft((draft) => ({ ...(draft ?? savedBasics), ...patch }));
   }
 
+  /*
+    백엔드 PATCH /companies/{id} 가 받아주지 않는 상태를 저장 전에 막는다.
+    누르고 나서 422를 보여주는 것보다, 누르기 전에 왜 안 되는지 말하는 편이 낫다.
+
+    - industry_codes: []        → 스키마가 거부한다 (at least one code)
+    - region_code: ''           → 스키마가 거부한다 (must not be blank)
+    - 이미 저장된 staff·region_name 을 비우면  → 그 키가 payload 에서 빠져 기존 값이 그대로 남는다.
+      즉 화면에서는 지운 것처럼 보이지만 실제로는 안 지워진다. 「지울 수 있다」고 보이게 두면 거짓말이 된다.
+      값을 실제로 비우려면 백엔드에 「삭제」 의미가 따로 필요해서 이번 범위 밖이다.
+  */
+  const industryBlock =
+    industryList.length === 0 ? '업종은 최소 1개가 필요합니다. 하나는 남겨 주세요.' : null;
+
+  const basicsBlock = (() => {
+    if (!basics || !savedBasics) return null;
+    if (!basics.region_code.trim()) return '지역 코드는 비울 수 없습니다. 값을 바꾸려면 새 코드를 입력해 주세요.';
+    if (savedBasics.region_name.trim() && !basics.region_name.trim()) {
+      return '이미 저장된 소재지는 화면에서 지울 수 없습니다. 다른 지역명으로 바꾸는 것은 됩니다.';
+    }
+    if (savedBasics.staff_total.trim() && !basics.staff_total.trim()) {
+      return '이미 저장된 상시 근로자 수는 화면에서 지울 수 없습니다. 다른 인원으로 바꾸는 것은 됩니다.';
+    }
+    return null;
+  })();
+
   async function saveBasics() {
-    if (!company || !basics) return;
+    if (!company || !basics || basicsBlock) return;
     setBusy('basics');
     setError('');
     try {
@@ -208,7 +233,7 @@ export default function CompanyPage() {
   }
 
   async function saveIndustries() {
-    if (!company) return;
+    if (!company || industryBlock) return;
     setBusy('industry');
     setError('');
     try {
@@ -402,7 +427,7 @@ export default function CompanyPage() {
                   {industryDirty && (
                     <Button variant="outline" size="sm" className="rounded-full" onClick={() => setIndustryDraft(null)} disabled={busy !== null}>되돌리기</Button>
                   )}
-                  <Button size="sm" className="rounded-full" onClick={() => void saveIndustries()} disabled={!industryDirty || busy !== null}>
+                  <Button size="sm" className="rounded-full" onClick={() => void saveIndustries()} disabled={!industryDirty || industryBlock !== null || busy !== null}>
                     {busy === 'industry' ? <LoaderCircle className="animate-spin" /> : <Check />}
                     업종 저장
                   </Button>
@@ -415,13 +440,13 @@ export default function CompanyPage() {
                     <span key={item.code} className="inline-flex items-center gap-2 rounded-full border border-[var(--product-line)] bg-[#f3f5ff] py-1.5 pl-3 pr-1.5 text-[13px]">
                       <strong>{item.code}</strong>
                       <span className="text-[var(--product-muted)]">{item.name}</span>
-                      <button type="button" aria-label={`${item.name} 제거`} onClick={() => removeIndustry(item.code)} className="rounded-full p-1 text-[var(--product-muted)] transition-colors hover:bg-white hover:text-rose-600">
+                      <button type="button" aria-label={`${item.name} 제거`} onClick={() => removeIndustry(item.code)} disabled={industryList.length <= 1} title={industryList.length <= 1 ? '업종은 최소 1개가 필요합니다' : undefined} className="rounded-full p-1 text-[var(--product-muted)] transition-colors hover:bg-white hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-[var(--product-muted)]">
                         <X className="size-3.5" />
                       </button>
                     </span>
                   ))
                 ) : (
-                  <p className="text-[13px] text-amber-700">등록된 업종이 없습니다. 업종을 요구하는 공고는 「확인 필요」로 남습니다.</p>
+                  <p className="text-[13px] text-amber-700">등록된 업종이 없습니다. 업종을 요구하는 공고는 「확인 필요」로 남습니다. 저장하려면 업종을 하나 이상 추가해 주세요.</p>
                 )}
               </div>
 
@@ -455,11 +480,13 @@ export default function CompanyPage() {
                 })}
               </div>
 
-              {industryDirty && (
+              {industryBlock ? (
+                <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-[13px] leading-[1.7] text-rose-800">{industryBlock}</p>
+              ) : industryDirty ? (
                 <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">
                   저장하지 않은 변경이 있습니다. 「업종 저장」을 눌러야 판정에 반영됩니다.
                 </p>
-              )}
+              ) : null}
             </section>
 
             {basics && (
@@ -473,7 +500,7 @@ export default function CompanyPage() {
                     {basicsDirty && (
                       <Button variant="outline" size="sm" className="rounded-full" onClick={() => setBasicsDraft(null)} disabled={busy !== null}>되돌리기</Button>
                     )}
-                    <Button size="sm" className="rounded-full" onClick={() => void saveBasics()} disabled={!basicsDirty || busy !== null}>
+                    <Button size="sm" className="rounded-full" onClick={() => void saveBasics()} disabled={!basicsDirty || basicsBlock !== null || busy !== null}>
                       {busy === 'basics' ? <LoaderCircle className="animate-spin" /> : <Check />}
                       정보 저장
                     </Button>
@@ -504,7 +531,7 @@ export default function CompanyPage() {
                   </label>
                   <label className="text-sm font-medium" htmlFor="basics-staff-total">
                     상시 근로자 수
-                    <Input id="basics-staff-total" className="mt-2" type="number" min="0" value={basics.staff_total} onChange={(event) => editBasics({ staff_total: event.target.value })} placeholder="비워두면 「확인 필요」로 남습니다" />
+                    <Input id="basics-staff-total" className="mt-2" type="number" min="0" value={basics.staff_total} onChange={(event) => editBasics({ staff_total: event.target.value })} placeholder="입력하지 않으면 「확인 필요」로 남습니다" />
                   </label>
                 </div>
 
@@ -515,11 +542,13 @@ export default function CompanyPage() {
                   </p>
                 ) : null}
 
-                {basicsDirty && (
+                {basicsBlock ? (
+                  <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-[13px] leading-[1.7] text-rose-800">{basicsBlock}</p>
+                ) : basicsDirty ? (
                   <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">
                     저장하지 않은 변경이 있습니다. 「정보 저장」을 눌러야 판정에 반영됩니다.
                   </p>
-                )}
+                ) : null}
               </section>
             )}
 

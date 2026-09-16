@@ -12,7 +12,7 @@ import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { CaseTabs } from '@/components/product/case-header';
 import { ConclusionBox } from '@/components/product/conclusion-box';
 import { EvidenceQuote } from '@/components/product/evidence-quote';
-import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DIAGNOSTIC_CODE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, evidenceLocationText, labelOf } from '@/lib/status-copy';
+import { ANALYSIS_STATUS_COPY, COMPANY_SIZE_LABEL, DROPPED_REASON_LABEL, OVERALL_STATUS_COPY, REQUIREMENT_TYPE_LABEL, analysisBadgeLabel, analysisStatusLabel, diagnosticText, evidenceLocationText, labelOf } from '@/lib/status-copy';
 import { QualificationRow, type QualificationRowStatus } from '@/components/product/qualification-row';
 import { QualificationSourceOverview } from '@/components/product/qualification-source-overview';
 import { Badge } from '@/components/ui/badge';
@@ -469,6 +469,9 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
   //  · dropped_requirements — 공고 원문 대조를 통과하지 못해 구조화에서 빠진 후보. raw·reason_code만 온다.
   const noticeFacts = analysisDetail?.diagnostics.filter((item) => item.kind === 'NOTICE_FACT') ?? [];
   const pipelineDiagnostics = analysisDetail?.diagnostics.filter((item) => item.kind !== 'NOTICE_FACT') ?? [];
+  const shownDiagnostics = pipelineDiagnostics
+    .map((item) => ({ code: item.code, text: diagnosticText(item.code) }))
+    .filter((item): item is { code: string; text: string } => Boolean(item.text));
   const droppedRequirements = analysisDetail?.dropped_requirements ?? [];
 
   // 판정 밖 조건도 셋으로 갈린다 — 아직 안 돌렸다 / 못 읽었다 / 확인했더니 없다.
@@ -488,9 +491,11 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     : droppedRequirements.slice(0, Math.max(0, UNJUDGED_PREVIEW - previewNoticeFacts.length));
   const hiddenUnjudgedCount = unjudgedCount - previewNoticeFacts.length - previewDropped.length;
 
-  // message는 code별 고정 문구다. 걸린 code가 하나뿐이면 열 줄 모두 같은 문장이 되므로
+  // 문구는 code별 고정이다. 걸린 code가 하나뿐이면 열 줄 모두 같은 문장이 되므로
   // 항목마다 반복하지 않고 목록 머리에 한 번만 쓴다. 종류가 섞여 있으면 항목별로 둔다.
-  const noticeFactMessages = Array.from(new Set(noticeFacts.map((item) => item.message)));
+  const noticeFactMessages = Array.from(
+    new Set(noticeFacts.map((item) => diagnosticText(item.code)).filter((text): text is string => Boolean(text))),
+  );
   const sharedNoticeFactMessage = noticeFactMessages.length === 1 ? noticeFactMessages[0] : null;
 
   // 실행 전·실패는 「세어본 적이 없는」 상태다. 0으로 적으면 확인 후 0건으로 읽힌다 — #119 리뷰.
@@ -700,7 +705,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                         return (
                           <li key={`${item.code}-${index}`} className="rounded-[14px] border border-[var(--product-line)] bg-white px-4 py-3">
                             {evidence && <p className="text-[15px] leading-6 text-[var(--product-ink)]">「{evidence.quote}」</p>}
-                            {!sharedNoticeFactMessage && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{item.message}</p>}
+                            {!sharedNoticeFactMessage && diagnosticText(item.code) && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{diagnosticText(item.code)}</p>}
                             {locationText && <p className="mt-1 text-[13px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
                             {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
@@ -780,7 +785,8 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   <p className="text-[13px] text-[var(--product-muted)]">사용자 질문 가능 {questions.filter((item) => item.askable).length}건</p>
                 </div>
               </div>
-              {pipelineDiagnostics.length ? <div className="mt-4 space-y-2">{pipelineDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} title={item.code} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">{DIAGNOSTIC_CODE_LABEL[item.code] ?? item.message}</p>)}</div> : null}
+              {/* 문구가 없는 코드는 줄 자체를 그리지 않는다. 백엔드 개발자용 message는 화면에 내보내지 않는다. */}
+              {shownDiagnostics.length ? <div className="mt-4 space-y-2">{shownDiagnostics.map((item, index) => <p key={`${item.code}-${index}`} title={item.code} className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] leading-[1.7] text-amber-800">{item.text}</p>)}</div> : null}
             </section>
 
             {/* ── 9 공고 원본 정보 ── */}

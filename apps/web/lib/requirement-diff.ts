@@ -40,6 +40,13 @@ function stableValue(value: unknown): unknown {
   return value;
 }
 
+export function sameRequirementScope(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+) {
+  return JSON.stringify(stableValue(before ?? {})) === JSON.stringify(stableValue(after ?? {}));
+}
+
 function decisionPayload(requirement: CanonicalRequirement) {
   return JSON.stringify(stableValue({
     type: requirement.type,
@@ -54,6 +61,30 @@ function decisionPayload(requirement: CanonicalRequirement) {
     group_operator: requirement.group_operator,
     raw: normText(requirement.raw),
   }));
+}
+
+/**
+ * 화면에서 말하는 「구조화 값」의 동일성이다. 원문(raw)은 제외하고 백엔드의
+ * decision_payload 필드를 비교한다. 값이 같아도 연산자나 적용 범위가 바뀌면 false다.
+ */
+export function sameStructuredRequirement(
+  before: CanonicalRequirement | null,
+  after: CanonicalRequirement | null,
+) {
+  if (!before || !after) return false;
+  const structuredPayload = (requirement: CanonicalRequirement) => JSON.stringify(stableValue({
+    type: requirement.type,
+    operator: requirement.operator,
+    value: requirement.value,
+    unit: requirement.unit,
+    period_months: requirement.period_months,
+    scope: requirement.scope,
+    required: requirement.required,
+    requirement_role: requirement.requirement_role,
+    condition_complexity: requirement.condition_complexity,
+    group_operator: requirement.group_operator,
+  }));
+  return structuredPayload(before) === structuredPayload(after);
 }
 
 /**

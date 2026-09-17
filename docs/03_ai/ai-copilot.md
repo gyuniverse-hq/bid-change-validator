@@ -207,22 +207,30 @@ Copilot은 이를 새로 계산하지 않습니다.
 
 ### Public Document QA
 
-공고문의 일반 내용·조항·제출조건을 묻는 질문은 현재 공고 Version의 공개 문서 검색을 사용할 수 있습니다.
+공고문의 일반 내용·조항·제출조건을 묻는 질문은 현재 공고 Version의 공개 문서 조회를 사용할 수 있습니다.
 
-현재 Document QA 경로:
+현재 v3.1 `READ_DOCUMENT` 경로는 **Hybrid만 고정 사용하지 않습니다.** 현재 Version에서 검증된 Source snapshot과 index readiness를 먼저 확인한 뒤 질문 범위와 준비 상태에 따라 조회 전략을 선택합니다.
 
 ```text
-현재 Notice Version
-→ Document index load/build
-→ Hybrid Retrieval (k=4, fetch_k=12)
-→ Grounded Answer
-→ Citation version 검사
-→ 실제 사용한 Source만 응답 노출
+현재 Notice Version의 검증된 Source snapshot
+→ index readiness / fingerprint 확인
+→ 일반 질문 + READY index
+   → Hybrid Retrieval (Dense + BM25/RRF, k=4, fetch_k=12)
+→ broad 질문
+   → 검증된 current section을 넓게 조회
+→ index/embedding 사용이 어려운 경우
+   → lexical/current-section fallback
+→ 질문 중심 exact excerpt
+→ Fact / Source
+→ Claim 생성·검증
+→ AnswerEnvelope v3.1
 ```
+
+채팅 요청 중 새 문서 index를 build하거나 문서 전체를 새로 embedding하지 않습니다. index 생성은 별도 사전 준비 작업이며, 현재 Source와 fingerprint가 맞지 않는 index를 묵시적으로 사용하지 않습니다.
 
 회사 참가 가능 여부 질문이 Document QA로 들어오더라도 저장된 판정 경로를 우선합니다.
 
-검색 결과가 없으면 generation을 실행하지 않고 abstain합니다. 생성 답변에 검증 가능한 Citation이 하나도 없으면 생성문을 사실 답변으로 노출하지 않습니다.
+문서 조회에서 직접 뒷받침할 수 있는 Fact/Source를 확보하지 못하면 해당 문서 사실을 새로 만들어내지 않고 `NOT_FOUND` 또는 limitation으로 남깁니다. 최종 답변은 Product 사실을 포함한 전체 EvidenceBundle을 Claim 단위로 검증하므로, `검색 0건 = 모델 호출 자체를 항상 생략`으로 단순화하지 않습니다.
 
 ## 9. AI Core Retrieval과 Copilot RAG를 구분한다
 
@@ -231,11 +239,11 @@ Copilot은 이를 새로 계산하지 않습니다.
 | 영역 | 목적 | Current 접근 |
 | --- | --- | --- |
 | AI Core Requirement Extraction | 공고문에서 자격요건 후보 문맥 추출 | section-aware + keyword fallback baseline |
-| Copilot Document QA | 사용자의 공고문 질문에 관련 원문 검색 | Dense + BM25 Hybrid / RRF |
+| Copilot v3.1 Document Read | 사용자 공고문 질문에 현재 Version 근거 조회 | READY narrow query는 Hybrid 우선, broad는 current sections, 필요 시 lexical fallback |
 
 따라서 `프로젝트 전체 RAG = Hybrid` 또는 `AI Core가 Vector DB를 사용한다`고 표현하지 않습니다.
 
-Copilot의 Hybrid/Rerank 평가는 [최종 평가 문서](../08_qa_reports/ai-copilot-final-evaluation.md)에서 별도로 설명합니다.
+E3의 Dense/Hybrid/Rerank 비교는 **검색 전략 평가 결과**이며, Current v3.1의 모든 `READ_DOCUMENT` 호출이 항상 Hybrid만 사용한다는 의미가 아닙니다. 상세 평가는 [최종 평가 문서](../08_qa_reports/ai-copilot-final-evaluation.md)에서 별도로 설명합니다.
 
 ## 10. 외부 AI 처리 경계
 
@@ -292,7 +300,7 @@ Deterministic Router의 substring false positive를 측정하고, 모든 요청�
 
 ### E3 — Document RAG / Prompt
 
-Dense, Hybrid, Hybrid+LLM Rerank를 같은 평가셋에서 비교하고 Hybrid를 기본 경로로 선택했습니다. Prompt는 무근거 Citation, 부분 근거 과잉결론, 문서 오류 임의 복원 문제를 v1→v4로 수정했습니다.
+Dense, Hybrid, Hybrid+LLM Rerank를 같은 평가셋에서 비교하고 **일반적인 준비된 index 검색의 기본 전략으로 Hybrid를 선택**했습니다. 이후 v3.1에서는 broad 질문과 index readiness까지 고려해 current-section/lexical fallback을 포함한 안전한 읽기 경계로 확장했습니다. Prompt는 무근거 Citation, 부분 근거 과잉결론, 문서 오류 임의 복원 문제를 v1→v4로 수정했습니다.
 
 ### v3.1 — Claim Validation
 

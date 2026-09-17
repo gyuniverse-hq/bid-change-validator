@@ -10,12 +10,8 @@ import { ActionCard } from '@/components/copilot/action-card';
 import { useActions } from '@/components/copilot/provider';
 import { currentRevalidation, isLocked } from '@/lib/copilot-actions';
 import { baselineVersion, currentVersion, useCaseWorkspace } from '@/lib/case-workspace';
-/*
-  재검증 결과의 요건은 코파일럿 응답(RevalidationResult)으로 들어온다.
-  분석 조회(qualification-api)의 CanonicalRequirement와 모양은 같지만 다른 타입이라,
-  이 화면은 실제로 받는 쪽인 copilot-api의 것을 쓴다. (#132 리뷰)
-*/
-import type { QualificationRequirement } from '@/lib/copilot-api';
+import type { CanonicalRequirement as QualificationRequirement } from '@/lib/qualification-api';
+import { diffCanonicalRequirements, sameRequirementScope, sameStructuredRequirement } from '@/lib/requirement-diff';
 import { CHANGE_TYPE_LABEL, labelOf, REQUIREMENT_TYPE_LABEL } from '@/lib/status-copy';
 
 function formatDate(value: string | null | undefined) {
@@ -39,28 +35,12 @@ function requirementValue(requirement: QualificationRequirement) {
   return `${requirement.value}${unit}${period}`;
 }
 
-/*
-  구조화된 값이 같은지 본다. 비교할 필드를 우리가 고르지 않고 백엔드
-  requirement_diff.py의 decision_payload()를 그대로 따른다 — 백엔드가 MODIFIED/UNCHANGED를
-  가르는 기준이 그 목록이라, 우리가 따로 정하면 두 기준이 조용히 어긋난다. (#132 리뷰)
-  거기서 raw(원문)만 뺀다. 여기서 말하려는 것이 「구조화 값은 같고 원문만 다르다」이기 때문이다.
-  원문 차이가 단순 표기인지 뜻이 바뀐 걸 추출기가 놓친 건지는 여기서 판정하지 않는다 — 그래서 배지도 「표기 차이」라 하지 않는다. (#132 리뷰)
-  raw는 판정 전 조항 안전성 검사에도 쓰이므로 「판정 영향 없음」이라고는 쓰지 않는다.
-*/
-const STRUCTURED_FIELDS = [
-  'type', 'operator', 'value', 'unit', 'period_months',
-  'required', 'requirement_role', 'condition_complexity', 'group_operator',
-] as const;
-
-/** scope는 객체라 키 순서에 흔들리지 않게 정렬해서 비교한다. */
-function scopeKey(scope: Record<string, unknown> | null | undefined) {
-  if (!scope) return '';
-  return JSON.stringify(Object.keys(scope).sort().map((key) => [key, scope[key]]));
-}
-
-function sameStructuredValue(before: QualificationRequirement | null, after: QualificationRequirement | null) {
-  if (!before || !after) return false;
-  return STRUCTURED_FIELDS.every((field) => before[field] === after[field]) && scopeKey(before.scope) === scopeKey(after.scope);
+function requirementChangeNote(before: QualificationRequirement | null, after: QualificationRequirement | null) {
+  if (!before || !after || requirementValue(before) !== requirementValue(after)) return null;
+  const notes = [];
+  if (before.operator !== after.operator) notes.push('조건');
+  if (!sameRequirementScope(before.scope, after.scope)) notes.push('범위');
+  return notes.length ? `${notes.join('·')} 변경` : '구조 변경';
 }
 
 /** 재검증 결과 한 줄의 한쪽 차수. 요건이 없으면 왜 없는지를 적는다. */
@@ -98,19 +78,47 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     if (action.stage === 'COMPLETED') void reload();
   }, [action.stage, action.result?.result_judgment_run_id, reload]);
 
-  const comparison = useMemo(() => {
+  const noticeComparison = useMemo(() => {
     if (!workspace) return [];
     const base = baselineVersion(workspace);
     if (!base) return [];
     const current = currentVersion(workspace);
     return [
-      ['입찰서 제출마감', formatDate(base.bid_closed_at), formatDate(current.bid_closed_at)],
-      ['추정가격', money(base.estimated_price), money(current.estimated_price)],
-      ['배정예산', money(base.allocated_budget), money(current.allocated_budget)],
-      ['계약방법', base.contract_method ?? '-', current.contract_method ?? '-'],
-      ['첨부문서 수', `${base.documents.length}종`, `${current.documents.length}종`],
-    ];
+      { key: 'bid-closed-at', label: '입찰서 제출마감', before: formatDate(base.bid_closed_at), after: formatDate(current.bid_closed_at) },
+      { key: 'estimated-price', label: '추정가격', before: money(base.estimated_price), after: money(current.estimated_price) },
+      { key: 'allocated-budget', label: '배정예산', before: money(base.allocated_budget), after: money(current.allocated_budget) },
+      { key: 'contract-method', label: '계약방법', before: base.contract_method ?? '-', after: current.contract_method ?? '-' },
+      { key: 'document-count', label: '첨부문서 수', before: `${base.documents.length}종`, after: `${current.documents.length}종` },
+    ].map((row) => ({ ...row, changed: row.before !== row.after, changeNote: null as string | null }));
   }, [workspace]);
+
+  const analyzedChanges = useMemo(() => {
+    if (result) return result.changes;
+    const baseline = workspace?.baselineAnalysisDetail;
+    const current = workspace?.currentAnalysisDetail;
+    if (!baseline || !current) return [];
+    return diffCanonicalRequirements(baseline.requirements, current.requirements);
+  }, [result, workspace?.baselineAnalysisDetail, workspace?.currentAnalysisDetail]);
+
+  const comparison = useMemo(() => [
+    ...noticeComparison,
+    ...analyzedChanges
+      .filter((item) => (
+        item.change_type !== 'UNCHANGED'
+        && (!item.baseline || !item.current || !sameStructuredRequirement(item.baseline, item.current))
+      ))
+      .map((item) => {
+        const requirement = item.current ?? item.baseline;
+        return {
+          key: `requirement:${item.identity}`,
+          label: `자격요건 · ${requirement ? labelOf(REQUIREMENT_TYPE_LABEL, requirement.type) : '유형 확인 필요'}`,
+          before: item.baseline ? requirementValue(item.baseline) : '없음',
+          after: item.current ? requirementValue(item.current) : '없음',
+          changed: true,
+          changeNote: requirementChangeNote(item.baseline, item.current),
+        };
+      }),
+  ], [noticeComparison, analyzedChanges]);
 
   /*
     요건 행의 펼침 상태. 기본값은 행마다 다르다(구조화 값이 바뀐 것만 펼쳐 둔다).
@@ -142,13 +150,14 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
     !workspace.currentAnalysis && '현재 차수 분석',
     !workspace.sourceJudgment && '기준 차수 판정',
   ].filter((item): item is string => typeof item === 'string');
-  const affectedChanges = result?.changes.filter((item) => item.change_type !== 'UNCHANGED') ?? [];
+  const affectedChanges = analyzedChanges.filter((item) => item.change_type !== 'UNCHANGED');
+  const hasRequirementComparison = Boolean(workspace.baselineAnalysisDetail && workspace.currentAnalysisDetail);
   /*
     「영향 있는 변경」은 요건이 달라졌다는 뜻이고, 그중에는 글머리 기호나 법령 인용처럼
     원문만 바뀐 것도 섞인다. 구조화된 값이 실제로 달라진 것이 몇 건인지 따로 센다.
   */
   const structuredChangedCount = affectedChanges.filter(
-    (item) => !item.baseline || !item.current || !sameStructuredValue(item.baseline, item.current),
+    (item) => !item.baseline || !item.current || !sameStructuredRequirement(item.baseline, item.current),
   ).length;
 
   return (
@@ -178,13 +187,12 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
           </section>
         ) : (
           <>
-            <section className="mt-8">{comparison.every(([, before, after]) => before === after) && <p className="mt-2 text-[15px] text-[var(--product-muted)]">주요 공고 정보에는 변경이 없습니다. (자격조건 자체의 변경 여부는 아래 재검증에서 확인하세요)</p>}
-              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[15px] text-[var(--product-muted)]">나라장터 수집 값끼리 비교합니다</span></div>
+            <section className="mt-8">{comparison.every(({ changed }) => !changed) && <p className="mt-2 text-[15px] text-[var(--product-muted)]">주요 공고 정보와 구조화된 자격요건에는 변경이 없습니다.</p>}
+              <div className="flex items-baseline gap-3"><h2 className="text-[21px] font-extrabold tracking-[-0.035em]">기준 → 현재 대비</h2><span className="text-[15px] text-[var(--product-muted)]">나라장터 수집 값과 구조화된 자격요건을 비교합니다</span></div>
               <div className="mt-3 overflow-hidden rounded-[20px] border border-[#eef0f4]">
                 <div className="grid grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] bg-[#f6f7f9] py-[13px] text-[13px] font-semibold text-[var(--product-muted)]"><div className="px-4">항목</div><div className="px-4">기준 차수</div><div className="px-4">현재 차수</div><div className="px-4">판정 영향</div></div>
-                {comparison.map(([label, before, after]) => {
-                  const changed = before !== after;
-                  return <div key={label} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[15px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[13px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span></div></div>;
+                {comparison.map(({ key, label, before, after, changed, changeNote }) => {
+                  return <div key={key} className="grid min-h-[54px] grid-cols-[270px_minmax(0,1fr)_minmax(0,1.4fr)_220px] items-center border-t border-[#eef0f4] text-[15px]"><div className="px-4 font-semibold">{label}</div><div className="px-4 text-[var(--product-muted)]">{before}</div><div className="px-4 font-semibold">{after}</div><div className="px-4"><span className={`rounded-full px-3 py-1 text-[13px] font-bold ${changed ? 'bg-[#fbf0dc] text-[#8a5a00]' : 'bg-[#f6f7f9]'}`}>{changed ? '변경됨' : '변경 없음'}</span>{changeNote && <span className="ml-2 text-[12px] text-[var(--product-muted)]">{changeNote}</span>}</div></div>;
                 })}
               </div>
             </section>
@@ -192,14 +200,14 @@ function ChangesWorkspace({ caseId }: { caseId: string | null }) {
             <section className="mt-8 rounded-[20px] border border-[#eef0f4] bg-white px-[26px] py-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-[18px] font-bold">변경공고로 다시 판정할 항목</h2><p className="mt-2 text-[15px] text-[var(--product-muted)]">변경된 참가자격 요건 전체를 비교해 재검증합니다. 제안을 확인한 뒤 실행하며, 일부 요건만 선택하거나 제외할 수 없습니다.</p></div><Button onClick={() => void controller.propose(caseId, true)} disabled={!canRevalidate || busy || Boolean(loadError)} className="rounded-full">{busy ? <LoaderCircle className="animate-spin" /> : <GitCompareArrows />} 전체 변경 요건 재검증 제안</Button></div>
               {!canRevalidate && <p className="mt-4 text-[13px] leading-[1.75] text-[var(--product-muted)]"><strong className="text-[var(--product-body)]">{missingForRevalidation.join(' · ')}</strong>이 준비되지 않아 실행할 수 없습니다. 참가자격 검토 화면에서 다시 검토하면 기준 차수까지 현재 판정 규칙으로 함께 분석·판정합니다.</p>}
-              {result && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong> · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
+              {hasRequirementComparison && <div className="mt-5"><div className="mb-3 text-[15px]">영향 있는 변경 <strong>{affectedChanges.length}건</strong>{result && <> · 다시 판정 <strong>{result.revalidated_keys.length}건</strong></>} · 구조화 값이 바뀐 것 <strong>{structuredChangedCount}건</strong></div>{affectedChanges.length ? <div className="overflow-hidden rounded-[18px] border border-[#eef0f4]">{affectedChanges.map((item) => {
                 // 재검증 결과가 양쪽 차수의 요건을 그대로 담아 온다. 따로 조회해 이어붙이지 않는다.
                 const before = item.baseline;
                 const after = item.current;
                 const typeCode = after?.type ?? before?.type ?? null;
                 // 양쪽이 다 있을 때만 견줄 수 있다. 신설·삭제는 견줄 상대가 없다.
                 const comparable = Boolean(before && after);
-                const sameStructured = sameStructuredValue(before, after);
+                const sameStructured = sameStructuredRequirement(before, after);
                 /*
                   기본은 접어 둔다. 다만 구조화 값이 바뀐 행은 펼쳐 둔다 —
                   이 화면에서 사람이 실제로 읽어야 하는 것이 그 행이기 때문이다.

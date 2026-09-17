@@ -47,6 +47,7 @@ import {
 
 type Busy = 'load' | 'create' | 'review' | null;
 type ReviewStep = 'idle' | 'analysis' | 'judgment' | 'done';
+const SELECTED_EVIDENCE_SECTION_ID = 'selected-evidence-section';
 type RequirementView = {
   requirement: CanonicalRequirement;
   judgment: QualificationJudgment | null;
@@ -185,6 +186,20 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
     currentAnalysisId: currentAnalysis?.id, judgmentId: displayJudgment?.id,
   });
   const [selectedEvidenceKey, setSelectedEvidenceKey] = useState<string | null>(null);
+  const revealEvidence = useCallback((evidenceKey: string) => {
+    if (selectedEvidenceKey === evidenceKey) {
+      document.getElementById(SELECTED_EVIDENCE_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setSelectedEvidenceKey(evidenceKey);
+  }, [selectedEvidenceKey]);
+  useEffect(() => {
+    if (!selectedEvidenceKey) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(SELECTED_EVIDENCE_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedEvidenceKey]);
   const [busy, setBusy] = useState<Busy>('load');
   const [reviewStep, setReviewStep] = useState<ReviewStep>('idle');
   const [error, setError] = useState('');
@@ -795,7 +810,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                   const companyValueText = groupPeerNote
                     ? `${companyValue(requirement, company, judgment)} · ${groupPeerNote}`
                     : companyValue(requirement, company, judgment);
-                  return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => setSelectedEvidenceKey(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { navigateTo(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
+                  return <QualificationRow key={requirement.requirement_key} status={status} basisType={judgment?.basis_type ?? 'NONE'} condition={`${labelOf(REQUIREMENT_TYPE_LABEL, requirement.type)} · ${requirement.raw}`} companyValue={companyValueText} evidenceLabel={evidenceLabel} actionLabel={actionable ? (askable ? '확인하기' : '원문 확인') : judgment ? null : '판정 필요'} onEvidence={requirement.evidence_keys[0] ? () => revealEvidence(requirement.evidence_keys[0]) : undefined} onAction={actionable ? () => { navigateTo(askable ? `/ask-back?caseId=${activeCase.id}` : evidenceHref); } : undefined} />;
                 }) :<div className="px-6 py-14 text-center">{busy === 'review' ? <LoaderCircle className="mx-auto size-8 animate-spin text-[var(--product-accent)]" /> : <FileSearch className="mx-auto size-8 text-[var(--product-faint)]" />}<p className="mt-3 text-[15px] font-semibold">{emptyRequirementCopy}</p><Button className="mt-4" onClick={() => void runFullReview(Boolean(analysisDetail))} disabled={busy !== null || actionLocked}>{busy === 'review' ? <LoaderCircle className="animate-spin" /> : <Play />}{analysisDetail ? '새로 분석하고 판정' : '참가자격 검토 시작'}</Button></div>}              </div>
             </section>
 
@@ -860,7 +875,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                             {!sharedNoticeFactMessage && diagnosticText(item.code) && <p className={evidence ? 'mt-1 text-[15px] leading-6 text-[var(--product-body)]' : 'text-[15px] leading-6 text-[var(--product-body)]'}>{diagnosticText(item.code)}</p>}
                             {locationText && <p className="mt-1 text-[13px] text-[var(--product-muted)]">근거 위치 — {locationText}</p>}
                             {/* evidence_key만 보고 버튼을 띄우면 실제 Evidence가 없을 때 눌러도 아무것도 안 열린다. 객체가 resolve된 경우에만 노출한다. */}
-                            {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => setSelectedEvidenceKey(evidence.evidence_key)}>근거 원문 보기</Button>}
+                            {evidence && <Button variant="outline" size="sm" className="mt-2 rounded-full" onClick={() => revealEvidence(evidence.evidence_key)}>근거 원문 보기</Button>}
                           </li>
                         );
                       })}
@@ -901,7 +916,7 @@ function QualificationWorkspace({ requestedCaseId }: { requestedCaseId: string |
                 </>}
             </section>
 
-            {selectedEvidence && <section className="mt-8"><h2 className="mb-3 text-[21px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
+            {selectedEvidence && <section id={SELECTED_EVIDENCE_SECTION_ID} className="mt-8 scroll-mt-32"><h2 className="mb-3 text-[21px] font-extrabold">선택한 원문 근거</h2><EvidenceQuote quote={selectedEvidence.quote} location={selectedEvidence.location} /></section>}
 
             {/*
               ── 8 이 판정에 쓴 것 ──

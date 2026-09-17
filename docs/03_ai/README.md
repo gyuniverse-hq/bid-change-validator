@@ -1,9 +1,17 @@
 # AI / RAG 문서 안내
 
-> **문서 상태: Current + Proposed 혼재**  
-> 기준 브랜치: `develop` · 역할 분리 합의: 2026-09-10
+> **문서 상태: Current + Historical/Proposed 참조 혼재**  
+> 기준 브랜치: `develop` · Current Copilot 기준: 2026-09-17 / PR #151 이후
 
-이 폴더는 Product Integration Baseline 이후 AI 영역을 **Core Intelligence**와 **AI Copilot**으로 나누고, 병렬 개발 시 파일 소유권과 Contract 경계를 관리합니다.
+이 폴더는 Product Integration Baseline 이후 AI 영역을 **Core Intelligence**와 **AI Copilot**으로 나누고, 서로 다른 책임과 평가 범위를 관리합니다.
+
+## 먼저 볼 문서
+
+- [AI Copilot · Current Architecture](ai-copilot.md) — **Current**
+- [AI Copilot · Final Evaluation Narrative](../08_qa_reports/ai-copilot-final-evaluation.md) — **Current Summary + Historical Evidence**
+- [AI Retrieval · Current State / Upgrade Path](retrieval-current-state.md) — **AI Core Current Baseline + Proposed Experiments**
+- [Core → Copilot Contract](core-copilot-contract.md) — **초기 Proposed Contract / Historical Design Input**
+- [AI Core ↔ Copilot 병렬 개발 기준](parallel-boundary.md) — **Ownership/병렬 개발 기준**
 
 ## 역할 상태
 
@@ -12,7 +20,7 @@
 - **김재현 = LLM/RAG Core + Evaluation**
 - **이홍규 = AI Copilot + Integration**
 
-다만 역할 합의와 구현 완료는 구분합니다. `app/copilot/**`의 구체 폴더/Contract/API는 실제 구현과 테스트를 거쳐 Current로 승격합니다.
+초기 문서에서는 `app/copilot/**`을 Proposed로 다뤘지만, 현재 `develop`에는 Copilot API·Conversation·Guided Job·Claim Validation·Frontend Panel이 구현되어 있습니다. Current 구조는 `ai-copilot.md`를 우선합니다.
 
 ## 현재 AI 구조
 
@@ -21,7 +29,7 @@
         ↓
 Backend Parsing / extracted_blocks
         ↓
-app.ai
+app.ai — Core Intelligence
 ├─ Semantic Chunking
 ├─ Eligibility section / keyword candidate selection
 ├─ Requirement Extraction
@@ -33,23 +41,26 @@ app.ai
 ├─ deterministic Judgment
 └─ Requirement Diff / Revalidation 기반
         ↓
-Backend Product API / DB
+Backend Product Service / DB
         ↓
-app.copilot (Role Accepted · 구현 진행 대상)
-├─ Intent
-├─ Product Context
-├─ Tool Adapter
-├─ Grounding Guardrail
-└─ Narration
+app.copilot — Current Product Integration Layer
+├─ Conversation / Scope
+├─ Guided Job 2종 / 질문 6개
+├─ Free-text Planning
+├─ Product Tool Adapter
+├─ Document QA / Hybrid Retrieval
+├─ Fact / Source / Claim Validation
+├─ Action Proposal / Explicit Confirm
+└─ AnswerEnvelope v3.1
         ↓
-사용자 대화 UI
+Frontend Copilot Panel
 ```
 
-## 현재 Retrieval 사실
+## AI Core Retrieval과 Copilot RAG는 다릅니다
 
-현재 Qualification Core에는 **Vector DB / Dense Retriever / Hybrid Retriever / Reranker가 Production 기능으로 구현되어 있지 않습니다.**
+### AI Core Qualification Extraction
 
-현재 baseline은:
+현재 Qualification Core의 기본 후보 선택은 **명시적인 Vector DB / Dense / Hybrid Production Retriever가 아닙니다.**
 
 ```text
 Semantic Chunks
@@ -57,23 +68,26 @@ Semantic Chunks
 → keyword fallback
 → candidate context
 → LLM structured extraction
+→ source-grounding validation
 ```
-
-이며 structured extraction 입력은 현재 최대 32,000 characters입니다.
-
-실제 공고 측정에서 Retrieval 자체뿐 아니라 **Evidence/Guardrail에서 Requirement가 탈락하는 원인**이 중요한 품질 이슈로 확인됐으므로, 고도화 순서는 측정 → Drop Diagnostic → Evidence/Guardrail → Retrieval 실험 순으로 둡니다.
 
 상세: [AI Retrieval · Current State / Upgrade Path](retrieval-current-state.md)
 
+### AI Copilot Document QA
+
+Copilot의 공개 공고문 질문은 별도 Document QA 경로에서 **Hybrid Retrieval(Dense + BM25/RRF)** 을 사용합니다. 이 경로는 회사 적격 판정과 분리되어 있고, 참가 가능 여부는 Product Judgment가 계속 Source of Truth입니다.
+
+상세: [AI Copilot · Current Architecture](ai-copilot.md)
+
 ## 책임 경계
 
-### 김재현 — LLM/RAG Core · Evaluation · Current Owner
+### 김재현 — LLM/RAG Core · Evaluation
 
 > 공고문에서 자격요건·계약 위험조항과 근거를 얼마나 정확하고 안전하게 구조화할 수 있는가?
 
 주요 영역:
 
-- Semantic Chunking / Retrieval baseline·고도화
+- Semantic Chunking / Core Retrieval baseline·고도화
 - Requirement Extraction
 - Canonical Mapping
 - Evidence Grounding
@@ -82,21 +96,21 @@ Semantic Chunks
 - Retrieval·Extraction Golden Set / Evaluation
 - 변경공고 분석 Core / Revalidation 고도화
 
-### 이홍규 — AI Copilot · Integration · Current Owner
+### 이홍규 — AI Copilot · Integration
 
-> 이미 계산된 Product/Core 결과를 사용자가 자연어로 어떻게 안전하게 탐색하고 이어서 업무할 수 있는가?
+> 이미 계산된 Product/Core 결과와 현재 공고문 근거를 사용자가 자연어로 어떻게 안전하게 탐색하고 이어서 업무할 수 있는가?
 
-역할은 확정됐지만 Copilot 구현/API 자체는 아직 Current 기능으로 간주하지 않습니다.
+Current 주요 영역:
 
-목표 영역:
-
-- Intent Classification
-- Conversation / Product Context
-- Tool Orchestration
-- Qualification / Evidence / Ask-back / Change API Adapter
-- Grounded Response / Citation
-- Multi-turn Flow
-- Copilot Evaluation / Integration E2E
+- Intent / Semantic Routing
+- Conversation / Product Scope
+- Guided Job / Tool Orchestration
+- Qualification / Evidence / Ask-back / Change Adapter
+- Document QA / Citation
+- Fact / Source / Claim Validation
+- Multi-turn Target Resolution
+- Action Proposal / Explicit Confirm
+- Copilot Evaluation / Integration
 
 ## 계약 위험조항 · MVP Current
 
@@ -113,14 +127,6 @@ AI Core
 → Frontend가 사용자용 Label로 표현
 ```
 
-## 05 평가 대응 · Pending Frontend Design
-
-`/evaluation`의 최종 화면/사용자 흐름은 Frontend 구조안을 먼저 기준으로 잡습니다. 그 전에는 AI/Backend가 Evaluation Product Contract를 임의 확정하지 않습니다.
-
-- **점수 예측은 MVP 제외**
-- 평가기준 추출/근거 활용 범위는 Frontend 구조 확정 후 결정
-- 통합 전 Backend Prototype의 제안서 업로드·Parsing·누락검사 기능은 Reference로 보존하고 재사용 범위를 이후 결정
-
 ## 절대 원칙
 
 1. **판정은 LLM/Copilot이 새로 만들지 않습니다.**
@@ -129,27 +135,23 @@ AI Core
    - 전체 상태의 Source of Truth는 Backend Judgment Run입니다.
 
 2. **근거가 없는 확정 답변을 만들지 않습니다.**
-   - `PARTIAL`, `FAILED`, `UNKNOWN`을 확정 결과로 임의 승격하지 않습니다.
+   - Product Evidence 또는 현재 공고문 Source로 확인되지 않은 사실을 확정적으로 게시하지 않습니다.
+   - 검증 실패 범위는 PARTIAL/limitation 또는 abstention으로 남깁니다.
 
 3. **`UNKNOWN != ASKABLE`입니다.**
-   - 질문 가능 여부는 `askability.py`의 정책으로 별도 판정합니다.
+   - 질문 가능 여부는 `askability.py` 정책으로 별도 판정합니다.
 
-4. **Copilot → Core / Product API 의존만 허용합니다.**
-   - Core는 Copilot을 알지 않습니다.
-   - Copilot이 자체 Qualification Retriever/Rule을 만들어 이중 판정 구조를 만들지 않습니다.
+4. **Copilot은 기존 Product/Core 결과를 소비합니다.**
+   - Copilot이 별도 Qualification Rule을 만들어 이중 판정 구조를 만들지 않습니다.
+   - Document QA는 공개 문서 설명용이며 회사 적격 판정 경로를 대체하지 않습니다.
 
-5. **기존 Core 파일을 대규모 재배치하지 않습니다.**
-   - 현재 Backend와 테스트의 import 경로를 보존합니다.
-   - 신규 Retrieval/Evaluation 영역과 `app/copilot/**`부터 분리합니다.
+5. **write는 대화와 분리합니다.**
+   - `/chat`은 조회·설명·Proposal까지만 수행합니다.
+   - 실제 저장/재검증은 명시적 confirm과 최신 provenance 검증 후 기존 Product Service를 사용합니다.
 
-## 문서
+## 현재 주요 코드
 
-- [AI Core ↔ Copilot 병렬 개발 기준](parallel-boundary.md) — **Ownership Accepted / 상세 구현 경계 Current화 중**
-- [Core → Copilot Contract](core-copilot-contract.md) — **Proposed Contract**
-- [AI Retrieval · Current State / Upgrade Path](retrieval-current-state.md) — **Current Baseline + Proposed Experiments**
-- [Requirement ↔ Test ↔ Golden/E2E](../08_qa_reports/requirement-test-traceability.md)
-
-## 현재 `develop` Core 주요 파일
+### AI Core
 
 ```text
 apps/api/app/ai/
@@ -163,32 +165,47 @@ apps/api/app/ai/
 ├─ evaluation_contracts.py
 ├─ evidence_adapter.py
 ├─ judgment.py
-├─ legacy_slots.py
 ├─ normalization/
-├─ providers/
 ├─ requirement_diff.py
 └─ requirement_extraction.py
 ```
 
+### AI Copilot
+
+```text
+apps/api/app/copilot/
+├─ router.py
+├─ job_catalog.py
+├─ orchestration.py
+├─ v31_contracts.py
+├─ tool_adapters.py
+├─ answer_validation.py
+├─ conversation_state.py
+├─ document_qa.py
+├─ semantic_router.py
+├─ narration.py
+├─ actions.py
+└─ change_impact.py
+```
+
 `evaluation_contracts.py`는 **입찰 평가기준(Evaluation Criterion)의 source-grounded 구조 계약**이며, AI 품질평가 Harness 자체를 의미하지 않습니다.
 
-## 기존 `LLM` 브랜치 처리 원칙
+## 설계 역사 문서 읽는 법
 
-`LLM` 브랜치는 최신 `develop` 대비 크게 뒤처져 있으므로 통째로 Merge하지 않습니다.
+과거 문서에는 당시 구현 상태가 그대로 남아 있습니다.
 
-- 이미 `develop`에 존재: 최신 `develop` 유지
-- Core 가치가 남은 모듈: 함수/테스트 단위 선별 이식
-- `clause_review/**`, embedding provider: Core 실험 후보
-- `assist.py`, `summary.py`: Copilot 요구사항 참고 후보
-- 과거 followup/profile/judgment PoC: 현재 Product API/DB 구현 우선
-- Demo/CLI 전용 코드: 제품 직접 Merge보다 Test/Historical 자료로 활용
+- `core-copilot-contract.md`: 2026-09-10 초기 Contract 제안
+- `../llm-rag/08-chatbot-design-notes.md`: 초기 `판정은 코드, 서술은 모델` 설계
+- `../08_qa_reports/ai-copilot-stage6-2-to10.md`: Product Tool / Proposal-Confirm 발전 과정
+- `../08_qa_reports/ai-copilot-v2/`: E0→E3 개선·평가 원본
+- `../07_handoff/ai-copilot-v3.1/`: 감사 → 설계 결정 → Claim Validation → Guided Job 통합 과정
 
-## 다음 개발 순서
+이 문서들은 당시 사실을 보존하는 Historical Evidence이며, **현재 구현 설명에는 `ai-copilot.md`를 우선합니다.**
 
-1. 재현 현재 작업물과 최신 `develop` Diff 최종 검산
-2. Core/Copilot 공개 Contract 필수 필드 검산
-3. Core: 측정 Harness → Drop Diagnostic → Evidence/Guardrail 품질 개선
-4. Core: 위험조항 9종 + Golden/Evaluation 고도화
-5. Copilot: `질문 → Product Tool → Judgment/Evidence → Grounded Answer` 첫 Vertical Slice
-6. Ask-back → Revalidation → Change 질의 순으로 Copilot 확장
-7. 05 평가 대응은 Frontend 구조안 수신 후 별도 연결
+## 현재 후속 과제
+
+- 사람 사용자 Test Case 실제 수행 및 결과 기록
+- 새 독립 blind 질문셋으로 일반화 평가
+- v3.1 / Guided Job 실제 모델 latency 개선
+- process-memory Conversation의 durable storage 필요성 검토
+- AI Core Requirement Extraction과 Copilot Document QA를 분리한 최종 발표 지표 유지

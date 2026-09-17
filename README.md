@@ -113,17 +113,20 @@ Current Frontend의 대화 경로는 `response_version=3.1`을 사용합니다.
 
 회사 참가 가능 여부는 Product Judgment가 결정합니다.
 
-공고문의 일반 조항·제출조건 질문은 별도 Document QA 경로에서 현재 공고 Version을 대상으로 Hybrid Retrieval(Dense + BM25/RRF)을 사용합니다.
+공고문의 일반 조항·제출조건 질문은 현재 공고 Version의 검증된 Source를 조회합니다. 준비된 index가 있고 일반 질문이면 Hybrid Retrieval(Dense + BM25/RRF)을 우선 사용하며, broad 질문은 current section을 넓게 읽고 index/embedding 사용이 어려운 경우 lexical/current-section fallback을 사용합니다.
 
 ```text
-현재 공개 공고문
-→ Hybrid Retrieval (k=4, fetch_k=12)
-→ Grounded Answer
-→ Citation / Version 검증
-→ 검증된 Source만 노출
+현재 공개 공고문 Source snapshot
+→ index readiness / fingerprint 확인
+→ READY + 일반 질문: Hybrid Retrieval (k=4, fetch_k=12)
+→ broad 질문: current sections
+→ 필요 시 lexical/current-section fallback
+→ Fact / Source
+→ Claim 생성·검증
+→ AnswerEnvelope v3.1
 ```
 
-검색 결과가 없으면 generation을 실행하지 않고, 생성 답변에 검증 가능한 Citation이 없으면 생성문을 사실 답변으로 노출하지 않습니다.
+채팅 요청 중 새 document index를 build하거나 문서 전체를 새로 embedding하지 않습니다. 문서 근거를 확보하지 못한 범위는 `NOT_FOUND` 또는 limitation으로 남기며, 이를 모델이 새 사실로 보완하지 않습니다.
 
 AI Core의 Requirement Extraction Retrieval은 별도 영역이며 현재 section-aware + keyword fallback baseline을 사용하므로, 프로젝트 전체 Retrieval을 하나의 방식으로 표현하지 않습니다.
 
@@ -137,7 +140,7 @@ AI Core의 Requirement Extraction Retrieval은 별도 영역이며 현재 sectio
 | E1 bounded UX 개선 | 41/100 | 동일 routing set 재측정 |
 | E2 Semantic Routing | 100/100 | frozen routing set, 답변 정확도 아님 |
 | Dense Retrieval | Recall@4 29.17% | expected evidence retrieval |
-| Hybrid Retrieval | Recall@4 50.00% | 기본 Product Document QA로 채택 |
+| Hybrid Retrieval | Recall@4 50.00% | 준비된 index의 기본 검색 전략으로 채택 |
 | Hybrid + LLM Rerank | Recall@4 55.56% | latency/비용으로 기본 미채택 |
 | Grounded Answer v4 | citation version integrity 100% | semantic answer accuracy와 구분 |
 | 남원 합성 프로필 Guided Job | 23/24 COMPLETE | 실제 모델 격리 실행, 사람 사용자 성공률 아님 |

@@ -57,17 +57,88 @@ ADR-002-short-title.md
 언제 다시 검토할 것인가?
 ```
 
-## 현재 ADR 후보 / 상태
+## 현재 주요 결정 / 상태
 
-- deterministic Rule이 최종 Qualification 판정을 담당하는 구조 — **Accepted architecture candidate**
-- Product Integration Baseline 우선 전략 — **Accepted / 이미 develop 반영**
-- AI Core와 AI Copilot 역할 분리 — **Accepted ownership decision**
-  - 김재현: LLM/RAG Core + Evaluation
-  - 이홍규: AI Copilot + Integration
-  - 세부 폴더/Contract는 구현·테스트와 함께 Current화
-- 위험조항 9종 taxonomy 및 `AI Core 분류 → Backend 저장` 경계 — **Accepted contract candidate**
-- 05 평가 대응 — **Pending Frontend Design**, 점수 예측 제외
+### Qualification 판정은 deterministic Product Rule이 소유
+
+**Accepted / Current**
+
+- LLM/Copilot이 회사 참가 가능/불가를 새로 계산하지 않습니다.
+- 전체 상태는 저장된 Judgment Run의 `overall_status`가 Source of Truth입니다.
+- Copilot Document QA 역시 회사 적격 판정을 대신하지 않습니다.
+
+### AI Core와 AI Copilot 역할 분리
+
+**Accepted / Current**
+
+- 김재현: LLM/RAG Core + Evaluation
+- 이홍규: AI Copilot + Integration
+- Core는 Requirement/Evidence/Rule에 집중하고 Copilot은 Product/Core 결과를 대화로 조회·설명합니다.
+- Copilot이 Core 내부 Retriever/Rule을 다시 구현해 이중 판정 구조를 만들지 않습니다.
+
+### Copilot write는 Proposal → Explicit Confirm으로 분리
+
+**Accepted / Current**
+
+- `/chat`이 실제 저장/재검증을 직접 실행하지 않습니다.
+- 자연어 `응`을 실행 확인으로 사용하지 않습니다.
+- `/actions/confirm`에서 현재 provenance를 다시 확인한 뒤 기존 Product Service를 호출합니다.
+
+### 자유입력 Routing은 deterministic + selective Semantic recheck
+
+**Accepted / Current**
+
+- 모든 질문을 모델 Router에 맡기지 않습니다.
+- 명확한 UI intent/write 경계는 deterministic하게 유지합니다.
+- UNKNOWN 또는 weak deterministic read만 Semantic Router가 재검토합니다.
+- E0→E2 측정 과정과 결과는 `../08_qa_reports/ai-copilot-final-evaluation.md`를 참고합니다.
+
+### Copilot Document QA 기본 Retriever는 Hybrid
+
+**Accepted / Current**
+
+- 동일 fixture에서 Dense, Hybrid, Hybrid + LLM Rerank를 비교했습니다.
+- Rerank가 Recall은 더 높았지만 추가 모델 호출과 큰 latency 증가 때문에 기본 제품 경로에는 채택하지 않았습니다.
+- 현재 기본은 Dense + BM25 Hybrid/RRF입니다.
+- 이 결정은 AI Core Requirement Extraction Retrieval과 별개입니다.
+
+### 생성 답변은 Fact / Source / Claim 분리 후 검증
+
+**Accepted / Current v3.1**
+
+- 서버 Fact/Source와 모델 Claim을 분리합니다.
+- unsupported/contradicted claim을 전체 성공으로 게시하지 않습니다.
+- 실패한 claim은 제한된 수정·재검증 후에도 불확실하면 제외하고 PARTIAL/limitation을 유지합니다.
+
+### Guided Job 2종 / 질문 6개 + 자유입력 통합
+
+**Accepted / Current**
+
+- 변경 공고 대응 3문항
+- 입찰 참여 준비 3문항
+- 서버가 질문의 Tool 범위와 완료 기준을 소유합니다.
+- PR #151 이후 Current UI는 Guided Question과 자유 입력을 함께 제공합니다.
+
+### 위험조항 9종 taxonomy 및 `AI Core 분류 → Backend 저장`
+
+**Accepted contract candidate / Current 구현과 함께 검증 필요**
+
+위험조항 분류 책임을 Backend에 중복 구현하지 않는 경계를 유지합니다.
+
+## 아직 미정 / 재검토 대상
+
+- Copilot Conversation durable persistence / multi-worker 저장 구조 — **TBD**
+- Selective rerank / hard-query 정책 — **Revisit candidate**
+- 실제 모델 latency 최적화 전략 — **TBD**
+- 05 평가 대응 전용 Product Contract — **Pending**
 - Production Web/API 배포 구조 — **TBD**
 - 첨부파일 최종 저장소 — **TBD**, 현재 LOCAL
 
-역할·범위가 합의됐더라도 실제 코드 구조가 안정화되지 않았다면 즉시 ADR 파일로 고정하지 않습니다. 구현과 테스트가 따라온 시점에 개별 ADR로 승격합니다.
+## 관련 Current 문서
+
+- [AI Copilot · Current Architecture](../03_ai/ai-copilot.md)
+- [AI Copilot · Final Evaluation Narrative](../08_qa_reports/ai-copilot-final-evaluation.md)
+- [Architecture](../02_architecture/README.md)
+- [Backend API Catalog](../04_contracts/backend-api-catalog.md)
+
+중요한 결정이 장기간 유지되고 변경 조건까지 안정화되면 이 README의 목록에서 개별 ADR 파일로 승격합니다.

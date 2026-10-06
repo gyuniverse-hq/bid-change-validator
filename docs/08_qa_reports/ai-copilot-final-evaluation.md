@@ -2,7 +2,7 @@
 
 > **상태: Current Summary + Historical Evaluation Evidence**  
 > 문서 기준일: 2026-09-17 KST  
-> Current 코드 기준: `develop` / `f56d3484e9c3ca1b1badbeafcda9bd5f057c65d5` (PR #151 병합 후)  
+> Current 코드 기준: `develop` / `112a8e36fc2756d18e5869e69c04f1ed4721e8ae` (PR #153 병합 후; 평가 대상 Copilot 핵심 계약은 PR #151)  
 > 이 문서는 기존 평가 결과를 하나의 `정확도`로 합산하지 않습니다.
 
 ## 1. 목적

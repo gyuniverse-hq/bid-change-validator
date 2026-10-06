@@ -9,7 +9,7 @@
 원공고를 기준으로 준비한 자격판정·필수서류·제출 준비 상태가 변경공고 이후에도 유효한지 다시 확인하고, 변경된 조건과 원문 근거를 바탕으로 영향을 받은 항목을 재검증하는 프로젝트입니다.
 
 **Current Stage**  
-`develop` 기준 Product Integration + AI Copilot 통합 상태입니다. 이 README의 문서 기준은 2026-09-16 PR #151 병합 커밋 `f56d3484e9c3ca1b1badbeafcda9bd5f057c65d5` 이후입니다.
+`develop` 기준 Product Integration + AI Copilot 통합 상태입니다. 이 README의 Current 코드 기준은 2026-09-17 `112a8e36fc2756d18e5869e69c04f1ed4721e8ae` (PR #153 병합 후)입니다. Copilot 핵심 계약은 PR #151에서 통합됐고, PR #153은 변경요건 비교·근거 이동 등 Frontend QA를 보완했습니다.
 
 현재 구현에는 01~07 Product Workspace, deterministic Qualification Rule, Evidence/Ask-back/Revalidation, AI Copilot v3.1, Guided Job 2종·질문 6개와 자유 입력이 포함됩니다. 다만 **사람 사용자 평가, 새 독립 blind 평가, 실제 운영 데이터 전체 E2E와 Production Smoke가 모두 완료됐다는 뜻은 아닙니다.**
 
@@ -215,7 +215,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL_DEFAULT=gpt-5.6-luna
 ```
 
-`.env`와 `.env.*`는 Git ignore 대상이며 `.env.example`만 추적합니다. 실제 API Key를 commit하지 마세요.
+실제 `.env` 값은 Git ignore 대상이며, 저장소에는 예시용 `.env.example`과 `.env.production.example` 등을 추적합니다. 실제 API Key나 운영 비밀번호를 commit하지 마세요.
 
 Backend 코드를 변경한 뒤에는 API 이미지를 다시 빌드합니다.
 
@@ -291,18 +291,18 @@ GET  /api/v1/preflight-cases/{case_id}/documents/{document_id}/preview
 
 현재 Rule은 `qualification-rules-v0.3`이며, 과거 Analysis/Judgment가 존재한다는 이유만으로 현재 Rule·grounding 정책을 통과했다고 간주하지 않습니다. 필요하면 현재 Version/Analysis/Rule 조합으로 재분석·재판정·재검증합니다.
 
-## AWS 배포 설정
+## S3-compatible Object Storage 설정
 
-로컬 Docker에서는 `notice_documents_data` 볼륨에 문서를 저장합니다. AWS에서는 다음 환경변수를 설정해 S3 저장소를 사용할 수 있습니다.
+로컬 Docker에서는 `notice_documents_data` 볼륨에 문서를 저장합니다. 운영 환경에서는 `DOCUMENT_STORAGE_BACKEND=S3`로 AWS S3 또는 OCI Object Storage의 S3 Compatibility API처럼 S3-compatible Object Storage를 사용할 수 있습니다.
 
 - `DOCUMENT_STORAGE_BACKEND=S3`
 - `DOCUMENT_S3_BUCKET`
 - `DOCUMENT_S3_PREFIX`
+- `DOCUMENT_S3_ENDPOINT_URL` — AWS S3 기본 endpoint를 쓸 때는 비워둘 수 있고, OCI 등 S3-compatible provider는 해당 endpoint를 지정
 - `AWS_REGION`
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — provider와 배포 방식에 맞는 credential 사용
 
-ECS 또는 EC2에는 고정 AWS 키를 저장하지 않고 IAM 역할로 S3 접근 권한을 부여해야 합니다. PostgreSQL은 RDS, API와 변경공고 수집기는 별도 ECS 서비스 또는 EC2 프로세스로 운영하는 구성을 검토할 수 있습니다.
-
-이 구성 설명은 실제 Production Deployment 완료를 의미하지 않습니다.
+운영 credential은 저장소에 commit하지 않고 배포 환경의 Secret/권한 관리 수단을 사용합니다. 이 섹션은 코드가 지원하는 storage 설정을 설명하며, 특정 cloud의 Production Deployment 완료를 의미하지 않습니다.
 
 ## Collaboration
 

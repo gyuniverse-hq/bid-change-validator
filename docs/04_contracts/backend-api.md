@@ -98,8 +98,9 @@ POST /api/v1/copilot/actions/confirm
 
 - 현재 Notice Version만 사용
 - 명시적 외부처리 동의
-- Hybrid Retrieval
-- no-hit / no-citation fail-closed
+- READY index의 일반 질문은 Hybrid Retrieval 우선
+- broad 질문은 current section을 넓게 읽고, index/embedding 사용이 어려우면 lexical/current-section fallback
+- 문서 근거 미확보 범위는 NOT_FOUND/limitation으로 유지
 - 회사 참가 가능 여부는 저장 Product Judgment 우선
 
 ### Write

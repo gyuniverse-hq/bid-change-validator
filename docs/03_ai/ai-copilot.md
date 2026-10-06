@@ -2,7 +2,7 @@
 
 > **상태: Current**  
 > 문서 기준일: 2026-09-17 KST  
-> 기준 브랜치/커밋: `develop` / `f56d3484e9c3ca1b1badbeafcda9bd5f057c65d5` (PR #151 병합 후)  
+> 기준 브랜치/커밋: `develop` / `112a8e36fc2756d18e5869e69c04f1ed4721e8ae` (PR #153 병합 후; Copilot 핵심 계약은 PR #151)  
 > 실제 동작의 최종 Source of Truth는 코드와 테스트입니다.
 
 ## 1. 한 줄 정의

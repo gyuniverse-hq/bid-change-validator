@@ -1,7 +1,7 @@
 # AI / RAG 문서 안내
 
 > **문서 상태: Current + Historical/Proposed 참조 혼재**  
-> 기준 브랜치: `develop` · Current Copilot 기준: 2026-09-17 / PR #151 이후
+> 기준 브랜치: `develop` · Current 코드 기준: 2026-09-17 / `112a8e36fc2756d18e5869e69c04f1ed4721e8ae` (PR #153 포함, Copilot 핵심 계약은 PR #151)
 
 이 폴더는 Product Integration Baseline 이후 AI 영역을 **Core Intelligence**와 **AI Copilot**으로 나누고, 서로 다른 책임과 평가 범위를 관리합니다.
 
@@ -48,7 +48,7 @@ app.copilot — Current Product Integration Layer
 ├─ Guided Job 2종 / 질문 6개
 ├─ Free-text Planning
 ├─ Product Tool Adapter
-├─ Document QA / Hybrid Retrieval
+├─ Document QA / Hybrid-first + section·lexical fallback
 ├─ Fact / Source / Claim Validation
 ├─ Action Proposal / Explicit Confirm
 └─ AnswerEnvelope v3.1
@@ -75,7 +75,7 @@ Semantic Chunks
 
 ### AI Copilot Document QA
 
-Copilot의 공개 공고문 질문은 별도 Document QA 경로에서 **Hybrid Retrieval(Dense + BM25/RRF)** 을 사용합니다. 이 경로는 회사 적격 판정과 분리되어 있고, 참가 가능 여부는 Product Judgment가 계속 Source of Truth입니다.
+Copilot의 공개 공고문 질문은 별도 Document QA 경로를 사용합니다. READY index가 있는 일반 질문은 **Hybrid Retrieval(Dense + BM25/RRF)** 을 우선하고, broad 질문은 current section을 넓게 읽으며 index/embedding 사용이 어려운 경우 lexical/current-section fallback을 사용합니다. 이 경로는 회사 적격 판정과 분리되어 있고, 참가 가능 여부는 Product Judgment가 계속 Source of Truth입니다.
 
 상세: [AI Copilot · Current Architecture](ai-copilot.md)
 
@@ -153,21 +153,38 @@ AI Core
 
 ### AI Core
 
+현재 Core extraction/grounding과 deterministic qualification rule은 패키지가 분리되어 있습니다.
+
 ```text
 apps/api/app/ai/
-├─ analysis_pipeline.py
-├─ analysis_result.py
-├─ askability.py
-├─ backend_blocks.py
-├─ canonicalize.py
-├─ chunking.py
 ├─ contracts.py
 ├─ evaluation_contracts.py
-├─ evidence_adapter.py
-├─ judgment.py
+├─ extensions.py
 ├─ normalization/
-├─ requirement_diff.py
-└─ requirement_extraction.py
+├─ providers/
+├─ clause_review/
+├─ quality_eval/
+└─ qualification/
+   ├─ extraction/
+   │  ├─ analysis_pipeline.py
+   │  ├─ analysis_result.py
+   │  ├─ backend_blocks.py
+   │  ├─ chunking.py
+   │  ├─ code_salvage.py
+   │  ├─ notice_requirements.py
+   │  └─ requirement_extraction.py
+   ├─ canonical/
+   │  ├─ canonicalize.py
+   │  ├─ deduplicate.py
+   │  └─ legacy_slots.py
+   └─ grounding/
+      └─ evidence_adapter.py
+
+apps/api/app/qualification/rules/
+├─ askability.py
+├─ clause_safety.py
+├─ judgment.py
+└─ requirement_diff.py
 ```
 
 ### AI Copilot

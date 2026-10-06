@@ -77,6 +77,10 @@ jobs:
         working-directory: apps/web
         run: pnpm lint
 
+      - name: Run frontend unit tests
+        working-directory: apps/web
+        run: pnpm test
+
       - name: Build frontend
         working-directory: apps/web
         env:

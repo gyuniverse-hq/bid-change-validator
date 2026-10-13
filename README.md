@@ -8,10 +8,10 @@
 
 원공고를 기준으로 준비한 자격판정·필수서류·제출 준비 상태가 변경공고 이후에도 유효한지 다시 확인하고, 변경된 조건과 원문 근거를 바탕으로 영향을 받은 항목을 재검증하는 프로젝트입니다.
 
-**Current Stage**  
-`develop` 기준 Product Integration + AI Copilot 통합 상태입니다. 이 README의 Current 코드 기준은 2026-09-17 `112a8e36fc2756d18e5869e69c04f1ed4721e8ae` (PR #153 병합 후)입니다. Copilot 핵심 계약은 PR #151에서 통합됐고, PR #153은 변경요건 비교·근거 이동 등 Frontend QA를 보완했습니다.
+**Final Status**  
+`main`은 3차 프로젝트 종료 시점의 최종 안정 기준입니다. 2026-10-13 [PR #155](https://github.com/gyuniverse-hq/bid-change-validator/pull/155)에서 최종 `develop@77a9e1f25c18ec96496934cdecad19000322c24a` 상태를 `main`으로 승격했고, 승격 시점의 두 브랜치 tree는 `4ceb9d1be025d7c8152bdc5fffd6e3e8ce511e60`로 동일합니다. 기능 코드는 이 기준으로 동결하고 이후에는 문서 정합성만 유지합니다.
 
-현재 구현에는 01~07 Product Workspace, deterministic Qualification Rule, Evidence/Ask-back/Revalidation, AI Copilot v3.1, Guided Job 2종·질문 6개와 자유 입력이 포함됩니다. 다만 **사람 사용자 평가, 새 독립 blind 평가, 실제 운영 데이터 전체 E2E와 Production Smoke가 모두 완료됐다는 뜻은 아닙니다.**
+최종 상태에는 PR #153의 변경요건 비교·근거 이동 Frontend QA 보완과 PR #154의 AI Copilot Current Architecture·Final Evaluation 문서 정리가 포함됩니다. 현재 구현에는 01~07 Product Workspace, deterministic Qualification Rule, Evidence/Ask-back/Revalidation, AI Copilot v3.1, Guided Job 2종·질문 6개와 자유 입력이 포함됩니다. 다만 **사람 사용자 평가, 새 독립 blind 평가, 실제 운영 데이터 전체 E2E와 Production Smoke가 모두 완료됐다는 뜻은 아닙니다.**
 
 ## Team
 
@@ -29,12 +29,28 @@
 
 현재 구현·정책·평가의 시작점은 [docs/README.md](docs/README.md)입니다.
 
+교육 과정 제출·발표용 전체 프로젝트 README와 산출물은 [SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team)에서 확인할 수 있습니다. 이 저장소는 실제 구현 코드·기술 계약·평가 근거를 우선합니다.
+
 AI Copilot만 확인할 경우 다음 두 문서를 먼저 봅니다.
 
 - [AI Copilot · Current Architecture](docs/03_ai/ai-copilot.md)
 - [AI Copilot · Final Evaluation Narrative](docs/08_qa_reports/ai-copilot-final-evaluation.md)
 
 과거 Product Integration Baseline은 [docs/mvp-baseline/README.md](docs/mvp-baseline/README.md)에 Snapshot으로 보존합니다. 초기 LLM/RAG 설계와 단계별 평가 보고서는 현재 문서의 근거·Historical Evidence로 사용합니다.
+
+## Final Validation Snapshot
+
+서로 다른 평가의 분모를 하나의 "프로젝트 정확도"로 합치지 않습니다.
+
+| 검증 | 결과 | 기준 |
+| --- | ---: | --- |
+| Golden Rule 회귀 | **110 / 138** | Safe Abstention 28 / 138 · Wrong Determinate 0 |
+| Backend regression | **924 passed** | PR #154 merge-ref CI · Python 3.12 / Linux |
+| Copilot v1 고정 Fixture 계약 회귀 | **100 passed / 5 deselected** | Backend 924건과 합산하지 않음 |
+| Frontend unit / production build | **3 passed / PASS** | PR #154 merge-ref CI |
+| Final Release PR #155 | **Golden + MVP Integration PASS** | 2026-10-13 · main 대상 재검증 |
+
+Golden Fixture SHA-256은 `552eb031612e5004efc67adbaeb0f015fad73de714e807014c4cf61d391efe9c`입니다. Copilot 실제 모델 Guided Job `23/24 COMPLETE`는 아래 별도 평가이며 사람 사용자 성공률이 아닙니다.
 
 ## Current Product Flow
 
@@ -164,6 +180,17 @@ AI Core의 Requirement Extraction Retrieval은 별도 영역이며 현재 sectio
 | 07 회사 프로필 | `/company` | 회사 기본정보·수행실적·인증/등록 관리 |
 
 Copilot은 이 화면을 대체하지 않고 현재 `caseId`를 사용하는 보조 Panel로 연결됩니다.
+
+`/guide`는 이용안내, `/login`은 인증 진입 화면입니다. `/workbench`는 초기 3분할 점검 화면을 보존한 legacy route로, 위 7개 핵심 Product Route에는 포함하지 않습니다.
+
+## Final Known Limitations
+
+3차 프로젝트 종료 시점에 아래 한계를 알고 있으며, 기능 코드는 추가 수정하지 않고 최종 상태로 보존합니다.
+
+- Requirement Extraction의 독립 실공고 정답 라벨/F1과 Human User Test 최종 지표는 미완료입니다.
+- Document QA는 현재 공고 Version 범위에서 동작하며 cross-version QA를 지원하지 않습니다.
+- `/changes`에서 기준·현재 자격요건 Analysis가 모두 준비되지 않은 경우에도 공고 메타데이터가 동일하면 "변경 없음" 안내가 먼저 보일 수 있습니다. 이 상태를 자격요건 비교 완료로 해석하면 안 됩니다.
+- 전체 운영 데이터 E2E, Production Smoke, 배포 자동화 완료를 주장하지 않습니다.
 
 ## 로컬 PostgreSQL 실행
 
@@ -302,7 +329,7 @@ GET  /api/v1/preflight-cases/{case_id}/documents/{document_id}/preview
 - `AWS_REGION`
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — provider와 배포 방식에 맞는 credential 사용
 
-운영 credential은 저장소에 commit하지 않고 배포 환경의 Secret/권한 관리 수단을 사용합니다. 이 섹션은 코드가 지원하는 storage 설정을 설명하며, 특정 cloud의 Production Deployment 완료를 의미하지 않습니다.
+운영 credential은 저장소에 commit하지 않고 배포 환경의 Secret/권한 관리 수단을 사용합니다. 이 섹션은 코드가 지원하는 storage 설정 범위를 설명합니다. 3차 제출 시점의 OCI Compute · Supabase PostgreSQL · OCI Object Storage 배포 구성과 발표 자료는 제출 저장소의 README를 참고합니다.
 
 ## Collaboration
 
@@ -318,9 +345,9 @@ Requirement / Design
 → Done
 ```
 
-- `main`: 안정 버전 / 최종 반영 기준
-- `develop`: 팀 통합 브랜치
-- 기능·수정·문서 작업은 별도 Branch에서 시작합니다.
+- `main`: 3차 프로젝트 최종 안정 버전 / 현재 Source of Truth
+- `develop`: 팀 통합 이력을 보존하는 브랜치. PR #155 승격 시점의 기능·문서 tree는 `main`과 동일합니다.
+- 기능 개발은 종료했으며, 이후 필요한 정리는 별도 문서 Branch와 Pull Request로만 관리합니다.
 - 주요 변경은 Pull Request와 Review를 거칩니다.
 - 과거 Jira/분리 workspace 기록은 Historical 협업 맥락으로만 참고합니다.
 
@@ -332,4 +359,4 @@ Requirement / Design
 | Backend / Data | 전진환 (Backend), 정예린 (DB / Data) | https://github.com/gyuniverse-hq/bid-change-validator-backend |
 | LLM / RAG | 김재현, 이홍규 | https://github.com/gyuniverse-hq/bid-change-validator-llm-rag |
 
-현재 구현과 계약은 이 통합 저장소 `develop`과 `docs/`를 우선합니다.
+최종 구현 기준은 이 통합 저장소 `main`이며, 상세 기술 계약과 평가 근거는 `docs/`를 우선합니다.

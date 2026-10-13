@@ -10,9 +10,9 @@
 
 <br/>
 
-[![golden-regression](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/golden-regression.yml/badge.svg?branch=develop)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/golden-regression.yml)
-[![MVP Integration Baseline](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/mvp-integration-baseline.yml/badge.svg?branch=develop)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/mvp-integration-baseline.yml)
-[![Copilot integration](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/copilot-integration.yml/badge.svg?branch=develop)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/copilot-integration.yml)
+[![golden-regression](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/golden-regression.yml/badge.svg)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/golden-regression.yml)
+[![MVP Integration Baseline](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/mvp-integration-baseline.yml/badge.svg)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/mvp-integration-baseline.yml)
+[![Copilot integration](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/copilot-integration.yml/badge.svg)](https://github.com/gyuniverse-hq/bid-change-validator/actions/workflows/copilot-integration.yml)
 
 <br/>
 
@@ -26,17 +26,17 @@
 
 </div>
 
-**구현 기준**
+**최종 구현 기준**
 
-최종 실행 코드는 제출 저장소에 동기화되어 있습니다.
+이 저장소의 `main`이 3차 프로젝트 종료 시점의 최종 Source of Truth입니다.
 
-- 제출 코드: [`SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team@main`](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team/tree/main)
-- 코드 동기화 기준 SHA (README 수정 전): [`12980f011d0a7a241f02fbba8e06bc30a79ca0ff`](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team/commit/12980f011d0a7a241f02fbba8e06bc30a79ca0ff)
-- 개발 코드 기준: [`gyuniverse-hq/bid-change-validator@develop`](https://github.com/gyuniverse-hq/bid-change-validator/tree/develop)
-- 개발 코드 기준 SHA: [`77a9e1f25c18ec96496934cdecad19000322c24a`](https://github.com/gyuniverse-hq/bid-change-validator/commit/77a9e1f25c18ec96496934cdecad19000322c24a)
-- 두 저장소의 동일 `apps/` tree: `b388928a49ee197ce3ccedc1b6be36e5770f7151`
+- 최종 코드: [`gyuniverse-hq/bid-change-validator@main`](https://github.com/gyuniverse-hq/bid-change-validator/tree/main)
+- 기능 코드 동결 기준 SHA (README 갱신 전): [`fed811ab776dbcf7be73ca1eba38db307d84d64c`](https://github.com/gyuniverse-hq/bid-change-validator/commit/fed811ab776dbcf7be73ca1eba38db307d84d64c)
+- 최종 개발 이력: [`develop@77a9e1f25c18ec96496934cdecad19000322c24a`](https://github.com/gyuniverse-hq/bid-change-validator/commit/77a9e1f25c18ec96496934cdecad19000322c24a)
+- Final Release: [PR #155](https://github.com/gyuniverse-hq/bid-change-validator/pull/155)에서 최종 `develop` tree를 `main`으로 승격
+- 교육과정 제출·발표용 저장소: [`SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team`](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team)
 
-코드 동기화 기준 SHA는 README 갱신 후 `main`의 최종 SHA를 의미하지 않습니다.
+PR #155 승격 시 `main`과 `develop`의 파일 tree는 동일했습니다. 이후 기능 코드는 동결하고 README와 기록의 정합성만 정리합니다.
 
 > 코드 구현 / 회귀 검증 / 실데이터 검수
 > 완료 여부를 구분하여 표시합니다.
@@ -445,7 +445,7 @@ public 스키마는 도메인 테이블 **30개** + 코드/시스템 테이블 *
 
 **변경 재검증** — `qualification_revalidation_runs`가 기준 분석 · 현재 분석 · 직전 판정을 함께 참조하고, `revalidated_keys`에 **영향받은 요건 키만** 기록합니다.
 
-**전체 ERD** — 도메인 7개 · 다이어그램 10장 · 테이블별 컬럼과 제약까지: [db-erd-current.md](https://github.com/gyuniverse-hq/bid-change-validator/blob/develop/docs/04_contracts/db-erd-current.md)
+**전체 ERD** — 도메인 7개 · 다이어그램 10장 · 테이블별 컬럼과 제약까지: [db-erd-current.md](./docs/04_contracts/db-erd-current.md)
 
 ---
 
@@ -639,14 +639,14 @@ Server Fact / Document Source
 
 > **대화는 기억하되, 사실은 Backend에서 다시 확인합니다.**
 
-상세 구조와 안전 설계는 [`docs/04-AI-Core-Copilot.md`](./docs/04-AI-Core-Copilot.md)를 참고합니다.
+상세 구조와 안전 설계는 [`docs/03_ai/ai-copilot.md`](./docs/03_ai/ai-copilot.md)를 참고합니다.
 
 ---
 
 ## 📁 프로젝트 구조
 
 ```
-SKN34-3rd-4Team/
+bid-change-validator/
 ├── apps/api/     # FastAPI — 수집 · 추출 · 판정 · Copilot · 문서 RAG
 ├── apps/web/     # vinext(Vite + RSC) — 제품 화면 8종
 ├── services/     # 문서 파싱
@@ -662,7 +662,7 @@ SKN34-3rd-4Team/
 <br>
 
 ```
-SKN34-3rd-4Team/
+bid-change-validator/
 ├── apps/
 │   ├── api/                      # FastAPI 백엔드
 │   │   ├── alembic/versions/     # 마이그레이션 001~022
@@ -687,7 +687,7 @@ SKN34-3rd-4Team/
 ├── db/                           # 시드 · 마스터 코드
 ├── data/                         # 마스터 데이터
 ├── contracts/                    # 파트 간 계약
-├── docs/                         # 제출 문서 · 데이터 수집/전처리 · assets
+├── docs/                         # Current 기술 문서 · QA · Historical Evidence · assets
 ├── samples/golden/               # Golden Fixture
 ├── infra/
 ├── scripts/
@@ -700,7 +700,7 @@ SKN34-3rd-4Team/
 
 ## ⚙️ 실행 방법
 
-> 현재 제출 저장소에도 최종 실행 코드가 동기화되어 있으므로 이 저장소를 clone하여 아래 명령으로 실행할 수 있습니다. API Key, DB 연결과 환경변수는 별도로 설정해야 합니다.
+> 이 저장소의 `main`에 3차 프로젝트 종료 시점의 최종 실행 코드가 반영되어 있습니다. 아래 명령으로 실행할 수 있으며, API Key·DB 연결·환경변수는 별도로 설정해야 합니다.
 
 ### 요구 환경
 
@@ -846,7 +846,7 @@ pnpm exec vinext start --hostname 0.0.0.0 --port 3000
 
 ### 8.4 데이터 및 Evaluation
 
-> 📄 수집 과정과 전처리 8단계, 데이터 출처·라이선스는 [데이터 수집·전처리 문서](docs/데이터-수집-전처리.md)에 따로 정리했습니다.
+> 📄 수집 과정과 전처리 8단계, 데이터 출처·라이선스는 [Data / DB 기준 문서](./docs/04_contracts/data-and-db.md)에 따로 정리했습니다.
 
 **실제 수집 데이터**
 
@@ -932,9 +932,9 @@ pnpm exec vinext start --hostname 0.0.0.0 --port 3000
 
 상세 근거:
 
-- [Golden Fixture v0.2](https://github.com/gyuniverse-hq/bid-change-validator/tree/develop/samples/golden/qualification-v0.2)
-- [실공고 Snapshot Dataset](https://github.com/gyuniverse-hq/bid-change-validator/tree/develop/samples/golden/qualification-real-v0.1)
-- [Document RAG Evaluation](https://github.com/gyuniverse-hq/bid-change-validator/blob/develop/docs/08_qa_reports/ai-copilot-v2/e3-rag-evaluation.md)
+- [Golden Fixture v0.2](./samples/golden/qualification-v0.2)
+- [실공고 Snapshot Dataset](./samples/golden/qualification-real-v0.1)
+- [Document RAG Evaluation](./docs/08_qa_reports/ai-copilot-v2/e3-rag-evaluation.md)
 
 ### AI Copilot · Document Retrieval 개선 결과
 
@@ -1047,11 +1047,11 @@ PARTIAL 1건은 잘못된 Fact 참조가 포함된 추천 Claim을 Validation �
 
 > `23/24`는 사람 사용자 성공률이 아니라 **합성 Company Profile 기반 Actual Model Task 실행 결과**입니다.
 
-평가 과정과 지표 정의는 [`docs/05-테스트-평가.md`](./docs/05-테스트-평가.md)에 자세히 정리했습니다.
+전체 QA·평가 기준은 [`docs/08_qa_reports/README.md`](./docs/08_qa_reports/README.md), AI Copilot 상세 평가는 [`ai-copilot-final-evaluation.md`](./docs/08_qa_reports/ai-copilot-final-evaluation.md)에 정리했습니다.
 
-**Current — 최신 CI 검증**
+**Current — 최종 CI 검증**
 
-출처: 개발 저장소 [`gyuniverse-hq/bid-change-validator`](https://github.com/gyuniverse-hq/bid-change-validator)의 [PR #154](https://github.com/gyuniverse-hq/bid-change-validator/pull/154) merge-ref CI (2026-10-06). 검증 merge-ref SHA는 `f30c2a1cf0002ebd6e0459ad3d4374ff078321a6`입니다. PR #154는 개발 `develop`에 merge commit [`77a9e1f25c18ec96496934cdecad19000322c24a`](https://github.com/gyuniverse-hq/bid-change-validator/commit/77a9e1f25c18ec96496934cdecad19000322c24a)으로 반영되었습니다. Backend 실행 환경은 Python 3.12 / Linux입니다.
+상세 테스트 수치는 [PR #154](https://github.com/gyuniverse-hq/bid-change-validator/pull/154) merge-ref CI (2026-10-06)를 기준으로 합니다. 검증 merge-ref SHA는 `f30c2a1cf0002ebd6e0459ad3d4374ff078321a6`, `develop` 반영 merge commit은 [`77a9e1f25c18ec96496934cdecad19000322c24a`](https://github.com/gyuniverse-hq/bid-change-validator/commit/77a9e1f25c18ec96496934cdecad19000322c24a)이며 Backend 실행 환경은 Python 3.12 / Linux입니다. 이후 [Final Release PR #155](https://github.com/gyuniverse-hq/bid-change-validator/pull/155)에서 동일 최종 tree를 `main`으로 승격하면서 Golden Regression과 MVP Integration Baseline CI를 다시 통과했습니다.
 
 | 항목 | 결과 | 검증 기록 |
 | --- | --- | --- |
@@ -1213,11 +1213,14 @@ Golden Fixture SHA-256: `552eb031612e5004efc67adbaeb0f015fad73de714e807014c4cf61
 
 - Golden Fixture의 기대값은 독립 검수자 승인 전 초안이며, 실제 변경공고 G2도 Ground Truth 확정 전입니다.
 - Requirement Extraction의 독립 실공고 정답 라벨/F1, Copilot Human Task Completion, 전체 사용자 E2E 최종 지표는 아직 확정하지 않았습니다.
-- 동일 입력에서 Requirement 추출 결과가 실행마다 달라지는 문제를 확인했고 개선 진행 중입니다.
+- 동일 입력에서 Requirement 추출 결과가 실행마다 달라질 수 있는 문제가 종료 시점 한계로 남아 있습니다.
 - Document RAG는 현재 공고 버전 범위에서 동작하며 cross-version QA는 지원하지 않습니다.
 - 평가 대응 화면은 참가자격 기반 참고 정보이며 평가항목 전용 추출이나 점수 예측 기능이 아닙니다.
+- `/changes`에서 기준·현재 자격요건 Analysis가 모두 준비되지 않은 경우, 공고 메타데이터가 동일하면 "변경 없음" 안내가 먼저 보일 수 있습니다. 이 상태를 자격요건 비교 완료로 해석하면 안 됩니다.
 
-### 다음 개선
+### 후속 개선 후보
+
+3차 프로젝트 기능 개발은 종료했으며, 아래 항목은 종료 시점에 남긴 후속 개선 후보입니다.
 
 - 추출 결정성 확보 — 같은 입력에서 같은 Requirement가 나오도록
 - 실제 공고 Requirement·Evidence 라벨 독립 검수와 Extraction 평가
@@ -1257,11 +1260,13 @@ DB/Data 파트를 맡으며 가장 크게 느낀 건, 「데이터가 있어 보
 
 ## 📄 참고 자료
 
-실제 구현과 검증 근거는 개발 저장소에 있습니다.
+상세 구현·검증 근거는 이 저장소의 `docs/`, 테스트, Golden Fixture와 QA 보고서에서 확인할 수 있습니다.
 
-- [개발 저장소 `gyuniverse-hq/bid-change-validator`](https://github.com/gyuniverse-hq/bid-change-validator)
-- [Product Baseline 문서](https://github.com/gyuniverse-hq/bid-change-validator/tree/develop/docs/mvp-baseline)
-- [QA · Evaluation 문서](https://github.com/gyuniverse-hq/bid-change-validator/tree/develop/docs/08_qa_reports)
-- [DB ERD](https://github.com/gyuniverse-hq/bid-change-validator/blob/develop/docs/04_contracts/db-erd-current.md)
+- [프로젝트 문서 안내](./docs/README.md)
+- [Product Baseline Snapshot](./docs/mvp-baseline/README.md)
+- [QA · Evaluation](./docs/08_qa_reports/README.md)
+- [AI Copilot · Final Evaluation](./docs/08_qa_reports/ai-copilot-final-evaluation.md)
+- [DB ERD · Current](./docs/04_contracts/db-erd-current.md)
+- [교육과정 제출·발표용 Repository](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-4Team)
 
 ---

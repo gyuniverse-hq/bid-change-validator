@@ -117,16 +117,55 @@ SATISFIED | UNSATISFIED | UNKNOWN
 
 현재 저장된/분석된 공고와 회사 Profile을 기반으로 Product 목록에 사용할 matching 결과를 제공합니다. 공고 메타 검색과 완전한 첨부문서 자격판정은 같은 단계가 아닙니다.
 
+## AI Copilot · Current
+
+Copilot은 기존 Product Service 위의 별도 Integration Layer입니다.
+
+| Method | Path | 역할 |
+| --- | --- | --- |
+| GET | `/api/v1/copilot/jobs?case_id={case_id}` | 현재 Case에서 사용할 Guided Job 2종 / 질문 6개와 availability 조회 |
+| POST | `/api/v1/copilot/chat` | Product read, 자유질문/Guided Job, v3.1 Conversation/Claim 검증 응답 |
+| POST | `/api/v1/copilot/actions/confirm` | 사용자가 명시 확인한 Action Proposal을 최신 provenance 검증 후 기존 Product Service로 실행 |
+
+### `/api/v1/copilot/chat`
+
+Current Frontend는 `response_version=3.1`을 사용합니다.
+
+주요 선택 필드:
+
+- `conversation_id`
+- `context_revision`
+- `target_id`
+- `job_id`
+- `question_id`
+- `public_document_question`
+- `allow_external_processing`
+
+Semantic 처리 동의는 `X-Copilot-Semantic-Processing` header로 전달할 수 있습니다.
+
+Guided Job이 선택된 경우 서버가 질문의 `TaskPlan`, 필요한 read tool, 완료 조건을 소유합니다. 자유 입력은 v3.1 coordinator가 현재 authorized Case Scope 안에서 read plan을 구성합니다.
+
+`/chat`은 실제 write를 직접 실행하지 않습니다. 저장/재검증이 필요한 경우 Proposal을 만들 수 있으며 실제 실행은 `/actions/confirm`으로 분리됩니다.
+
+### `/api/v1/copilot/actions/confirm`
+
+Confirm은 제안을 그대로 신뢰하지 않고 현재 DB의 case/company/version/analysis/judgment 문맥을 다시 검증한 뒤 기존 Ask-back/Revalidation Service를 사용합니다.
+
+자연어 `응` 자체를 confirm으로 사용하지 않습니다.
+
+### Conversation 저장 범위
+
+현재 v3.1 ConversationState는 server process-memory 기반입니다. 별도의 durable Copilot session/history CRUD Product API가 구현됐다는 의미는 아닙니다.
+
+상세 구조: [`../03_ai/ai-copilot.md`](../03_ai/ai-copilot.md)
+
 ## 현재 없는/미확정 Product API
 
 다음은 코드에 이미 존재한다고 가정하면 안 됩니다.
 
 - Evaluation Criterion 전용 extraction/product API
 - Proposal Requirement Retrieval 전용 API
-- AI Copilot chat/orchestration API
-- Copilot session/history API
-
-필요성이 확정되면 기존 Product Service를 재사용하는 최소 API로 추가합니다.
+- durable Copilot session/history persistence API
 
 ## Error / Consistency 원칙
 
@@ -134,4 +173,6 @@ SATISFIED | UNSATISFIED | UNKNOWN
 - stale Analysis/Judgment/Rule/Profile 기반 결과를 묵시적으로 재사용하지 않습니다.
 - 없는 Analysis는 `404 ANALYSIS_RUN_NOT_FOUND` 등 명시적 도메인 오류를 사용합니다.
 - Document 원본이 없거나 viewer가 맞지 않으면 404/409/503 경계를 구분합니다.
-- Copilot은 DB를 직접 읽어 비공식 판정을 만들기보다 위 Product API/Service를 소비합니다.
+- Copilot은 DB 상태를 근거 없이 재해석해 비공식 참가 판정을 만들지 않습니다.
+- Guided Job의 범위/완료 기준과 Current Conversation Scope는 서버가 검증합니다.
+- 생성 Claim은 Fact/Source validation을 통과한 범위만 게시하고, 실패 범위는 PARTIAL/limitation으로 남깁니다.
